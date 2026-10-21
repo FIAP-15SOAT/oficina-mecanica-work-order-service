@@ -110,7 +110,7 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 
 ## ✅ Pré-requisitos
 
-- **Node.js 24.9+** e **npm** (apenas para o setup local)
+- **Node.js 24.9+** e **npm** (apenas para o setup local); para os comandos de geração do CLI (`nest generate`, `nest upgrade`), **24.15+**, que é o mínimo do `@nestjs/schematics` 12 (abaixo disso o `npm ci` avisa `EBADENGINE`)
 - **Docker** + **Docker Compose** (recomendado para subir todos os serviços)
 - **Git**
 
@@ -155,7 +155,7 @@ Para parar e remover os containers:
 docker compose down
 ```
 
-> O `Dockerfile` é multi-stage (`node:22-alpine` builder + runtime), executa `prisma generate` no build e tem `CMD ["node", "--require", "./dist/src/otel.js", "dist/src/main"]` — **só a aplicação**. O `--require` carrega o preload do OpenTelemetry **antes** de `express` e `pg` serem importados, que é a única ordem em que a instrumentação consegue aplicar o patch; sem `OTEL_EXPORTER_OTLP_ENDPOINT` ele retorna cedo e não carrega nada (ver [ADR 0005](docs/adr/0005-opentelemetry.md)). Em produção, o CD obtém esse valor de `vars.OTEL_EXPORTER_OTLP_ENDPOINT`, renderiza e aplica o ConfigMap; o `app-deploy` aplica o Deployment com a imagem do commit e aguarda o rollout corrente, sem executar `rollout restart`. Valor vazio mantém o SDK desligado. A migração e o seed rodam num passo próprio: o serviço `migrate` do Compose localmente, e o Job `k8s/00-db-migrate-job.yaml` no CD.
+> O `Dockerfile` é multi-stage (`node:24-alpine` builder + runtime), executa `prisma generate` no build e tem `CMD ["node", "--require", "./dist/src/otel.js", "dist/src/main"]` — **só a aplicação**. O `--require` carrega o preload do OpenTelemetry **antes** de `express` e `pg` serem importados, que é a única ordem em que a instrumentação consegue aplicar o patch; sem `OTEL_EXPORTER_OTLP_ENDPOINT` ele retorna cedo e não carrega nada (ver [ADR 0005](docs/adr/0005-opentelemetry.md)). Em produção, o CD obtém esse valor de `vars.OTEL_EXPORTER_OTLP_ENDPOINT`, renderiza e aplica o ConfigMap; o `app-deploy` aplica o Deployment com a imagem do commit e aguarda o rollout corrente, sem executar `rollout restart`. Valor vazio mantém o SDK desligado. A migração e o seed rodam num passo próprio: o serviço `migrate` do Compose localmente, e o Job `k8s/00-db-migrate-job.yaml` no CD.
 
 > Em produção, a credencial do PostgreSQL não vem do GitHub. O job `prepare-deploy` do CD usa `vars.RDS_INSTANCE_IDENTIFIER` para descobrir o Secret gerenciado pelo RDS, lê `AWSCURRENT` e materializa `DATABASE_URL` com encoding/TLS em `database-credentials`, usando Node.js inline e stdin. Depois, `db-migrate` executa migration/seed e `app-deploy` aplica a imagem e aguarda o rollout. Job e Deployment consomem o mesmo Secret separado; `api-secret` contém somente JWTs e a chave pública. O escopo é deploy greenfield, com rotação desabilitada e sem annotation/output de versão da credencial. Veja o [ADR 0017](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md).
 

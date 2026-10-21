@@ -32,8 +32,10 @@ function startTelemetry(): NodeSDK | undefined {
   }
 
   // Node also runs `--require` preloads inside the module-hooks thread that
-  // `registerEsmInstrumentationHook` spawns; a second SDK there would export
-  // every signal twice.
+  // `registerEsmInstrumentationHook` spawns. Without this guard the preload
+  // runs again there: it registers the hook twice (a raw warning on stderr)
+  // and starts a second SDK, with its own exporters and the hooks thread's
+  // runtime metrics reported as the service's.
   if (!isMainThread) {
     return undefined;
   }
