@@ -7,6 +7,7 @@ import { GenericContainer, StartedTestContainer } from 'testcontainers';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import type { Server } from 'http';
 import { execSync } from 'child_process';
+import { lookup } from 'dns/promises';
 import type { DestinationStream } from 'pino';
 
 import { AppModule } from '../../src/app.module';
@@ -97,7 +98,9 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
   const databaseUrl = postgresContainer.getConnectionUri();
 
   process.env.DATABASE_URL = databaseUrl;
-  process.env.MAIL_HOST = mailhogContainer.getHost();
+  // nodemailer resolves hostnames through DNS servers, not the hosts file: with 15 suites booting
+  // at once a dropped query for "localhost" costs a 5 s retry and expires the 5 s Prisma transaction.
+  process.env.MAIL_HOST = (await lookup(mailhogContainer.getHost(), { family: 4 })).address;
   process.env.MAIL_PORT = mailhogContainer.getMappedPort(1025).toString();
   process.env.JWT_SECRET = 'test-jwt-secret-key-for-e2e';
   process.env.JWT_EXPIRATION = '15m';
