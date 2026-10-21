@@ -70,7 +70,7 @@ describe('Structured logging (E2E)', () => {
       expect(line.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
       expect(line.level).toBe('info');
       expect(line.message).toBe(ACCESS_LOG_MESSAGE);
-      expect(line['service.name']).toBe('oficina-mecanica-api');
+      expect(line['service.name']).toBe('oficina-mecanica-work-order-service');
       expect(line['service.namespace']).toBe('oficina-mecanica');
       expect(line['service.version']).toBeDefined();
       expect(line['service.instance.id']).toBeDefined();

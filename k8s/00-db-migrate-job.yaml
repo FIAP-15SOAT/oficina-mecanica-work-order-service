@@ -28,7 +28,7 @@ spec:
       labels:
         app.kubernetes.io/name: db-migrate-job
         app.kubernetes.io/part-of: oficina-mecanica
-        tags.datadoghq.com/service: oficina-mecanica-db-migrate
+        tags.datadoghq.com/service: oficina-mecanica-work-order-service-db-migrate
         tags.datadoghq.com/env: production
     spec:
       restartPolicy: Never

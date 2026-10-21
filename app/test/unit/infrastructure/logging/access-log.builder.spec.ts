@@ -524,7 +524,7 @@ describe('resolveLoggerConfig', () => {
     const { resource } = resolveLoggerConfig({});
 
     expect(resource).toMatchObject({
-      'service.name': 'oficina-mecanica-api',
+      'service.name': 'oficina-mecanica-work-order-service',
       'service.namespace': 'oficina-mecanica',
       'service.version': 'dev',
       'deployment.environment.name': 'development',

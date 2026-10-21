@@ -98,7 +98,7 @@ describe('reportBootstrapFailure', () => {
       expect(line[name]).toBeDefined();
     }
 
-    expect(line['service.name']).toBe('oficina-mecanica-api');
+    expect(line['service.name']).toBe('oficina-mecanica-work-order-service');
   });
 
   /**

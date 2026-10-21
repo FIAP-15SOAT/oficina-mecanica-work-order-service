@@ -33,7 +33,7 @@ A solução é criada em **sete camadas** com ciclos de vida distintos — seis 
 | 1 | **`oficina-mecanica-infra-base`** | Terraform | Rede AWS (VPC, subnets públicas/privadas, IGW, NAT Gateway, Route Tables) | S3 `infra/prod-simulated/infra-base/terraform.tfstate` |
 | 2 | **`oficina-mecanica-infra-k8s`** | Terraform + Helm | EKS (cluster + node group), ECR, NLB interno, CloudWatch, Security Group, Namespace, `metrics-server` | S3 `infra/prod-simulated/k8s/terraform.tfstate` |
 | 3 | **`oficina-mecanica-infra-database`** | Terraform | **Amazon RDS (PostgreSQL 16 gerenciado)**, fora do cluster, nas subnets privadas da VPC | S3 `infra/prod-simulated/database/terraform.tfstate` |
-| 4 | **`oficina-mecanica-api` (`k8s/*.yaml`)** | **CD (`kubectl`)** | API (Deployment/Service/HPA), ConfigMap, Secret, MailHog, Job de migração | Sem state — reaplicado a cada deploy |
+| 4 | **`oficina-mecanica-work-order-service` (`k8s/*.yaml`)** | **CD (`kubectl`)** | API (Deployment/Service/HPA), ConfigMap, Secret, MailHog, Job de migração | Sem state — reaplicado a cada deploy |
 | 5 | **`oficina-mecanica-api-gateway`** | Terraform | **AWS API Gateway (HTTP API)**, stage, VPC Link, security group e log de acesso — a **API Gateway** da solução | S3 `infra/prod-simulated/gateway/terraform.tfstate` |
 | 6 | **`oficina-mecanica-lambda-customer-auth`** | Terraform | **AWS Lambda** de autenticação externa de clientes, nas subnets privadas: função, security group próprio, log group, segredo da chave de assinatura, concorrência reservada e a `aws_lambda_permission` que autoriza o API Gateway a invocá-la | S3 `infra/prod-simulated/lambda-customer-auth/terraform.tfstate` |
 | 7 | **`oficina-mecanica-custom-monitoring`** | Terraform | Quatro dashboards, oito monitores de query, um teste sintético com monitor associado e a configuração de tags da métrica de latência no Datadog | S3 `infra/prod-simulated/custom-monitoring/terraform.tfstate` |
@@ -192,7 +192,7 @@ A entrega segue a separação entre os sete repositórios:
 
 ```
 [oficina-mecanica-infra-base]
-          ├──▶ [oficina-mecanica-infra-k8s] ──▶ [oficina-mecanica-api (CD)]
+          ├──▶ [oficina-mecanica-infra-k8s] ──▶ [oficina-mecanica-work-order-service (CD)]
           ├──▶ [oficina-mecanica-infra-database] ─┘
           └──▶ [oficina-mecanica-api-gateway] ◀── listener do NLB
                          ├──▶ [oficina-mecanica-lambda-customer-auth]
@@ -202,7 +202,7 @@ A entrega segue a separação entre os sete repositórios:
 1. **`oficina-mecanica-infra-base`**: Provisiona a VPC, subnets públicas/privadas, IGW, NAT Gateway e tabelas de roteamento, exportando o estado no S3.
 2. **`oficina-mecanica-infra-k8s`**: Consome a VPC e subnets do estado de rede via `data.terraform_remote_state`, provisionando cluster EKS, Node Group, ECR, NLB interno, namespace `oficina` e Metrics Server.
 3. **`oficina-mecanica-infra-database`**: Consome a VPC e as subnets privadas e provisiona RDS PostgreSQL, DB subnet group e security group. O RDS gera a master password e mantém seu Secret no Secrets Manager; Terraform publica somente o ARN e deixa a rotação desabilitada.
-4. **`oficina-mecanica-api` (CD)**:
+4. **`oficina-mecanica-work-order-service` (CD)**:
    - **`build-push-image`**: Constrói a imagem Docker multi-stage da aplicação NestJS e publica no Amazon ECR a tag por commit (`:sha`) e a tag móvel `:latest`.
    - **`prepare-deploy`**: Descobre metadados/ARN pelo RDS, espera `available`/`active`, lê `AWSCURRENT` e materializa `DATABASE_URL` com percent-encoding e TLS em `database-credentials` usando Node.js inline e stdin. Em outro step, aplica JWTs/chave pública em `api-secret` e o ConfigMap, sem publicar outputs.
    - **`db-migrate`**: Após build e preparação, executa somente o Job descartável de `prisma migrate deploy` + `prisma db seed` e aguarda sucesso, bloqueando o deploy em falha/timeout.

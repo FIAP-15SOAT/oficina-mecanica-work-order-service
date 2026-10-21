@@ -120,8 +120,8 @@ Esse modo sobe todos os serviços — PostgreSQL, MailHog e API — em container
 
 ```bash
 # Clonar o repositório e entrar na pasta da aplicação
-git clone https://github.com/FIAP-15SOAT/oficina-mecanica-api.git
-cd oficina-mecanica-api/app
+git clone https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service.git
+cd oficina-mecanica-work-order-service/app
 
 # (Opcional) Copiar e ajustar variáveis de ambiente
 cp .env.example .env
@@ -291,7 +291,7 @@ A solução é composta por **sete repositórios especializados**, com responsab
 
 | Repositório | Responsabilidade | Componente arquitetural | Tecnologias |
 |---|---|---|---|
-| **[oficina-mecanica-api](https://github.com/FIAP-15SOAT/oficina-mecanica-api)** *(este repositório)* | Aplicação, APIs, domínio e manifests dos workloads | API REST / container de aplicação no EKS | NestJS, TypeScript, Prisma, Jest, Docker |
+| **[oficina-mecanica-work-order-service](https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service)** *(este repositório)* | Aplicação, APIs, domínio e manifests dos workloads | API REST / container de aplicação no EKS | NestJS, TypeScript, Prisma, Jest, Docker |
 | **[oficina-mecanica-infra-base](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base)** | Fundação de rede compartilhada na AWS | VPC, subnets, IGW, NAT Gateway e rotas | Terraform, AWS VPC |
 | **[oficina-mecanica-infra-k8s](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s)** | Plataforma Kubernetes, registry e entrada privada do cluster | Amazon EKS, Node Group, ECR, NLB e `metrics-server` | Terraform, Helm, Amazon EKS 1.35 |
 | **[oficina-mecanica-infra-database](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database)** | Persistência relacional gerenciada, fora do cluster | Amazon RDS PostgreSQL em subnets privadas | Terraform, Amazon RDS, PostgreSQL 16 |
