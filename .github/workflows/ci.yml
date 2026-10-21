@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  NODE_VERSION: "22"
+  NODE_VERSION: "24"
   AWS_REGION: us-east-1
   # Fake URL: `prisma generate` only parses it, never connects. Overridable via a repo variable.
   PRISMA_GENERATE_DATABASE_URL: ${{ vars.PRISMA_GENERATE_DATABASE_URL || 'postgresql://prisma:prisma@localhost:5432/prisma?schema=public' }}
