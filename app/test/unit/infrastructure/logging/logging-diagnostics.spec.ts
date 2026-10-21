@@ -194,7 +194,7 @@ describe('canal de diagnóstico — resiliência do stderr', () => {
       expect(line[name]).toBeDefined();
     }
 
-    expect(line['service.name']).toBe('oficina-mecanica-api');
+    expect(line['service.name']).toBe('oficina-mecanica-work-order-service');
     expect(line['deployment.environment.name']).toBeDefined();
     expect(line['oficina.logging.failure.field']).toBe('quoteId');
 

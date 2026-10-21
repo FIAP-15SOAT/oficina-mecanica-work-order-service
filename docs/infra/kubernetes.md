@@ -113,12 +113,12 @@ kubectl exec -n oficina ds/datadog-agent -- ss -lntp | grep 4318
 
 Nenhum dashboard ou monitor da solução consulta `trace.*`: a latência permanece na métrica OTLP `http.server.request.duration`, cujo nome é definido pela convenção semântica. A versão do agente não migra os consumidores nem substitui a decisão sobre dimensões e amostragem.
 
-**Atribuição de serviço vem de label, não do resource.** Como o log não passa por OTLP, o agente não enxerga `service.name` e cai no **nome da imagem** — o que fazia a mesma aplicação aparecer como `ecr-oficina-mecanica-app-repo` no log e `oficina-mecanica-api` no APM, quebrando a aba Logs da página do serviço e qualquer métrica derivada de log. As labels de Unified Service Tagging no `spec.template.metadata.labels` resolvem:
+**Atribuição de serviço vem de label, não do resource.** Como o log não passa por OTLP, o agente não enxerga `service.name` e cai no **nome da imagem** — o que fazia a mesma aplicação aparecer como `ecr-oficina-mecanica-app-repo` no log e `oficina-mecanica-work-order-service` no APM, quebrando a aba Logs da página do serviço e qualquer métrica derivada de log. As labels de Unified Service Tagging no `spec.template.metadata.labels` resolvem:
 
 | Workload | `tags.datadoghq.com/service` | Manifesto |
 |---|---|---|
-| API | `oficina-mecanica-api` | `k8s/03-api-deployment.yaml` |
-| Job de migração | `oficina-mecanica-db-migrate` | `k8s/00-db-migrate-job.yaml` |
+| API | `oficina-mecanica-work-order-service` | `k8s/03-api-deployment.yaml` |
+| Job de migração | `oficina-mecanica-work-order-service-db-migrate` | `k8s/00-db-migrate-job.yaml` |
 
 Os dois valores são **deliberadamente diferentes**. Job e Deployment compartilham a imagem, mas são workloads distintos com ciclo de vida distinto: unificá-los encheria a aba Logs da API com saída de migração a cada deploy — que é o problema que as labels vieram resolver, só que com outro nome.
 

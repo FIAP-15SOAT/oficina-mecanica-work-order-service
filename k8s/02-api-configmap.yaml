@@ -16,7 +16,7 @@ data:
   MAIL_PORT: "1025"
   TZ: "America/Sao_Paulo"
   LOG_LEVEL: "info"
-  OTEL_SERVICE_NAME: "oficina-mecanica-api"
+  OTEL_SERVICE_NAME: "oficina-mecanica-work-order-service"
   OTEL_SERVICE_NAMESPACE: "oficina-mecanica"
   TRUSTED_PROXY_CIDRS: ""
   CUSTOMER_JWT_ISSUER: "oficina-customer-auth"

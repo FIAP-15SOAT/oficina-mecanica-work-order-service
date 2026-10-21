@@ -5,7 +5,7 @@ export const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', '
 export type LogLevel = (typeof LOG_LEVELS)[number];
 
 export const DEFAULT_LOG_LEVEL: LogLevel = 'info';
-export const DEFAULT_SERVICE_NAME = 'oficina-mecanica-api';
+export const DEFAULT_SERVICE_NAME = 'oficina-mecanica-work-order-service';
 export const DEFAULT_SERVICE_NAMESPACE = 'oficina-mecanica';
 export const DEFAULT_SERVICE_VERSION = 'dev';
 export const DEFAULT_DEPLOYMENT_ENVIRONMENT = 'development';

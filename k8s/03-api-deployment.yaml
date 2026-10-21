@@ -17,7 +17,7 @@ spec:
       # atribuir `service` e `env` aos logs de container: o log nao passa por
       # OTLP (OTEL_LOGS_EXPORTER=none em 02-api-configmap.yaml), então o agente
       # cai no nome da imagem, enquanto o APM, que le o resource OTel, reporta 
-      # `oficina-mecanica-api`.
+      # `oficina-mecanica-work-order-service`.
       # Dois nomes para a mesma aplicação quebram a aba Logs da pagina do
       # serviço e qualquer metrica derivada de log.
       #
@@ -30,7 +30,7 @@ spec:
       labels:
         app.kubernetes.io/name: oficina-api
         app.kubernetes.io/part-of: oficina-mecanica
-        tags.datadoghq.com/service: oficina-mecanica-api
+        tags.datadoghq.com/service: oficina-mecanica-work-order-service
         tags.datadoghq.com/env: production
     spec:
       # > janela de drain (10 s) + fechamento do servidor + $disconnect() +

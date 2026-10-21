@@ -90,7 +90,7 @@ MAIL_FROM="Oficina Mecânica <noreply@oficina.local>"
 # Observabilidade — todas opcionais; nenhuma variável ausente ou inválida impede o boot
 # Níveis aceitos: fatal | error | warn | info | debug | trace | silent (default: info)
 LOG_LEVEL=info
-OTEL_SERVICE_NAME=oficina-mecanica-api
+OTEL_SERVICE_NAME=oficina-mecanica-work-order-service
 OTEL_SERVICE_NAMESPACE=oficina-mecanica
 # Lista separada por vírgula (ex.: 10.0.0.0/8,loopback). Ausente ou inválida =
 # nenhum proxy confiável e cabeçalhos X-Forwarded-For ignorados (falha fechada).
