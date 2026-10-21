@@ -41,9 +41,11 @@ function startTelemetry(): NodeSDK | undefined {
   }
 
   try {
-    registerEsmInstrumentationHook();
-
     const sdk = createTelemetrySdk();
+
+    // After the SDK is built, so a construction failure leaves no hooks thread
+    // wrapping modules for instrumentations that never start.
+    registerEsmInstrumentationHook();
 
     // Só o encerramento precisa da instância, e ele vive num hook do Nest: o
     // registro é a ponte, para que o contêiner não importe este módulo. Antes
