@@ -16,7 +16,7 @@
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -133,6 +133,30 @@ console.log('destino inalcançável degrada pelo canal de erro');
     }),
     stderrLines.find((line) => !line.startsWith('{')),
   );
+}
+
+console.log('o hook ESM instrumenta o express carregado por import');
+{
+  // NestJS 12 is ESM-only and imports `express` by its bare specifier, a path
+  // only the ESM loader hook sees. The script lives under the app so that the
+  // specifier resolves; a `require` here would pass even without the hook.
+  const esmScratch = mkdtempSync(join(APP_ROOT, 'dist', '.otel-smoke-'));
+  const esmScript = join(esmScratch, 'express.mjs');
+  writeFileSync(
+    esmScript,
+    `import express from 'express';
+console.log(JSON.stringify({ wrapped: express.Router.prototype.route.__wrapped === true }));\n`,
+  );
+
+  const result = runWithPreload({ OTEL_EXPORTER_OTLP_ENDPOINT: UNREACHABLE_ENDPOINT }, esmScript);
+  const lastLine = result.stdout.trim().split('\n').pop() || '{}';
+
+  check(
+    'o express importado por ESM é instrumentado',
+    JSON.parse(lastLine).wrapped === true,
+    result.stderr.slice(0, 200),
+  );
+  rmSync(esmScratch, { recursive: true, force: true });
 }
 
 console.log(failures.length === 0 ? '\nsmoke ok' : `\nsmoke falhou: ${failures.join(', ')}`);
