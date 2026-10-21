@@ -92,7 +92,7 @@ function createLogCapture(): LogCaptureSeam {
 }
 
 export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<TestContext> {
-  const postgresContainer = await new PostgreSqlContainer('postgres:16-alpine')
+  const postgresContainer = await new PostgreSqlContainer('postgres:18-alpine')
     .withDatabase('test_db')
     .withUsername('test')
     .withPassword('test')
