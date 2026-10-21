@@ -592,7 +592,7 @@ describe('Service (E2E)', () => {
 
     it('should return 404 for metrics of non-existent service', async () => {
       await request(httpServer)
-        .get('/api/services/00000000-0000-0000-0000-000000000001/metrics')
+        .get('/api/services/00000000-0000-0000-0000-000000000000/metrics')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .expect(404);
     });

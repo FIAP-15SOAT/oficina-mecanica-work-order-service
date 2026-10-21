@@ -55,9 +55,20 @@ interface LogCaptureSeam {
   snapshotBootstrap(): void;
 }
 
+// nestjs-pino 5 builds one pino-http per process on first use, so a later app in the same suite
+// keeps writing to the first app's destination: every capture shares it and redirects the sink.
+// shortcut: the first app of a suite must capture logs, or later captures get nothing; route
+// every app through this destination if a suite ever mixes them in the other order.
+let activeSink: (line: string) => void = () => undefined;
+const sharedDestination: DestinationStream = { write: (line: string) => activeSink(line) };
+
 function createLogCapture(): LogCaptureSeam {
   let raw: string[] = [];
   let bootstrap: Record<string, unknown>[] = [];
+
+  activeSink = (line) => {
+    raw.push(line);
+  };
 
   const parse = (lines: string[]): Record<string, unknown>[] =>
     lines
@@ -66,11 +77,7 @@ function createLogCapture(): LogCaptureSeam {
       .map((line) => JSON.parse(line) as Record<string, unknown>);
 
   return {
-    destination: {
-      write: (line: string) => {
-        raw.push(line);
-      },
-    },
+    destination: sharedDestination,
     capture: {
       lines: () => parse(raw),
       bootstrapLines: () => bootstrap,

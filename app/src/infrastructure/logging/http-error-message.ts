@@ -2,7 +2,7 @@ import { HttpException } from '@nestjs/common';
 import { Request } from 'express';
 
 import { MAX_TEXT_LENGTH, sanitizeText } from './redaction/text-sanitizer';
-import { buildQueryString, sanitizeUrlPath } from './url-attributes';
+import { buildQueryString, resolveRequestPath, sanitizeUrlPath } from './url-attributes';
 
 const MAX_DETAIL_ENTRIES = 10;
 
@@ -41,7 +41,7 @@ function isFrameworkNotFound(detail: string, request: unknown, status: number): 
 }
 
 function buildUnmatchedRouteMessage(request: Request): string {
-  const path = sanitizeUrlPath(request.path ?? request.url ?? '');
+  const path = sanitizeUrlPath(resolveRequestPath(request));
   const query = buildQueryString(request);
   const querySuffix = query ? `?${query}` : '';
 

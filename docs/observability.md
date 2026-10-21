@@ -169,6 +169,8 @@ node --require ./dist/src/otel.js dist/src/main
 
 A instrumentação funciona **substituindo funções da biblioteca no momento em que ela é carregada**, e `import { AppModule }` no topo de `main.ts` já arrasta `express` e `pg` na avaliação dos módulos. Registrar depois produz um processo que sobe normalmente, **não emite nada e não reporta erro** — por isso `src/otel.ts` importa apenas folhas puras da aplicação (`logger.config`, `health.constants`, `url-attributes` e a cadeia de redação), nenhuma das quais carrega `express`, `pg` ou `pino` transitivamente.
 
+O NestJS 12 é distribuído só como ESM e carrega o `express` por `import`, um caminho que os hooks de `require` das instrumentações não enxergam. Por isso o preload também registra o hook ESM `@opentelemetry/instrumentation/hook.mjs` (`module.register`) antes de iniciar o SDK; sem ele, os spans do `express` e o `http.route` parametrizado desaparecem sem que nenhum teste perceba. O hook só é registrado com a telemetria ligada e só na thread principal, porque o Node também executa os `--require` dentro da thread de hooks e um segundo SDK ali exportaria cada sinal duas vezes.
+
 Quatro instrumentações, nomeadas: `http`, `express` (que é quem resolve `http.route` **parametrizado**, a dimensão de toda métrica por rota), `pg` (o driver que de fato executa as consultas, já que o `PrismaService` entrega um `pg.Pool` explícito) e `runtime-node`. **Nenhum metapacote**, e **nenhum span criado por código de negócio**.
 
 ### Correlação log-trace

@@ -2,6 +2,7 @@
  * Os módulos do SDK são carregados **dentro** de `startTelemetry`, depois do
  * interruptor. Com `import` de topo, o preload pagava o SDK inteiro mesmo com a telemetria desligada
  */
+import { isMainThread } from 'node:worker_threads';
 import type { DiagLogLevel } from '@opentelemetry/api';
 import type { NodeSDK } from '@opentelemetry/sdk-node';
 
@@ -30,7 +31,16 @@ function startTelemetry(): NodeSDK | undefined {
     return undefined;
   }
 
+  // Node also runs `--require` preloads inside the module-hooks thread that
+  // `registerEsmInstrumentationHook` spawns; a second SDK there would export
+  // every signal twice.
+  if (!isMainThread) {
+    return undefined;
+  }
+
   try {
+    registerEsmInstrumentationHook();
+
     const sdk = createTelemetrySdk();
 
     // Só o encerramento precisa da instância, e ele vive num hook do Nest: o
@@ -47,6 +57,16 @@ function startTelemetry(): NodeSDK | undefined {
 
     return undefined;
   }
+}
+
+// NestJS 12 is ESM-only and loads `express` through `import`, which the
+// `require` hooks never see: without this loader the express spans, and
+// `http.route` with them, disappear while every test stays green.
+function registerEsmInstrumentationHook(): void {
+  const { register } = require('node:module') as typeof import('node:module');
+  const { pathToFileURL } = require('node:url') as typeof import('node:url');
+
+  register('@opentelemetry/instrumentation/hook.mjs', pathToFileURL(__filename));
 }
 
 function createTelemetrySdk(): NodeSDK {
