@@ -62,7 +62,7 @@ Dentro do **Sistema da Oficina Mecânica** estão os cinco blocos implantáveis 
 | Container | Tecnologia | Responsabilidade |
 |---|---|---|
 | **API Gateway** | AWS HTTP API | Entrada pública; encaminha `/customer-auth/login` à Lambda e `/api/{proxy+}` ao NLB interno pelo VPC Link |
-| **API REST** | NestJS 11 · Node.js 22 · TypeScript no EKS | Expõe `/api`, concentra a lógica de negócio em Clean Architecture e envia notificações |
+| **API REST** | NestJS 12 · Node.js 24 · TypeScript no EKS | Expõe `/api`, concentra a lógica de negócio em Clean Architecture e envia notificações |
 | **Customer Auth** | AWS Lambda · Node.js 24 | Valida CPF, senha e status e emite `customer-jwt` RS256 |
 | **Banco de Dados** | PostgreSQL 16 (Amazon RDS) | Armazena todas as entidades de negócio (clientes, veículos, ordens de serviço, peças/insumos, orçamentos, estoque, usuários); serviço **gerenciado, fora do cluster**, alcançado pela rede a partir das subnets privadas |
 | **Coleta de Telemetria** | Datadog Agent no EKS | Coleta `stdout`, kubelet e OTLP da API e envia a telemetria ao Datadog |

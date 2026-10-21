@@ -74,7 +74,7 @@ services:
         condition: service_completed_successfully
 
   mailhog:
-    image: mailhog/mailhog:latest
+    image: mailhog/mailhog:v1.0.1
     container_name: techchallenge-mailhog
     restart: unless-stopped
     ports:

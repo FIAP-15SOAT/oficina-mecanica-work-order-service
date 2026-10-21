@@ -91,10 +91,10 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 
 ## 🧰 Stack
 
-- **Runtime**: Node.js 22 + TypeScript 5
-- **Framework**: NestJS 11
-- **ORM**: Prisma 7 (driver `@prisma/adapter-pg`, client gerado em `prisma/generated/`)
-- **Banco de dados**: PostgreSQL 16
+- **Runtime**: Node.js 24 + TypeScript 6
+- **Framework**: NestJS 12
+- **ORM**: Prisma 7.10 (driver `@prisma/adapter-pg`, client gerado em `prisma/generated/`)
+- **Banco de dados**: PostgreSQL 18
 - **Autenticação**: dois fluxos JWT isolados via `passport-jwt` — interno (HS256, access + refresh token, bcrypt) e externo por CPF + senha (RS256, emitido por uma função serverless dedicada) — ver [Autenticação](#-autenticação)
 - **E-mail**: Nodemailer + `@nestjs-modules/mailer` (SMTP via MailHog em desenvolvimento)
 - **Segurança HTTP**: Helmet, CORS configurável via `ALLOWED_ORIGINS`, `SanitizeStringsPipe` global, `ValidationPipe` global (`whitelist`, `forbidNonWhitelisted`, `transform`)
@@ -102,15 +102,15 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 - **Telemetria**: traces e métricas de negócio pelo SDK do OpenTelemetry, correlacionados ao log por `trace_id`, sem nenhuma dependência ou credencial de fornecedor na aplicação; desligada por padrão (endpoint vazio) — ver [ADR 0005](docs/adr/0005-opentelemetry.md)
 - **Health checks**: endpoints dedicados de vivacidade (`/api/health/live`) e prontidão (`/api/health/ready`), consumidos pelas três probes do Kubernetes, com encerramento gracioso — ver [ADR 0003](docs/adr/0003-health-checks.md)
 - **Documentação**: Swagger/OpenAPI (`@nestjs/swagger`) — disponível em `/api/docs`
-- **Testes**: Jest + ts-jest (unitários com mocks tipados e E2E com **Testcontainers** + PostgreSQL real)
+- **Testes**: Jest 30 + ts-jest (unitários com mocks tipados e E2E com **Testcontainers 12** + PostgreSQL 18 real)
 - **Qualidade**: SonarQube Cloud (Sonar Scan via GitHub Actions)
 - **Análise de segurança**: OWASP ZAP (DAST) e SonarQube (SAST/qualidade) — relatórios em `reports/`
-- **Containerização**: Docker (multi-stage `node:22-alpine`) + Docker Compose
+- **Containerização**: Docker (multi-stage `node:24-alpine`) + Docker Compose
 - **Linting**: ESLint 9 + Prettier 3
 
 ## ✅ Pré-requisitos
 
-- **Node.js 22+** e **npm** (apenas para o setup local)
+- **Node.js 24.9+** e **npm** (apenas para o setup local)
 - **Docker** + **Docker Compose** (recomendado para subir todos os serviços)
 - **Git**
 

@@ -69,7 +69,7 @@ Os 5 jobs de validação rodam **em paralelo** (fail-fast); passando todos, o `o
 | # | Step no workflow | O que faz |
 | --- | --- | --- |
 | 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
-| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 22 com cache npm, `npm ci` e `prisma generate` em `app/`. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm, `npm ci` e `prisma generate` em `app/`. |
 | 3 | Lint | Executa `npm run lint`; formatação e dependências proibidas entre camadas reprovam. |
 
 #### `unit-tests` — Unit Tests
@@ -77,7 +77,7 @@ Os 5 jobs de validação rodam **em paralelo** (fail-fast); passando todos, o `o
 | # | Step no workflow | O que faz |
 | --- | --- | --- |
 | 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
-| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 22 com cache npm, `npm ci` e `prisma generate` em `app/`. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm, `npm ci` e `prisma generate` em `app/`. |
 | 3 | Unit tests with coverage | Executa `npm run test:cov`, com cobertura unitária. |
 
 #### `e2e-tests` — E2E Tests
@@ -85,7 +85,7 @@ Os 5 jobs de validação rodam **em paralelo** (fail-fast); passando todos, o `o
 | # | Step no workflow | O que faz |
 | --- | --- | --- |
 | 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
-| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 22 com cache npm, `npm ci` e `prisma generate` em `app/`. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm, `npm ci` e `prisma generate` em `app/`. |
 | 3 | E2E tests with coverage | Executa `npm run test:e2e:cov` com PostgreSQL descartável via Testcontainers. |
 
 #### `build` — Build
@@ -93,7 +93,7 @@ Os 5 jobs de validação rodam **em paralelo** (fail-fast); passando todos, o `o
 | # | Step no workflow | O que faz |
 | --- | --- | --- |
 | 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
-| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 22 com cache npm, `npm ci` e `prisma generate` em `app/`. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm, `npm ci` e `prisma generate` em `app/`. |
 | 3 | Build | Compila/empacota a aplicação em `app/dist` com o comando de build do projeto. |
 | 4 | Telemetry preload smoke | Executa `npm run test:smoke` fora do Jest; verifica o preload/instrumentações no runtime compilado após o build. |
 
@@ -102,7 +102,7 @@ Os 5 jobs de validação rodam **em paralelo** (fail-fast); passando todos, o `o
 | # | Step no workflow | O que faz |
 | --- | --- | --- |
 | 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
-| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 22 com cache npm, `npm ci` e `prisma generate` em `app/`. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm, `npm ci` e `prisma generate` em `app/`. |
 | 3 | Reset and seed the throwaway database | Executa `npm run db:reset` sobre o service container PostgreSQL; prova migrations do zero e seed sem tocar o banco real. |
 
 #### `open-pr` — Open Pull Request
@@ -193,7 +193,7 @@ O seed **não** é um passo destrutivo. Como os seeds são idempotentes (`upsert
 | # | Step | O que faz |
 |---|---|---|
 | 1 | Checkout | `actions/checkout` com `fetch-depth: 0` (histórico completo, exigido pelo Sonar) |
-| 2 | Setup CI | composite `setup-ci`: Node 22 + cache npm, `npm ci`, `prisma generate` |
+| 2 | Setup CI | composite `setup-ci`: Node 24 + cache npm, `npm ci`, `prisma generate` |
 | 3 | Unit tests with coverage | `npm run test:cov` — gera o `lcov.info` consumido pelo Sonar |
 | 4 | SonarQube Scan | `SonarSource/sonarqube-scan-action` (`projectBaseDir: app`, autenticado por `SONAR_TOKEN`) |
 | → | *resultado — Quality Gate* | com `sonar.qualitygate.wait=true` o run fica **vermelho** se o gate reprovar (não é um step) |
