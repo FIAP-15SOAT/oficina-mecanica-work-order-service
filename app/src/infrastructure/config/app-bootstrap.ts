@@ -3,6 +3,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 
 import { GLOBAL_PREFIX } from '@infrastructure/http/http.constants';
+import { rejectOutsideGlobalPrefix } from '@infrastructure/http/outside-prefix.middleware';
 import { DateSerializerInterceptor } from '@infrastructure/http/interceptors/date-serializer.interceptor';
 import { SanitizeStringsPipe } from '@infrastructure/http/pipes/sanitize-strings.pipe';
 import { REQUEST_ID_HEADER } from '@infrastructure/logging/access-log.builder';
@@ -54,6 +55,7 @@ export function configureApp(
 
   app.setGlobalPrefix(GLOBAL_PREFIX);
   app.use(helmet());
+  app.use(rejectOutsideGlobalPrefix);
 
   const proxyWarnings = applyTrustProxy(app, trustedProxies);
 

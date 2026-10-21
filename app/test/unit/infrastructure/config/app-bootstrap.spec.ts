@@ -8,6 +8,7 @@ import {
 } from '@infrastructure/config/app-bootstrap';
 import { setupSwagger } from '@infrastructure/config/swagger.config';
 import { GLOBAL_PREFIX } from '@infrastructure/http/http.constants';
+import { rejectOutsideGlobalPrefix } from '@infrastructure/http/outside-prefix.middleware';
 import { TRUST_PROXY_REJECTED_WARNING } from '@infrastructure/logging/logger.config';
 
 jest.mock('@infrastructure/config/swagger.config', () => ({ setupSwagger: jest.fn() }));
@@ -82,12 +83,14 @@ describe('configureApp', () => {
     expect(calls).toEqual([
       'setGlobalPrefix',
       'use',
+      'use',
       'set',
       'useGlobalPipes',
       'useGlobalInterceptors',
       'enableCors',
     ]);
     expect(setupSwagger).toHaveBeenCalledWith(app);
+    expect(app.use).toHaveBeenNthCalledWith(2, rejectOutsideGlobalPrefix);
   });
 
   it('should not register swagger unless it is asked for', () => {
