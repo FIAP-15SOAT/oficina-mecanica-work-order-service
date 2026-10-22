@@ -31,10 +31,10 @@ A solução é criada em **sete camadas** com ciclos de vida distintos — seis 
 | # | Camada / Repositório | Ferramenta | O que provisiona | Estado |
 |---|---|---|---|---|
 | 1 | **`oficina-mecanica-infra-base`** | Terraform | Rede AWS (VPC, subnets públicas/privadas, IGW, NAT Gateway, Route Tables) | S3 `infra/prod-simulated/infra-base/terraform.tfstate` |
-| 2 | **`oficina-mecanica-infra-k8s`** | Terraform + Helm | EKS (cluster + node group), ECR, NLB interno, CloudWatch, Security Group, Namespace, `metrics-server` | S3 `infra/prod-simulated/k8s/terraform.tfstate` |
+| 2 | **`oficina-mecanica-infra-k8s`** | Terraform + Helm | EKS (cluster + node group), ECR, NLB interno, CloudWatch, Security Group, Namespace, `metrics-server` | S3 `infra/prod-simulated/infra-k8s/terraform.tfstate` |
 | 3 | **`oficina-mecanica-infra-database`** | Terraform | **Amazon RDS (PostgreSQL 16 gerenciado)**, fora do cluster, nas subnets privadas da VPC | S3 `infra/prod-simulated/database/terraform.tfstate` |
 | 4 | **`oficina-mecanica-work-order-service` (`k8s/*.yaml`)** | **CD (`kubectl`)** | API (Deployment/Service/HPA), ConfigMap, Secret, MailHog, Job de migração | Sem state — reaplicado a cada deploy |
-| 5 | **`oficina-mecanica-api-gateway`** | Terraform | **AWS API Gateway (HTTP API)**, stage, VPC Link, security group e log de acesso — a **API Gateway** da solução | S3 `infra/prod-simulated/gateway/terraform.tfstate` |
+| 5 | **`oficina-mecanica-api-gateway`** | Terraform | **AWS API Gateway (HTTP API)**, stage, VPC Link, security group e log de acesso — a **API Gateway** da solução | S3 `infra/prod-simulated/api-gateway/terraform.tfstate` |
 | 6 | **`oficina-mecanica-lambda-customer-auth`** | Terraform | **AWS Lambda** de autenticação externa de clientes, nas subnets privadas: função, security group próprio, log group, segredo da chave de assinatura, concorrência reservada e a `aws_lambda_permission` que autoriza o API Gateway a invocá-la | S3 `infra/prod-simulated/lambda-customer-auth/terraform.tfstate` |
 | 7 | **`oficina-mecanica-custom-monitoring`** | Terraform | Quatro dashboards, oito monitores de query, um teste sintético com monitor associado e a configuração de tags da métrica de latência no Datadog | S3 `infra/prod-simulated/custom-monitoring/terraform.tfstate` |
 
@@ -66,8 +66,8 @@ O mapa **"quem provisiona o quê / para que serve"**, agrupado pelas sete camada
 | **ECR** (+ lifecycle policy) | `ecr.tf` | Registry das imagens da API; `scan_on_push`; criptografia `AES256`; **mantém as últimas 20 imagens** |
 | **Namespace** `oficina` | `k8s_namespace.tf` | Namespace compartilhado de toda a solução |
 | **metrics-server** (Helm `3.13.0`) | `k8s_metrics_server.tf` | Métricas de CPU/memória em `kube-system`; **habilita o HPA** |
-| **NLB interno** `nlb-oficina-mecanica-api` | `nlb.tf` | Fronteia a API para o API Gateway; nas **subnets privadas**, sem IP público, com **cross-zone habilitado** (um nó só em duas AZs) |
-| **Target Group** `tg-oficina-mecanica-api` | `nlb.tf` | Alvos do tipo `instance` na **NodePort `30080`**; health check **HTTP em `/api/health/ready`** — o mesmo endpoint da `readinessProbe` |
+| **NLB interno** `nlb-oficina-mecanica` | `nlb.tf` | Fronteia a API para o API Gateway; nas **subnets privadas**, sem IP público, com **cross-zone habilitado** (um nó só em duas AZs) |
+| **Target Group** `tg-oficina-mecanica-work-order` | `nlb.tf` | Alvos do tipo `instance` na **NodePort `30080`**; health check **HTTP em `/api/health/ready`** — o mesmo endpoint da `readinessProbe` |
 | **Listener TCP:80** + **Autoscaling Attachment** | `nlb.tf` | Encaminha ao target group e mantém os nós do ASG registrados automaticamente, inclusive após substituição do node group |
 | **Regra de ingress** da NodePort | `nlb.tf` | Libera a `30080` no SG gerenciado do cluster **apenas para a CIDR da VPC** |
 

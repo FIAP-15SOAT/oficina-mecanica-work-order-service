@@ -16,7 +16,7 @@ Adotar a **AWS** como provedor de nuvem único do projeto, via conta AWS Academy
 
 - **Amazon EKS** (Kubernetes gerenciado) para orquestração dos containers da aplicação.
 - **Amazon RDS** (PostgreSQL 16 gerenciado) para a persistência relacional, **fora do cluster**.
-- **Terraform**, dividido em stacks com states independentes por camada (rede, plataforma Kubernetes, banco — ver [`docs/infra/overview.md`](../infra/overview.md#as-quatro-camadas-de-provisionamento)), para toda a infraestrutura declarativa.
+- **Terraform**, dividido em stacks com states independentes por camada (rede, plataforma Kubernetes, banco — ver [`docs/infra/overview.md`](../infra/overview.md#as-sete-camadas-de-provisionamento)), para toda a infraestrutura declarativa.
 - **Amazon ECR** como registry de imagens da API, com scan on push e lifecycle policy.
 - **Amazon CloudWatch** para logs do control plane do EKS.
 
@@ -36,7 +36,7 @@ Ofereceria deploy mais simples, sem gestão de infraestrutura nenhuma. Descartad
 
 ### PostgreSQL self-hosted dentro do cluster (`StatefulSet`)
 
-Foi a abordagem de uma fase anterior do projeto, e não uma alternativa hipotética: o Postgres rodou dentro do EKS num `StatefulSet` com volume `emptyDir` (efêmero, sem persistência real entre reagendamentos de pod), consequência direta de o EBS CSI Driver não ter credenciais IAM disponíveis no ambiente Academy (a conta lab bloqueia IAM/IRSA). A análise completa dessa tentativa (incluindo os diagnósticos de `CrashLoopBackOff` com `gp2`/`gp3`) está registrada em [`docs/infra/kubernetes.md` › Armazenamento do PostgreSQL](../infra/kubernetes.md#armazenamento-do-postgresql-ausência-do-ebs-csi-driver-e-uso-de-emptydir). Foi abandonada em favor do Amazon RDS, fora do cluster — a mesma direção que aquela análise já apontava.
+Foi a abordagem de uma fase anterior do projeto, e não uma alternativa hipotética: o Postgres rodou dentro do EKS num `StatefulSet` com volume `emptyDir` (efêmero, sem persistência real entre reagendamentos de pod), consequência direta de o EBS CSI Driver não ter credenciais IAM disponíveis no ambiente Academy (a conta lab bloqueia IAM/IRSA). A análise completa dessa tentativa (incluindo os diagnósticos de `CrashLoopBackOff` com `gp2`/`gp3`) está registrada em [ADR 0001 do `oficina-mecanica-infra-database`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database/blob/main/docs/adr/0001-banco-gerenciado-amazon-rds.md#postgresql-auto-hospedado-dentro-do-cluster-eks). Foi abandonada em favor do Amazon RDS, fora do cluster — a mesma direção que aquela análise já apontava.
 
 ## Consequências
 
@@ -44,7 +44,7 @@ Foi a abordagem de uma fase anterior do projeto, e não uma alternativa hipotét
 
 - **RDS gerenciado** remove a necessidade de operar backup, patching de versão e failover do banco manualmente — ganho direto sobre a fase anterior (Postgres em `emptyDir`, que perdia todos os dados a cada reagendamento de pod).
 - **EKS demonstra competência real e transferível em Kubernetes gerenciado** (HPA, probes, `Deployment`/`Service`, manifests declarativos) — o conhecimento não fica preso à AWS; a mesma base de manifests funcionaria, com ajustes, em GKE ou AKS.
-- **Terraform em camadas com states independentes** (rede, plataforma, banco) permite evoluir ou recriar cada camada sem afetar as demais — detalhado em [`docs/infra/overview.md`](../infra/overview.md#as-quatro-camadas-de-provisionamento).
+- **Terraform em camadas com states independentes** (rede, plataforma, banco) permite evoluir ou recriar cada camada sem afetar as demais — detalhado em [`docs/infra/overview.md`](../infra/overview.md#as-sete-camadas-de-provisionamento).
 - **ECR com scan on push e lifecycle policy** (mantém as últimas 20 imagens) mantém a superfície de imagens sob controle sem esforço manual.
 
 ### Negativas / Trade-offs
