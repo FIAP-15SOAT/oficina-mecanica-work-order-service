@@ -23,7 +23,7 @@ A infraestrutura é provisionada em seis repositórios Terraform independentes:
 
 ## Estrutura e estados remotos
 
-Cada stack tem **state próprio** num backend S3 (bucket `bkt-oficina-mecanica`, região `us-east-1`), com chaves distintas:
+Cada stack tem **state próprio** num backend S3 (bucket dado pela variável de Actions da organização `TF_STATE_BUCKET`, passado no `terraform init` por `-backend-config`; região `us-east-1`), com chaves distintas:
 
 | Repositório | Camada | Chave do state (S3) |
 |---|---|---|
@@ -165,31 +165,38 @@ O cluster e o node group utilizam roles IAM gerenciadas pelo laboratório (`LabE
 Ordem de execução:
 
 ```bash
+# 0) Informa o bucket de state ao backend e às leituras de remote state
+export TF_STATE_BUCKET=<nome do bucket>
+export TF_VAR_aws_base_state_bucket="$TF_STATE_BUCKET"
+export TF_VAR_k8s_state_bucket="$TF_STATE_BUCKET"
+export TF_VAR_database_state_bucket="$TF_STATE_BUCKET"
+export TF_VAR_gateway_state_bucket="$TF_STATE_BUCKET"
+
 # 1) Provisiona a fundação de rede AWS
 cd oficina-mecanica-infra-base/terraform
 # Inicializa os providers e o backend remoto desta stack
-terraform init
+terraform init -backend-config="bucket=$TF_STATE_BUCKET"
 # Revisa o plano interativo e aplica os recursos desta stack
 terraform apply
 
 # 2) Provisiona o banco de dados Amazon RDS
 cd ../../oficina-mecanica-infra-database/terraform
 # Inicializa os providers e o backend remoto desta stack
-terraform init
+terraform init -backend-config="bucket=$TF_STATE_BUCKET"
 # Revisa o plano interativo e aplica os recursos desta stack
 terraform apply
 
 # 3) Provisiona o cluster EKS, ECR, NLB e recursos base
 cd ../../oficina-mecanica-infra-k8s/terraform
 # Inicializa os providers e o backend remoto desta stack
-terraform init
+terraform init -backend-config="bucket=$TF_STATE_BUCKET"
 # Revisa o plano interativo e aplica os recursos desta stack
 terraform apply -var="eks_cluster_role_name=<ROLE_CLUSTER>" -var="eks_node_role_name=<ROLE_NODE>"
 
 # 4) Provisiona o API Gateway e o caminho privado até o NLB
 cd ../../oficina-mecanica-api-gateway/terraform
 # Inicializa os providers e o backend remoto desta stack
-terraform init
+terraform init -backend-config="bucket=$TF_STATE_BUCKET"
 # Revisa o plano interativo e aplica os recursos desta stack
 terraform apply
 
@@ -203,14 +210,14 @@ npm run build
 # Provisiona a função usando o diretório app/dist gerado pelo build
 cd ../infra
 # Inicializa os providers e o backend remoto desta stack
-terraform init
+terraform init -backend-config="bucket=$TF_STATE_BUCKET"
 # Revisa o plano interativo e aplica os recursos desta stack
 terraform apply
 
 # 6) Provisiona dashboards, monitores e teste sintético
 cd ../../oficina-mecanica-custom-monitoring/terraform
 # Inicializa os providers e o backend remoto desta stack
-terraform init
+terraform init -backend-config="bucket=$TF_STATE_BUCKET"
 # Revisa o plano interativo e aplica os recursos desta stack
 terraform apply
 ```
