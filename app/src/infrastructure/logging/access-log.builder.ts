@@ -15,7 +15,7 @@ import {
   sanitizeText,
 } from './redaction/text-sanitizer';
 import { getRequestLogContext } from './request-log-context';
-import { buildQueryString, sanitizeUrlPath } from './url-attributes';
+import { buildQueryString, resolveRequestPath, sanitizeUrlPath } from './url-attributes';
 
 export const REQUEST_ID_HEADER = 'x-request-id';
 export const CORRELATION_ID_HEADER = 'x-correlation-id';
@@ -157,9 +157,7 @@ function isSuppressedHealthProbe(request: IncomingMessage, response: ServerRespo
     return false;
   }
 
-  const { path, url } = request as Request;
-
-  return isHealthProbePath(path ?? url ?? '');
+  return isHealthProbePath(resolveRequestPath(request as Request));
 }
 
 export function buildAccessLogAttributes(
@@ -183,7 +181,7 @@ function buildAttributes(
 ): Record<string, unknown> {
   const outcome = resolveCompletionOutcome(request, response, error);
   const context = getRequestLogContext(response);
-  const path = request.path ?? request.url ?? '';
+  const path = resolveRequestPath(request);
 
   const attributes: Record<string, unknown> = {
     'http.request.method': request.method,
@@ -300,7 +298,7 @@ function buildBodyAttributes(
     return {};
   }
 
-  const resource = extractResourceSegment(request.path ?? '');
+  const resource = extractResourceSegment(resolveRequestPath(request));
 
   if (resource !== undefined && BODY_CAPTURE_EXCLUDED_RESOURCES.has(resource)) {
     return {};

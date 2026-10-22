@@ -10,7 +10,7 @@ Setup local (API na máquina, infra no Docker), variáveis de ambiente e dados d
 
 ## Setup local
 
-Neste modo a API roda diretamente na sua máquina com `npm run start:dev`, enquanto apenas a infraestrutura (PostgreSQL e MailHog) é provida via Docker.
+Neste modo a API roda diretamente na sua máquina com `npm run start:dev`, enquanto apenas a infraestrutura (PostgreSQL 18 e MailHog) é provida via Docker. Pré-requisitos: **Node.js 24.9+** (24.15+ para os comandos de geração do CLI, como `nest generate`, mínimo do `@nestjs/schematics` 12) e Docker com Docker Compose.
 
 ### MailHog
 
@@ -45,6 +45,8 @@ npm run db:setup
 # 5. Iniciar a aplicação em modo watch
 npm run start:dev
 ```
+
+> **Vindo do PostgreSQL 16?** O volume `postgres_data` criado pela versão anterior do compose não serve para o PostgreSQL 18, que guarda os dados num subdiretório por versão (o volume agora é montado em `/var/lib/postgresql`). Recrie-o antes do passo 3 com `docker compose down -v`, que **apaga os dados locais**, e rode o passo 4 de novo.
 
 Após a inicialização:
 

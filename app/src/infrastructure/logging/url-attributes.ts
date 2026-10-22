@@ -31,6 +31,17 @@ export const ENCODED_MARKER = '[ENCODED]';
  */
 const UTF8_DECODER = new TextDecoder('utf-8', { fatal: false });
 
+/**
+ * Full request path. Express strips a router's mount point from `path` (it moves
+ * to `baseUrl`), and NestJS 12 answers the 404 from a router mounted at the global
+ * prefix: without `baseUrl` the line lost `/api`.
+ */
+export function resolveRequestPath(
+  request: Partial<Pick<Request, 'baseUrl' | 'path' | 'url'>>,
+): string {
+  return `${request.baseUrl ?? ''}${request.path ?? request.url ?? ''}`;
+}
+
 export function sanitizeUrlPath(path: string): string {
   return sanitizeText(canonicalize(truncateText(path, MAX_URL_PATH_LENGTH)), MAX_URL_PATH_LENGTH);
 }

@@ -575,6 +575,19 @@ describe('Structured logging (E2E)', () => {
       expect(routes).toEqual(['/api/customers/:id', '/api/customers/:id']);
     });
 
+    // NestJS 12 mounts its 404 only under the global prefix; outside it Express
+    // answered an HTML 404, which the DAST flags as an unexpected content type.
+    it('should answer a path outside the global prefix with the JSON 404 envelope', async () => {
+      const res = await request(httpServer).get('/rota-fora-do-prefixo').expect(404);
+
+      expect(res.headers['content-type']).toMatch(/^application\/json/);
+      expect(res.body).toEqual({
+        statusCode: 404,
+        error: 'Not Found',
+        message: 'Cannot GET /rota-fora-do-prefixo',
+      });
+    });
+
     it('should omit the route template when no route matched', async () => {
       await request(httpServer).get('/api/rota-inexistente').expect(404);
 

@@ -1,7 +1,4 @@
-import pino from 'pino';
 import { Logger as NestLogger, PinoLogger } from 'nestjs-pino';
-import { __resetOutOfContextForTests } from 'nestjs-pino/PinoLogger';
-import { storage, Store } from 'nestjs-pino/storage';
 
 import { QuoteStatus } from '@domain/enums/quote-status.enum';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
@@ -12,26 +9,24 @@ import { PinoLoggerAdapter } from '@infrastructure/logging/pino-logger.adapter';
 import { REDACTED } from '@infrastructure/logging/redaction/text-sanitizer';
 import { captureDiagnostics } from '../../../helpers/diagnostics-capture';
 
+// nestjs-pino 5 builds its root logger once per process and exposes no reset, so every
+// PinoLogger in this file shares one destination and each test points it at its own buffer.
+let sink: (line: string) => void = () => undefined;
+const params = buildLoggerParams({ write: (line: string) => sink(line) }, 'debug');
+
+function captureLines(): Record<string, unknown>[] {
+  const lines: Record<string, unknown>[] = [];
+  sink = (line) => lines.push(JSON.parse(line) as Record<string, unknown>);
+  return lines;
+}
+
 describe('PinoLoggerAdapter', () => {
   let lines: Record<string, unknown>[];
   let pinoLogger: PinoLogger;
   let adapter: PinoLoggerAdapter;
-  let options: pino.LoggerOptions;
-  let stream: { write: (line: string) => void };
 
   beforeEach(() => {
-    lines = [];
-    stream = {
-      write: (line: string) => {
-        lines.push(JSON.parse(line) as Record<string, unknown>);
-      },
-    };
-
-    __resetOutOfContextForTests();
-
-    const params = buildLoggerParams(stream, 'debug');
-    options = (params.pinoHttp as [pino.LoggerOptions, pino.DestinationStream])[0];
-
+    lines = captureLines();
     pinoLogger = new PinoLogger(params);
     adapter = new PinoLoggerAdapter(pinoLogger);
   });
@@ -46,13 +41,12 @@ describe('PinoLoggerAdapter', () => {
   });
 
   it('should preserve request.id when a scoped logger is used inside a request context', () => {
-    const requestLogger = pino(options, stream).child({
-      'request.id': 'req-abc',
-    });
-
-    storage.run(new Store(requestLogger), () => {
-      adapter.forContext('ApproveQuoteUseCase').info('quote approved');
-    });
+    pinoLogger.runInContext(
+      () => {
+        adapter.forContext('ApproveQuoteUseCase').info('quote approved');
+      },
+      { bindings: { 'request.id': 'req-abc' } },
+    );
 
     expect(lines).toHaveLength(1);
     expect(lines[0]['request.id']).toBe('req-abc');
@@ -60,16 +54,15 @@ describe('PinoLoggerAdapter', () => {
   });
 
   it('should keep request.id on every call made through the same scoped logger', () => {
-    const requestLogger = pino(options, stream).child({
-      'request.id': 'req-abc',
-    });
-
     const scoped = adapter.forContext('ApproveQuoteUseCase');
 
-    storage.run(new Store(requestLogger), () => {
-      scoped.info('first');
-      scoped.info('second');
-    });
+    pinoLogger.runInContext(
+      () => {
+        scoped.info('first');
+        scoped.info('second');
+      },
+      { bindings: { 'request.id': 'req-abc' } },
+    );
 
     expect(lines.map((line) => line['request.id'])).toEqual(['req-abc', 'req-abc']);
   });
@@ -77,13 +70,8 @@ describe('PinoLoggerAdapter', () => {
   it('should not carry a scope from another correlated request', () => {
     const scoped = adapter.forContext('ApproveQuoteUseCase');
 
-    storage.run(new Store(pino(options, stream).child({ 'request.id': 'a' })), () => {
-      scoped.info('first');
-    });
-
-    storage.run(new Store(pino(options, stream).child({ 'request.id': 'b' })), () => {
-      scoped.info('second');
-    });
+    pinoLogger.runInContext(() => scoped.info('first'), { bindings: { 'request.id': 'a' } });
+    pinoLogger.runInContext(() => scoped.info('second'), { bindings: { 'request.id': 'b' } });
 
     expect(lines.map((line) => line['request.id'])).toEqual(['a', 'b']);
   });
@@ -260,16 +248,8 @@ describe('PinoLoggerAdapter', () => {
 
 describe('PinoLoggerAdapter — evento com exceção anexada', () => {
   it('should carry the exception attributes alongside the event fields', () => {
-    const lines: Record<string, unknown>[] = [];
-    const stream = {
-      write: (line: string) => {
-        lines.push(JSON.parse(line) as Record<string, unknown>);
-      },
-    };
-
-    __resetOutOfContextForTests();
-
-    const adapter = new PinoLoggerAdapter(new PinoLogger(buildLoggerParams(stream, 'debug')));
+    const lines = captureLines();
+    const adapter = new PinoLoggerAdapter(new PinoLogger(params));
 
     adapter.event(
       BUSINESS_EVENTS.USER_STATUS_UPDATED,
@@ -299,24 +279,8 @@ describe('PinoLoggerAdapter — evento com exceção anexada', () => {
 describe('saída — a mensagem também passa pela redação', () => {
   const SENSITIVE = 'postgresql://app:S3nh4Secreta@db:5432/oficina para maria.silva@gmail.com';
 
-  function captureLines(): {
-    lines: Record<string, unknown>[];
-    params: ReturnType<typeof buildLoggerParams>;
-  } {
-    const lines: Record<string, unknown>[] = [];
-    const stream = {
-      write: (line: string) => {
-        lines.push(JSON.parse(line) as Record<string, unknown>);
-      },
-    };
-
-    __resetOutOfContextForTests();
-
-    return { lines, params: buildLoggerParams(stream, 'debug') };
-  }
-
   it('should sanitize a message emitted through the application port', () => {
-    const { lines, params } = captureLines();
+    const lines = captureLines();
 
     new PinoLoggerAdapter(new PinoLogger(params)).warn(`falha em ${SENSITIVE}`);
 
@@ -326,7 +290,7 @@ describe('saída — a mensagem também passa pela redação', () => {
   });
 
   it('should sanitize the message the framework bridge lifts from err.message', () => {
-    const { lines, params } = captureLines();
+    const lines = captureLines();
 
     const bridge = new NestLogger(new PinoLogger(params), params);
 
@@ -338,7 +302,7 @@ describe('saída — a mensagem também passa pela redação', () => {
   });
 
   it('should leave an ordinary message untouched', () => {
-    const { lines, params } = captureLines();
+    const lines = captureLines();
 
     new PinoLoggerAdapter(new PinoLogger(params)).info('http server accepting connections');
 

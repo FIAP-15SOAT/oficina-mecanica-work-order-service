@@ -91,10 +91,10 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 
 ## 🧰 Stack
 
-- **Runtime**: Node.js 22 + TypeScript 5
-- **Framework**: NestJS 11
-- **ORM**: Prisma 7 (driver `@prisma/adapter-pg`, client gerado em `prisma/generated/`)
-- **Banco de dados**: PostgreSQL 16
+- **Runtime**: Node.js 24 + TypeScript 6
+- **Framework**: NestJS 12
+- **ORM**: Prisma 7.10 (driver `@prisma/adapter-pg`, client gerado em `prisma/generated/`)
+- **Banco de dados**: PostgreSQL 18
 - **Autenticação**: dois fluxos JWT isolados via `passport-jwt` — interno (HS256, access + refresh token, bcrypt) e externo por CPF + senha (RS256, emitido por uma função serverless dedicada) — ver [Autenticação](#-autenticação)
 - **E-mail**: Nodemailer + `@nestjs-modules/mailer` (SMTP via MailHog em desenvolvimento)
 - **Segurança HTTP**: Helmet, CORS configurável via `ALLOWED_ORIGINS`, `SanitizeStringsPipe` global, `ValidationPipe` global (`whitelist`, `forbidNonWhitelisted`, `transform`)
@@ -102,15 +102,15 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 - **Telemetria**: traces e métricas de negócio pelo SDK do OpenTelemetry, correlacionados ao log por `trace_id`, sem nenhuma dependência ou credencial de fornecedor na aplicação; desligada por padrão (endpoint vazio) — ver [ADR 0005](docs/adr/0005-opentelemetry.md)
 - **Health checks**: endpoints dedicados de vivacidade (`/api/health/live`) e prontidão (`/api/health/ready`), consumidos pelas três probes do Kubernetes, com encerramento gracioso — ver [ADR 0003](docs/adr/0003-health-checks.md)
 - **Documentação**: Swagger/OpenAPI (`@nestjs/swagger`) — disponível em `/api/docs`
-- **Testes**: Jest + ts-jest (unitários com mocks tipados e E2E com **Testcontainers** + PostgreSQL real)
+- **Testes**: Jest 30 + ts-jest (unitários com mocks tipados e E2E com **Testcontainers 12** + PostgreSQL 18 real)
 - **Qualidade**: SonarQube Cloud (Sonar Scan via GitHub Actions)
 - **Análise de segurança**: OWASP ZAP (DAST) e SonarQube (SAST/qualidade) — relatórios em `reports/`
-- **Containerização**: Docker (multi-stage `node:22-alpine`) + Docker Compose
+- **Containerização**: Docker (multi-stage `node:24-alpine`) + Docker Compose
 - **Linting**: ESLint 9 + Prettier 3
 
 ## ✅ Pré-requisitos
 
-- **Node.js 22+** e **npm** (apenas para o setup local)
+- **Node.js 24.9+** e **npm** (apenas para o setup local); para os comandos de geração do CLI (`nest generate`, `nest upgrade`), **24.15+**, que é o mínimo do `@nestjs/schematics` 12 (abaixo disso o `npm ci` avisa `EBADENGINE`)
 - **Docker** + **Docker Compose** (recomendado para subir todos os serviços)
 - **Git**
 
@@ -155,7 +155,7 @@ Para parar e remover os containers:
 docker compose down
 ```
 
-> O `Dockerfile` é multi-stage (`node:22-alpine` builder + runtime), executa `prisma generate` no build e tem `CMD ["node", "--require", "./dist/src/otel.js", "dist/src/main"]` — **só a aplicação**. O `--require` carrega o preload do OpenTelemetry **antes** de `express` e `pg` serem importados, que é a única ordem em que a instrumentação consegue aplicar o patch; sem `OTEL_EXPORTER_OTLP_ENDPOINT` ele retorna cedo e não carrega nada (ver [ADR 0005](docs/adr/0005-opentelemetry.md)). Em produção, o CD obtém esse valor de `vars.OTEL_EXPORTER_OTLP_ENDPOINT`, renderiza e aplica o ConfigMap; o `app-deploy` aplica o Deployment com a imagem do commit e aguarda o rollout corrente, sem executar `rollout restart`. Valor vazio mantém o SDK desligado. A migração e o seed rodam num passo próprio: o serviço `migrate` do Compose localmente, e o Job `k8s/00-db-migrate-job.yaml` no CD.
+> O `Dockerfile` é multi-stage (`node:24-alpine` builder + runtime), executa `prisma generate` no build e tem `CMD ["node", "--require", "./dist/src/otel.js", "dist/src/main"]` — **só a aplicação**. O `--require` carrega o preload do OpenTelemetry **antes** de `express` e `pg` serem importados, que é a única ordem em que a instrumentação consegue aplicar o patch; sem `OTEL_EXPORTER_OTLP_ENDPOINT` ele retorna cedo e não carrega nada (ver [ADR 0005](docs/adr/0005-opentelemetry.md)). Em produção, o CD obtém esse valor de `vars.OTEL_EXPORTER_OTLP_ENDPOINT`, renderiza e aplica o ConfigMap; o `app-deploy` aplica o Deployment com a imagem do commit e aguarda o rollout corrente, sem executar `rollout restart`. Valor vazio mantém o SDK desligado. A migração e o seed rodam num passo próprio: o serviço `migrate` do Compose localmente, e o Job `k8s/00-db-migrate-job.yaml` no CD.
 
 > Em produção, a credencial do PostgreSQL não vem do GitHub. O job `prepare-deploy` do CD usa `vars.RDS_INSTANCE_IDENTIFIER` para descobrir o Secret gerenciado pelo RDS, lê `AWSCURRENT` e materializa `DATABASE_URL` com encoding/TLS em `database-credentials`, usando Node.js inline e stdin. Depois, `db-migrate` executa migration/seed e `app-deploy` aplica a imagem e aguarda o rollout. Job e Deployment consomem o mesmo Secret separado; `api-secret` contém somente JWTs e a chave pública. O escopo é deploy greenfield, com rotação desabilitada e sem annotation/output de versão da credencial. Veja o [ADR 0017](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md).
 

@@ -3,6 +3,7 @@ import { Request } from 'express';
 import {
   buildQueryString,
   ENCODED_MARKER,
+  resolveRequestPath,
   sanitizeUrlPath,
 } from '@infrastructure/logging/url-attributes';
 import {
@@ -17,6 +18,26 @@ const JWT =
 function createRequest(path: string, query: Record<string, unknown> = {}): Request {
   return { path, query } as unknown as Request;
 }
+
+describe('resolveRequestPath', () => {
+  it('should prepend the mount point Express strips inside a mounted router', () => {
+    expect(resolveRequestPath({ baseUrl: '/api', path: '/rota-inexistente' })).toBe(
+      '/api/rota-inexistente',
+    );
+  });
+
+  it('should keep the full path of a route registered on the application', () => {
+    expect(resolveRequestPath({ baseUrl: '', path: '/api/customers' })).toBe('/api/customers');
+  });
+
+  it('should fall back to the raw url when Express did not derive a path', () => {
+    expect(resolveRequestPath({ url: '/api/health/live' })).toBe('/api/health/live');
+  });
+
+  it('should return an empty path when the request carries none', () => {
+    expect(resolveRequestPath({})).toBe('');
+  });
+});
 
 describe('sanitizeUrlPath', () => {
   it('should keep an ordinary path untouched', () => {

@@ -8,7 +8,7 @@ inputs:
   node-version:
     description: Node.js version to set up
     required: false
-    default: "22"
+    default: "24"
   database-url:
     description: >-
       Throwaway DATABASE_URL used only so `prisma generate` can parse it. It is

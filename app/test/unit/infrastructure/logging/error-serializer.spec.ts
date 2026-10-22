@@ -116,10 +116,19 @@ describe('describeError', () => {
   });
 
   it('should bound the depth of the cause chain', () => {
+    // One frame per error: with full stacks the chain nears MAX_STACKTRACE_LENGTH,
+    // and longer CI paths cut it before the depth bound is what stops it.
+    const stackTraceLimit = Error.stackTraceLimit;
+    Error.stackTraceLimit = 1;
+
     let error = new Error('nível 0');
 
-    for (let level = 1; level <= 10; level += 1) {
-      error = new Error(`nível ${level}`, { cause: error });
+    try {
+      for (let level = 1; level <= 10; level += 1) {
+        error = new Error(`nível ${level}`, { cause: error });
+      }
+    } finally {
+      Error.stackTraceLimit = stackTraceLimit;
     }
 
     const stacktrace = describeError(error)['exception.stacktrace'] ?? '';

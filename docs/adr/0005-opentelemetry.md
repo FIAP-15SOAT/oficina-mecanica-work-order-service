@@ -33,6 +33,10 @@ Adotar o **SDK do OpenTelemetry** para traces e métricas, mantendo os logs onde
 
 `src/otel.ts` importa apenas folhas puras da aplicação (`logger.config`, `health.constants`, `url-attributes` e a cadeia de redação); nenhuma delas carrega `express`, `pg` ou `pino` transitivamente.
 
+### O preload registra o hook ESM do OTel
+
+O NestJS 12 é só ESM e carrega o `express` por `import`, que os hooks de `require` das instrumentações não veem: sem hook, os spans do `express` e o `http.route` parametrizado somem com todas as suítes verdes. O preload registra `@opentelemetry/instrumentation/hook.mjs` por `module.register` antes do `sdk.start()`, só com a telemetria ligada e só na thread principal, porque o Node também executa os `--require` na thread de hooks que o `register()` cria e ali subiria um segundo SDK. O hook tem custo: mais memória e um boot um pouco mais lento.
+
 ### Lista explícita de instrumentações
 
 `http`, `express`, `pg` e `runtime-node`. **Sem metapacote**: `auto-instrumentations-node` liga ~40 instrumentações — aws-sdk, redis, mongo, kafka, `fs` — e paga superfície de runtime e volume por bibliotecas que o projeto não usa.
@@ -157,6 +161,8 @@ Registradas com o **motivo**, para que não sejam reconsideradas do zero.
 
 | Alternativa | Por que não |
 | --- | --- |
+| **Hook ESM por `--experimental-loader` no `CMD`** | Mudaria o `CMD` do Dockerfile e o `start:prod`, e a documentação do OTel já aponta o `module.register` no bootstrap como caminho. |
+| **Loader síncrono do `import-in-the-middle` (`register-hooks.mjs`, sobre `module.registerHooks`)** | Roda na própria thread, sem a thread de hooks nem a guarda `isMainThread`, mas o OTel ainda não o suporta oficialmente: o único hook suportado é `@opentelemetry/instrumentation/hook.mjs`. O `module.register` é a depreciação documental DEP0205 no Node 24. Revisitar se o OTel adotar o `module.registerHooks`, se o Node remover o `module.register` ou na migração para o Node 26. |
 | **`dd-trace`** (tracer nativo do fornecedor) | Uma linha de setup e a melhor integração possível — ao custo de acoplar o fornecedor **na árvore de dependências da aplicação**, exatamente o que o ADR 0002 rejeitou em `winston-datadog`. Trocar de plataforma viraria mudança de código. Descartado em definitivo. |
 | **`@opentelemetry/auto-instrumentations-node`** | ~40 instrumentações por um pacote, incluindo `fs` (span por operação de arquivo). Superfície de runtime e volume por bibliotecas que o projeto não usa. O precedente do projeto é declarar por nome o que se configura por nome. |
 | **`@prisma/instrumentation`** | Exige `previewFeatures = ["tracing"]` no schema, acrescenta spans de fase do engine que ninguém lê, e mede uma camada acima do driver — pior granularidade por mais peso. O `pg.Pool` explícito do `PrismaService` torna `instrumentation-pg` estritamente melhor. |
