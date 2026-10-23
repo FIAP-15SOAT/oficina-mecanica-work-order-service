@@ -102,4 +102,4 @@ Prisma Client e não chamam RDS ou Secrets Manager.
 - [Kubernetes — Secrets](https://kubernetes.io/docs/concepts/configuration/secret/)
 - [Kubernetes — Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/)
 - [Prisma 7 — Connection URLs](https://www.prisma.io/docs/orm/v7/reference/connection-urls)
-- [Database ADR 0003 — Master password gerenciada pelo RDS](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md)
+- [Database ADR 0003 — Master password gerenciada pelo RDS](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md)

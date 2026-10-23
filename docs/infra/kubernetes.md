@@ -35,7 +35,7 @@ Os recursos em Kubernetes foram divididos por responsabilidade:
 | Recurso | Ownership | Onde é definido/aplicado |
 |---|---|---|
 | Namespace `oficina` | Terraform | [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s) (`terraform/k8s_namespace.tf`) |
-| Banco de dados relacional (Amazon RDS PostgreSQL) | Terraform, em **stack própria** | [`oficina-mecanica-infra-database`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database) — **fora do cluster**; nenhum manifesto em `k8s/` define workload de banco |
+| Banco de dados relacional (Amazon RDS PostgreSQL) e cache (ElastiCache Valkey) | Terraform, em **stack própria** | [`oficina-mecanica-infra-database-work-order`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order) — **fora do cluster**; nenhum manifesto em `k8s/` define workload de banco ou cache |
 | metrics-server | Terraform | [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s) (`terraform/k8s_metrics_server.tf`) |
 | DB migration Job (`00-db-migrate-job.yaml`) | Workflow de CD | Render + `kubectl apply` (job `db-migrate`) em `.github/workflows/cd.yml` |
 | Database Secret (`database-credentials`) | Workflow de CD | Job `prepare-deploy`: descoberta RDS + `GetSecretValue` e manifesto JSON por stdin; não há YAML com valor versionado |
@@ -136,14 +136,14 @@ Cada workload declara `requests` (o que o scheduler reserva) e `limits` (o teto 
 
 ## Banco de Dados Relacional (Amazon RDS)
 
-A persistência relacional da aplicação é fornecida pelo **Amazon RDS (PostgreSQL)**, gerenciado no repositório dedicado [`oficina-mecanica-infra-database`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database):
+A persistência relacional da aplicação é fornecida pelo **Amazon RDS (PostgreSQL)**, gerenciado no repositório dedicado [`oficina-mecanica-infra-database-work-order`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order):
 
-- Instância gerenciada PostgreSQL 16 (Single-AZ, `db.t4g.micro`, 20 GiB GP3).
-- Alocado nas subnets privadas da VPC, com Security Group restrito ao CIDR da VPC.
+- Instância gerenciada PostgreSQL 18 (`rds-oficina-mecanica-work-order`, Single-AZ, `db.t4g.micro`, 20 GiB GP3), acompanhada de uma instância ElastiCache Valkey 9.1 (`cache-oficina-mecanica-work-order`, `cache.t4g.micro`).
+- Alocados nas subnets privadas da VPC, com Security Groups restritos por origem (`secgrp-eks-nodes-oficina-mecanica`, mais as CIDRs privadas da VPC no RDS de forma transitória até a C-20).
 - A master password é gerada e mantida pelo RDS em um Secret do AWS Secrets Manager, com rotação automática desabilitada. O Terraform conhece ARN/status/KMS e metadados de conexão, não o valor da senha; `sensitive` sozinho não impediria sua presença no State.
 - O job `prepare-deploy` do CD descobre o Secret e o endpoint pelo identificador da instância, lê `AWSCURRENT` e materializa `DATABASE_URL` em `database-credentials` usando Node.js inline e manifesto JSON por stdin, com os parâmetros descritos em [Conexão obrigatoriamente cifrada (TLS)](#conexão-obrigatoriamente-cifrada-tls). Migration/seed ficam somente no job `db-migrate` seguinte.
 
-O [ADR de database sobre RDS](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database/blob/main/docs/adr/0001-banco-gerenciado-amazon-rds.md#postgresql-auto-hospedado-dentro-do-cluster-eks) preserva o diagnóstico histórico das tentativas de persistência com EBS CSI no EKS e as razões para abandonar `emptyDir`/`hostPath`.
+O [ADR de database sobre RDS](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0001-banco-gerenciado-amazon-rds.md#postgresql-auto-hospedado-dentro-do-cluster-eks) preserva o diagnóstico histórico das tentativas de persistência com EBS CSI no EKS e as razões para abandonar `emptyDir`/`hostPath`.
 
 ### Conexão obrigatoriamente cifrada (TLS)
 

@@ -2,7 +2,7 @@
 
 A infraestrutura é provisionada em seis repositórios Terraform independentes:
 - [`oficina-mecanica-infra-base`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base): Fundação de rede AWS (VPC, subnets públicas/privadas, IGW, NAT Gateway e Security Group de identidade dos nós do EKS).
-- [`oficina-mecanica-infra-database`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database): Banco de dados relacional gerenciado Amazon RDS (PostgreSQL).
+- [`oficina-mecanica-infra-database-work-order`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order): Banco de dados relacional Amazon RDS (PostgreSQL 18) e cache distribuído Amazon ElastiCache (Valkey 9.1) dedicados ao `work-order`.
 - [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s): Cluster Amazon EKS, Launch Template e Node Group gerenciado (2 nós `t3.medium`), ECRs por microsserviço, NLB interno multi-listener + SMTP, namespaces por serviço e `platform` (Datadog Agent e MailHog).
 - [`oficina-mecanica-api-gateway`](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway): HTTP API, VPC Link, integrações, rotas e logs de acesso.
 - [`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth): Função de autenticação externa, rede, segredo de assinatura e permissão do Gateway.
@@ -16,7 +16,7 @@ A infraestrutura é provisionada em seis repositórios Terraform independentes:
 - [Providers e versionamento](#providers-e-versionamento)
 - [Convenções: tags e nomenclatura](#convenções-tags-e-nomenclatura)
 - [Recursos provisionados — `oficina-mecanica-infra-base`](#recursos-provisionados--oficina-mecanica-infra-base)
-- [Recursos provisionados — `oficina-mecanica-infra-database`](#recursos-provisionados--oficina-mecanica-infra-database)
+- [Recursos provisionados — `oficina-mecanica-infra-database-work-order`](#recursos-provisionados--oficina-mecanica-infra-database-work-order)
 - [Recursos provisionados — `oficina-mecanica-infra-k8s`](#recursos-provisionados--oficina-mecanica-infra-k8s)
 - [Variáveis e saídas](#variáveis-e-saídas)
 - [Como aplicar localmente](#como-aplicar-localmente)
@@ -28,7 +28,7 @@ Cada stack tem **state próprio** num backend S3 (bucket dado pela variável de 
 | Repositório | Camada | Chave do state (S3) |
 |---|---|---|
 | [`oficina-mecanica-infra-base`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base) | Rede Cloud | `infra/prod-simulated/infra-base/terraform.tfstate` |
-| [`oficina-mecanica-infra-database`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database) | Banco de Dados (RDS) | `infra/prod-simulated/database/terraform.tfstate` |
+| [`oficina-mecanica-infra-database-work-order`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order) | Dados do `work-order` (RDS + Valkey) | `infra/prod-simulated/infra-database-work-order/terraform.tfstate` |
 | [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s) | EKS & Workloads | `infra/prod-simulated/infra-k8s/terraform.tfstate` |
 | [`oficina-mecanica-api-gateway`](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway) | Entrada pública | `infra/prod-simulated/api-gateway/terraform.tfstate` |
 | [`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth) | Autenticação externa | `infra/prod-simulated/lambda-customer-auth/terraform.tfstate` |
@@ -74,8 +74,10 @@ Em `oficina-mecanica-infra-k8s/terraform/providers.tf`, os providers `kubernetes
 | `aws_ecr_repository.service` | `ecr-${project}-<contexto>` | `ecr-oficina-mecanica-work-order` (e `identity`, `billing`, `inventory`) |
 | `aws_lb_target_group.service` | `tg-${project}-<contexto>` | `tg-oficina-mecanica-work-order` (e `identity`, `billing`, `inventory`) |
 | `aws_lb_target_group.smtp` | `tg-${project}-smtp` | `tg-oficina-mecanica-smtp` |
-| `rds_instance_name` | `rds-${project}` | `rds-oficina-mecanica` |
-| `secgrp_rds_name` | `secgrp-rds-${project}` | `secgrp-rds-oficina-mecanica` |
+| `rds_identifier` | `rds-${project}-${service_context}` | `rds-oficina-mecanica-work-order` |
+| `secgrp_rds_name` | `secgrp-rds-${project}-${service_context}` | `secgrp-rds-oficina-mecanica-work-order` |
+| `cache_replication_group_id` | `cache-${project}-${service_context}` | `cache-oficina-mecanica-work-order` |
+| `secgrp_cache_name` | `secgrp-cache-${project}-${service_context}` | `secgrp-cache-oficina-mecanica-work-order` |
 
 ## Recursos provisionados — `oficina-mecanica-infra-base`
 
@@ -93,16 +95,17 @@ Em `oficina-mecanica-infra-k8s/terraform/providers.tf`, os providers `kubernetes
 - **Security Group** `secgrp-eks-nodes-oficina-mecanica`: criado sem regras locais de ingress ou egress e exportado pelo output `eks_nodes_security_group_id`.
 - Anexado às ENIs dos worker nodes pelo Launch Template do `infra-k8s`, servindo como identidade lógica de origem (`source_security_group_id`) para liberar acesso mínimo dos pods às instâncias RDS PostgreSQL e ao Redis nos repositórios de dados da Fase 4, sem acoplamento circular com o ciclo de vida do cluster EKS.
 
-## Recursos provisionados — `oficina-mecanica-infra-database`
+## Recursos provisionados — `oficina-mecanica-infra-database-work-order`
 
-### Amazon RDS PostgreSQL (`rds.tf` e `security_group.tf`)
+### Amazon RDS PostgreSQL e ElastiCache Valkey (`rds.tf`, `elasticache.tf` e `security_group.tf`)
 
-- **Instância**: `db.t4g.micro` (PostgreSQL 16), com storage GP3 de 20 GiB.
-- **Subnet Group**: alocado exclusivamente nas subnets privadas da VPC (`private_subnet_ids`).
-- **Security Group**: porta `5432` liberada exclusivamente para a CIDR da VPC (`vpc_cidr`).
-- **Credencial**: `manage_master_user_password = true`; RDS gera e mantém o Secret com a chave padrão do Secrets Manager, Terraform exporta apenas seu ARN e a rotação automática fica desabilitada.
-- **State do database**: contém ARN, KMS key ID, status e metadados de conexão, mas não o valor da senha. Isso decorre do gerenciamento externo pelo RDS, não de `sensitive`, que apenas oculta a apresentação. O CD `prepare-deploy` consulta RDS/Secrets Manager diretamente, sem ler esse remote state.
-- **Resiliência**: `skip_final_snapshot = true` e `deletion_protection = false` ajustados para o escopo do laboratório AWS Academy.
+- **Instância RDS**: `db.t4g.micro` (PostgreSQL 18, `rds-oficina-mecanica-work-order`), com storage GP3 de 20 GiB.
+- **ElastiCache Valkey**: `cache.t4g.micro` (Valkey 9.1, `cache-oficina-mecanica-work-order`), single-node (`num_cache_clusters = 1`), TLS em trânsito obrigatório, criptografia em repouso e token AUTH gerado via `ephemeral "aws_secretsmanager_random_password"` e gravado com `auth_token_wo` / `secret_string_wo` no Secret `cache-oficina-mecanica-work-order-auth-token`.
+- **Subnet Groups**: `dbsng-oficina-mecanica-work-order` e `cachesng-oficina-mecanica-work-order` alocados nas subnets privadas da VPC (`private_subnet_ids`).
+- **Security Groups**: `secgrp-rds-oficina-mecanica-work-order` (porta `5432` liberada para `eks_nodes_security_group_id` e, de forma transitória até a C-20, para as CIDRs das subnets privadas da VPC) e `secgrp-cache-oficina-mecanica-work-order` (porta `6379` liberada exclusivamente para `eks_nodes_security_group_id`), ambos sem regras de egress.
+- **Credencial do RDS**: `manage_master_user_password = true`; RDS gera e mantém o Secret com a chave padrão do Secrets Manager, Terraform exporta apenas seu ARN e a rotação automática fica desabilitada.
+- **State do database**: contém ARNs, nomes de segredos e metadados de conexão, mas não o valor da senha do RDS nem o token do Valkey. O CD `prepare-deploy` consulta RDS/Secrets Manager diretamente, sem ler esse remote state.
+- **Resiliência**: `skip_final_snapshot = true`, `deletion_protection = false` e `recovery_window_in_days = 0` ajustados para o escopo do laboratório AWS Academy.
 
 ## Recursos provisionados — `oficina-mecanica-infra-k8s`
 
@@ -154,12 +157,14 @@ O control plane do cluster utiliza a role IAM gerenciada pelo laboratório (`Lab
 
 Outputs exportados pelo `infra-base`: `vpc_id`, `vpc_cidr`, `public_subnet_ids`, `private_subnet_ids` e `eks_nodes_security_group_id`.
 
-### `oficina-mecanica-infra-database` — variáveis
+### `oficina-mecanica-infra-database-work-order` — variáveis
 
 | Variável | Tipo | Default | Finalidade |
 |---|---|---|---|
+| `service_context` | `string` | `work-order` | Identificador do bounded context dono desta camada de dados |
 | `db_name` | `string` | `techchallenge` | Nome do banco inicial |
 | `db_username` | `string` | `techchallenge` | Usuário administrador |
+| `db_engine_version` | `string` | `18` | Versão do PostgreSQL no RDS |
 | `db_instance_class` | `string` | `db.t4g.micro` | Família de instância RDS |
 | `db_allocated_storage` | `number` | `20` | Tamanho do disco em GiB |
 
@@ -214,8 +219,8 @@ terraform init -backend-config="bucket=$TF_STATE_BUCKET"
 # Revisa o plano interativo e aplica os recursos desta stack
 terraform apply
 
-# 2) Provisiona o banco de dados Amazon RDS
-cd ../../oficina-mecanica-infra-database/terraform
+# 2) Provisiona o banco de dados Amazon RDS e o cache ElastiCache Valkey do work-order
+cd ../../oficina-mecanica-infra-database-work-order/terraform
 # Inicializa os providers e o backend remoto desta stack
 terraform init -backend-config="bucket=$TF_STATE_BUCKET"
 # Revisa o plano interativo e aplica os recursos desta stack

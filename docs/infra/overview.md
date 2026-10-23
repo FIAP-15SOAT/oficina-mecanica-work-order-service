@@ -32,7 +32,7 @@ A solução é criada em **sete camadas** com ciclos de vida distintos — seis 
 |---|---|---|---|---|
 | 1 | **`oficina-mecanica-infra-base`** | Terraform | Rede AWS (VPC, subnets públicas/privadas, IGW, NAT Gateway, Route Tables) e Security Group de identidade dos nós do EKS (`secgrp-eks-nodes-oficina-mecanica`) | S3 `infra/prod-simulated/infra-base/terraform.tfstate` |
 | 2 | **`oficina-mecanica-infra-k8s`** | Terraform + Helm + CD (`kubectl`) | EKS (cluster + Launch Template IMDSv2 + node group com 2 nós `t3.medium` e `LabRole`), ECRs por serviço (`force_delete`), NLB interno multi-listener + SMTP, CloudWatch, Security Group, Namespaces por serviço + `platform` + legado `oficina`, `metrics-server` e manifests do `platform` (Datadog Agent e MailHog) | S3 `infra/prod-simulated/infra-k8s/terraform.tfstate` (e `k8s/platform/` via `platform-apply`) |
-| 3 | **`oficina-mecanica-infra-database`** | Terraform | **Amazon RDS (PostgreSQL 16 gerenciado)**, fora do cluster, nas subnets privadas da VPC | S3 `infra/prod-simulated/database/terraform.tfstate` |
+| 3 | **`oficina-mecanica-infra-database-work-order`** | Terraform | **Amazon RDS (PostgreSQL 18)** e **Amazon ElastiCache (Valkey 9.1)** dedicados ao `work-order`, fora do cluster, nas subnets privadas da VPC | S3 `infra/prod-simulated/infra-database-work-order/terraform.tfstate` |
 | 4 | **`oficina-mecanica-work-order-service` (`k8s/*.yaml`)** | **CD (`kubectl`)** | API (Deployment/Service/HPA), ConfigMap, Secret, Job de migração (manifestos de MailHog e Agent no namespace `oficina` ficam desativados/legados após o cutover para `platform`) | Sem state — reaplicado a cada deploy |
 | 5 | **`oficina-mecanica-api-gateway`** | Terraform | **AWS API Gateway (HTTP API)**, stage, VPC Link, security group e log de acesso — a **API Gateway** da solução | S3 `infra/prod-simulated/api-gateway/terraform.tfstate` |
 | 6 | **`oficina-mecanica-lambda-customer-auth`** | Terraform | **AWS Lambda** de autenticação externa de clientes, nas subnets privadas: função, security group próprio, log group, segredo da chave de assinatura, concorrência reservada e a `aws_lambda_permission` que autoriza o API Gateway a invocá-la | S3 `infra/prod-simulated/lambda-customer-auth/terraform.tfstate` |
@@ -73,12 +73,13 @@ O mapa **"quem provisiona o quê / para que serve"**, agrupado pelas sete camada
 | **Regras de ingress** dos NodePorts | `nlb.tf` | Liberam `30080`–`30083` e `31025` no SG gerenciado do cluster **apenas para a CIDR da VPC** |
 | **Datadog Agent e MailHog** (`k8s/platform/`) | `.github/workflows/cd.yml` (`platform-apply`) | `datadog-secret` criado via stdin a partir de `DD_API_KEY`, DaemonSet `datadog-agent` (`gcr.io/datadoghq/agent:7.83.1`, OTLP HTTP `:4318`) e `mailhog` (`mailhog/mailhog:v1.0.1`, ClusterIP `1025`/`8025` + NodePort `31025`) no namespace `platform` |
 
-### Camada 3 — `oficina-mecanica-infra-database` (Terraform)
+### Camada 3 — `oficina-mecanica-infra-database-work-order` (Terraform)
 
 | Recurso | Definido em | Finalidade |
 |---|---|---|
-| **Instância RDS** PostgreSQL 16 (`db.t4g.micro`, Single-AZ, 20 GiB GP3) | [`oficina-mecanica-infra-database`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database) | Persistência relacional da aplicação, **fora do cluster**; alcançada pela rede a partir das subnets privadas |
-| **DB subnet group + Security Group** | idem | Aloca a instância nas subnets privadas da VPC, com ingress restrito à CIDR da VPC |
+| **Instância RDS** PostgreSQL 18 (`rds-oficina-mecanica-work-order`, `db.t4g.micro`, Single-AZ, 20 GiB GP3) | [`oficina-mecanica-infra-database-work-order`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order) (`rds.tf`) | Persistência relacional do `work-order`, **fora do cluster**; credencial gerenciada pelo RDS no Secrets Manager |
+| **ElastiCache Valkey 9.1** (`cache-oficina-mecanica-work-order`, `cache.t4g.micro`, single-node) | `elasticache.tf` | Cache distribuído do `work-order` com TLS obrigatório, repouso criptografado e AUTH token gerado via `ephemeral` + `secret_string_wo` no Secrets Manager (`cache-oficina-mecanica-work-order-auth-token`) |
+| **Subnet groups + Security Groups** (`secgrp-rds-…` e `secgrp-cache-…`) | `rds.tf`, `elasticache.tf`, `security_group.tf` | Alocam RDS e Valkey nas subnets privadas da VPC, com ingress restrito a `secgrp-eks-nodes-oficina-mecanica` (e CIDRs privadas da VPC no RDS de forma transitória até a C-20) e sem regras de egress |
 
 ### Camada 6 — `oficina-mecanica-lambda-customer-auth` (Terraform)
 
@@ -194,8 +195,8 @@ A entrega segue a separação entre os sete repositórios:
 
 ```
 [oficina-mecanica-infra-base]
-          ├──▶ [oficina-mecanica-infra-k8s] ──▶ [oficina-mecanica-work-order-service (CD)]
-          ├──▶ [oficina-mecanica-infra-database] ─┘
+          ├──▶ [oficina-mecanica-infra-k8s] ─────────────────────▶ [oficina-mecanica-work-order-service (CD)]
+          ├──▶ [oficina-mecanica-infra-database-work-order] ─────┘
           └──▶ [oficina-mecanica-api-gateway] ◀── listener do NLB
                          ├──▶ [oficina-mecanica-lambda-customer-auth]
                          └──▶ [oficina-mecanica-custom-monitoring]
@@ -203,7 +204,7 @@ A entrega segue a separação entre os sete repositórios:
 
 1. **`oficina-mecanica-infra-base`**: Provisiona a VPC, subnets públicas/privadas, IGW, NAT Gateway, tabelas de roteamento e o Security Group de identidade dos nós (`secgrp-eks-nodes-oficina-mecanica`), exportando o estado no S3.
 2. **`oficina-mecanica-infra-k8s`**: Consome a VPC, subnets e `eks_nodes_security_group_id` do estado de rede via `data.terraform_remote_state`, provisionando cluster EKS, Launch Template (IMDSv2 hop limit 2) e Node Group (2 nós `t3.medium` com `LabRole`), repositórios ECR por serviço, NLB interno multi-listener + SMTP, namespaces por serviço + `platform` + legado `oficina` e Metrics Server, além de aplicar o Datadog Agent e o MailHog no namespace `platform` via job `platform-apply`.
-3. **`oficina-mecanica-infra-database`**: Consome a VPC e as subnets privadas e provisiona RDS PostgreSQL, DB subnet group e security group. O RDS gera a master password e mantém seu Secret no Secrets Manager; Terraform publica somente o ARN e deixa a rotação desabilitada.
+3. **`oficina-mecanica-infra-database-work-order`**: Consome a VPC, as subnets privadas e `eks_nodes_security_group_id` e provisiona o RDS PostgreSQL 18 (`rds-oficina-mecanica-work-order`), o ElastiCache Valkey 9.1 (`cache-oficina-mecanica-work-order`), subnet groups e security groups dedicados ao contexto `work-order`. O RDS mantém seu Secret no Secrets Manager e o token do Valkey é gravado via atributos write-only (`secret_string_wo`).
 4. **`oficina-mecanica-work-order-service` (CD)**:
    - **`build-push-image`**: Constrói a imagem Docker multi-stage da aplicação NestJS e publica no Amazon ECR a tag por commit (`:sha`) e a tag móvel `:latest`.
    - **`prepare-deploy`**: Descobre metadados/ARN pelo RDS, espera `available`/`active`, lê `AWSCURRENT` e materializa `DATABASE_URL` com percent-encoding e TLS em `database-credentials` usando Node.js inline e stdin. Em outro step, aplica JWTs/chave pública em `api-secret` e o ConfigMap, sem publicar outputs.
