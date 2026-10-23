@@ -30,15 +30,15 @@ A solução é criada em **sete camadas** com ciclos de vida distintos — seis 
 
 | # | Camada / Repositório | Ferramenta | O que provisiona | Estado |
 |---|---|---|---|---|
-| 1 | **`oficina-mecanica-infra-base`** | Terraform | Rede AWS (VPC, subnets públicas/privadas, IGW, NAT Gateway, Route Tables) | S3 `infra/prod-simulated/infra-base/terraform.tfstate` |
-| 2 | **`oficina-mecanica-infra-k8s`** | Terraform + Helm | EKS (cluster + node group), ECR, NLB interno, CloudWatch, Security Group, Namespace, `metrics-server` | S3 `infra/prod-simulated/infra-k8s/terraform.tfstate` |
+| 1 | **`oficina-mecanica-infra-base`** | Terraform | Rede AWS (VPC, subnets públicas/privadas, IGW, NAT Gateway, Route Tables) e Security Group de identidade dos nós do EKS (`secgrp-eks-nodes-oficina-mecanica`) | S3 `infra/prod-simulated/infra-base/terraform.tfstate` |
+| 2 | **`oficina-mecanica-infra-k8s`** | Terraform + Helm + CD (`kubectl`) | EKS (cluster + Launch Template IMDSv2 + node group com 2 nós `t3.medium` e `LabRole`), ECRs por serviço (`force_delete`), NLB interno multi-listener + SMTP, CloudWatch, Security Group, Namespaces por serviço + `platform` + legado `oficina`, `metrics-server` e manifests do `platform` (Datadog Agent e MailHog) | S3 `infra/prod-simulated/infra-k8s/terraform.tfstate` (e `k8s/platform/` via `platform-apply`) |
 | 3 | **`oficina-mecanica-infra-database`** | Terraform | **Amazon RDS (PostgreSQL 16 gerenciado)**, fora do cluster, nas subnets privadas da VPC | S3 `infra/prod-simulated/database/terraform.tfstate` |
-| 4 | **`oficina-mecanica-work-order-service` (`k8s/*.yaml`)** | **CD (`kubectl`)** | API (Deployment/Service/HPA), ConfigMap, Secret, MailHog, Job de migração | Sem state — reaplicado a cada deploy |
+| 4 | **`oficina-mecanica-work-order-service` (`k8s/*.yaml`)** | **CD (`kubectl`)** | API (Deployment/Service/HPA), ConfigMap, Secret, Job de migração (manifestos de MailHog e Agent no namespace `oficina` ficam desativados/legados após o cutover para `platform`) | Sem state — reaplicado a cada deploy |
 | 5 | **`oficina-mecanica-api-gateway`** | Terraform | **AWS API Gateway (HTTP API)**, stage, VPC Link, security group e log de acesso — a **API Gateway** da solução | S3 `infra/prod-simulated/api-gateway/terraform.tfstate` |
 | 6 | **`oficina-mecanica-lambda-customer-auth`** | Terraform | **AWS Lambda** de autenticação externa de clientes, nas subnets privadas: função, security group próprio, log group, segredo da chave de assinatura, concorrência reservada e a `aws_lambda_permission` que autoriza o API Gateway a invocá-la | S3 `infra/prod-simulated/lambda-customer-auth/terraform.tfstate` |
 | 7 | **`oficina-mecanica-custom-monitoring`** | Terraform | Quatro dashboards, oito monitores de query, um teste sintético com monitor associado e a configuração de tags da métrica de latência no Datadog | S3 `infra/prod-simulated/custom-monitoring/terraform.tfstate` |
 
-Os **seis** stacks Terraform têm states separados. Kubernetes e database consomem a rede da Camada 1; o API Gateway consome a rede da Camada 1 e o listener privado da Camada 2; a Lambda consome rede, database e `api_execution_arn`; o monitoramento consome o endpoint público exportado pelo Gateway. A Camada 4 não usa Terraform: seus manifests são aplicados pelo pipeline de CD, porque imagem, configuração e escala mudam com mais frequência que a plataforma. Detalhes da divisão em [kubernetes.md › Motivo da divisão](kubernetes.md#motivo-da-divisão) e [terraform.md](terraform.md).
+Os **seis** stacks Terraform têm states separados. Kubernetes e database consomem a rede da Camada 1; o API Gateway consome a rede da Camada 1 e os listeners privados da Camada 2 (`service_listener_arns`, `service_listener_ports` e o alias de transição `api_nlb_listener_arn`); a Lambda consome rede, database e `api_execution_arn`; o monitoramento consome o endpoint público exportado pelo Gateway. A Camada 4 não usa Terraform: seus manifests são aplicados pelo pipeline de CD, porque imagem, configuração e escala mudam com mais frequência que a plataforma. Detalhes da divisão em [kubernetes.md › Motivo da divisão](kubernetes.md#motivo-da-divisão) e [terraform.md](terraform.md).
 
 ## Inventário de componentes e ownership
 
@@ -54,22 +54,24 @@ O mapa **"quem provisiona o quê / para que serve"**, agrupado pelas sete camada
 | **Internet Gateway** | `networking.tf` | Entrada/saída pública da VPC (rota das subnets públicas) |
 | **NAT Gateway + Elastic IP** | `networking.tf` | Egresso das subnets privadas para a internet, com IP fixo; **único**, na `public[0]` |
 | **Route tables** (`rt_public`, `rt_private`) | `networking.tf` | `rt_public` → IGW; `rt_private` → NAT Gateway |
+| **Security Group** `secgrp-eks-nodes-oficina-mecanica` | `security_group.tf` | Identidade lógica dos worker nodes do EKS (`eks_nodes_security_group_id`), sem regras locais; anexado via Launch Template no `infra-k8s` |
 
-### Camada 2 — `oficina-mecanica-infra-k8s` (Terraform)
+### Camada 2 — `oficina-mecanica-infra-k8s` (Terraform + `k8s/platform/`)
 
 | Recurso | Definido em | Finalidade |
 |---|---|---|
-| **EKS cluster** (`1.35`) | `eks.tf` | Control plane Kubernetes gerenciado; endpoint **público e privado**; usa IAM roles **pré-existentes** (lidas via `data`, não criadas) |
-| **EKS node group** (`t3.medium`, `1/1/1`) | `eks.tf` | Worker nodes EC2 nas **subnets privadas**; `desired = min = max = 1` |
+| **EKS cluster** (`1.35`) | `eks.tf` | Control plane Kubernetes gerenciado; endpoint **público e privado**; usa a role IAM pré-existente `LabEksClusterRole` (lida via `data`, injetada por `EKS_CLUSTER_ROLE_NAME`) |
+| **Launch Template + EKS node group** (`t3.medium`, `2/2/2`) | `eks.tf` | Worker nodes EC2 nas **subnets privadas** (`desired = min = max = 2`, até 34 pods) usando a role fixa `LabRole` (`data.aws_iam_role.lab_role`), IMDSv2 obrigatório (`http_tokens = "required"`, `http_put_response_hop_limit = 2`) e anexando o SG do cluster + `secgrp-eks-nodes-oficina-mecanica` |
 | **Security Group** `secgrp-eks-cluster-*` | `eks.tf` | Control plane do EKS: ingress `443` **da CIDR da VPC**, egress `0.0.0.0/0` |
 | **CloudWatch Log Group** | `eks.tf` | Logs do control plane (`api`, `audit`, `authenticator`, `controllerManager`, `scheduler`); retenção **14 dias** |
-| **ECR** (+ lifecycle policy) | `ecr.tf` | Registry das imagens da API; `scan_on_push`; criptografia `AES256`; **mantém as últimas 20 imagens** |
-| **Namespace** `oficina` | `k8s_namespace.tf` | Namespace compartilhado de toda a solução |
+| **ECRs por serviço** (`ecr-oficina-mecanica-<contexto>`) | `ecr.tf` | Quatro repositórios (`work-order`, `identity`, `billing`, `inventory`) gerados via `for_each`; `scan_on_push`; criptografia `AES256`; `force_delete = true`; **mantém as últimas 20 imagens** por serviço |
+| **Namespaces** (`work-order`, `identity`, `billing`, `inventory`, `platform` e legado `oficina`) | `k8s_namespace.tf` | Isolamento por bounded context e namespace compartilhado `platform` (com `oficina` preservado até a C-12) |
 | **metrics-server** (Helm `3.13.0`) | `k8s_metrics_server.tf` | Métricas de CPU/memória em `kube-system`; **habilita o HPA** |
-| **NLB interno** `nlb-oficina-mecanica` | `nlb.tf` | Fronteia a API para o API Gateway; nas **subnets privadas**, sem IP público, com **cross-zone habilitado** (um nó só em duas AZs) |
-| **Target Group** `tg-oficina-mecanica-work-order` | `nlb.tf` | Alvos do tipo `instance` na **NodePort `30080`**; health check **HTTP em `/api/health/ready`** — o mesmo endpoint da `readinessProbe` |
-| **Listener TCP:80** + **Autoscaling Attachment** | `nlb.tf` | Encaminha ao target group e mantém os nós do ASG registrados automaticamente, inclusive após substituição do node group |
-| **Regra de ingress** da NodePort | `nlb.tf` | Libera a `30080` no SG gerenciado do cluster **apenas para a CIDR da VPC** |
+| **NLB interno** `nlb-oficina-mecanica` | `nlb.tf` | Fronteia os microsserviços para o API Gateway e o SMTP do MailHog para a VPC; nas **subnets privadas**, sem IP público, com **cross-zone habilitado** |
+| **Target Groups e Listeners por serviço** (`tg-oficina-mecanica-<contexto>`) | `nlb.tf` | Alvos `instance` nos **NodePorts `30080` (`work-order`, listener `80`), `30081` (`identity`, listener `8081`), `30082` (`billing`, listener `8082`) e `30083` (`inventory`, listener `8083`)**; health check **HTTP em `/api/health/ready`** e attachment ao ASG do node group |
+| **Target Group e Listener SMTP** (`tg-oficina-mecanica-smtp`) | `nlb.tf` | Listener `1025/TCP` → NodePort `31025` (`instance` mode, health check TCP) expondo o MailHog do namespace `platform` na VPC |
+| **Regras de ingress** dos NodePorts | `nlb.tf` | Liberam `30080`–`30083` e `31025` no SG gerenciado do cluster **apenas para a CIDR da VPC** |
+| **Datadog Agent e MailHog** (`k8s/platform/`) | `.github/workflows/cd.yml` (`platform-apply`) | `datadog-secret` criado via stdin a partir de `DD_API_KEY`, DaemonSet `datadog-agent` (`gcr.io/datadoghq/agent:7.83.1`, OTLP HTTP `:4318`) e `mailhog` (`mailhog/mailhog:v1.0.1`, ClusterIP `1025`/`8025` + NodePort `31025`) no namespace `platform` |
 
 ### Camada 3 — `oficina-mecanica-infra-database` (Terraform)
 
@@ -123,18 +125,18 @@ O par de chaves é o mesmo dos dois lados: a metade **pública** vive no secret 
 | **Teste sintético + monitor associado** | `synthetics.tf` | Verifica `GET /api/health/ready` pelo endpoint público; fica `live` ou `paused` conforme `environment_online` |
 | **Configuração de tags da métrica** | `metrics.tf` | Mantém `env`, `service`, `http.route` e `http.response.status_code` indexados em `http.server.request.duration` e habilita percentis |
 
-### Camada de coleta controlada pelo CD
+### Camada de coleta de plataforma (`namespace platform`) e configuração do CD
 
-A aplicação declara os três sinais, e a camada que os recebe é aplicada condicionalmente pelo CD:
+A aplicação declara os três sinais (traces, métricas e logs), e a coleta no cluster é centralizada no namespace `platform` pelo `oficina-mecanica-infra-k8s`:
 
 | Componente | Estado | Finalidade |
 |---|---|---|
-| Agente com receiver OTLP (DaemonSet) | Versionado em `k8s/06`–`08`; aplicado quando `vars.ENABLE_TELEMETRY_COLLECTION == 'true'` | Recebe traces e métricas em `:4318`, lê o stdout dos contêineres e as métricas de kubelet/cAdvisor. É a **única** peça que conhece o fornecedor |
+| Agente com receiver OTLP (DaemonSet no namespace `platform`) | Versionado em `oficina-mecanica-infra-k8s/k8s/platform/`; aplicado pelo job `platform-apply` do CD do `infra-k8s` | Recebe traces e métricas em `http://datadog-agent.platform.svc.cluster.local:4318`, lê o stdout dos contêineres e as métricas de kubelet/cAdvisor. Os manifestos legados em `k8s/06`–`08` deste repositório permanecem desativados com `vars.ENABLE_TELEMETRY_COLLECTION == 'false'` |
 | Correlação nos logs JSON da API | `trace-correlation.ts` + `mixin` de `logging.module.ts`; ingestão pelo Agent | Inclui `trace_id`/`span_id` com span ativo; o pré-processamento JSON do Datadog reconhece esses campos, sem exigir um pipeline customizado declarado neste repositório |
 | **Monitor sintético externo** | Declarado em `oficina-mecanica-custom-monitoring/terraform/synthetics.tf` | Mede disponibilidade pelo caminho público completo, incluindo API Gateway, VPC Link, NLB e aplicação |
 | Dashboards e monitores | Declarados no repositório `oficina-mecanica-custom-monitoring` | Quatro dashboards e nove monitores no total, contando o monitor associado ao teste sintético |
 
-Os controles são independentes. `ENABLE_TELEMETRY_COLLECTION` decide se o CD aplica o Agent; `OTEL_EXPORTER_OTLP_ENDPOINT` é renderizado no ConfigMap e decide se o SDK da aplicação inicia. Valor vazio desliga o SDK, e um endpoint válido ativa a exportação. Como o ConfigMap é consumido por variáveis de ambiente, o CD reinicia o Deployment da API para propagar o valor aos Pods. Ver [ADR 0005](../adr/0005-opentelemetry.md).
+Os controles são independentes. O `infra-k8s` mantém o Datadog Agent e o MailHog ativos no namespace `platform` (enquanto `ENABLE_TELEMETRY_COLLECTION=false` neste repositório evita duplicar o DaemonSet no namespace `oficina`); `OTEL_EXPORTER_OTLP_ENDPOINT` (`http://datadog-agent.platform.svc.cluster.local:4318`) é renderizado no ConfigMap e decide se o SDK da aplicação inicia. Valor vazio desliga o SDK, e um endpoint válido ativa a exportação. Como o ConfigMap é consumido por variáveis de ambiente, o CD reinicia o Deployment da API para propagar o valor aos Pods. Ver [ADR 0005](../adr/0005-opentelemetry.md).
 
 ## Topologia de rede
 
@@ -199,8 +201,8 @@ A entrega segue a separação entre os sete repositórios:
                          └──▶ [oficina-mecanica-custom-monitoring]
 ```
 
-1. **`oficina-mecanica-infra-base`**: Provisiona a VPC, subnets públicas/privadas, IGW, NAT Gateway e tabelas de roteamento, exportando o estado no S3.
-2. **`oficina-mecanica-infra-k8s`**: Consome a VPC e subnets do estado de rede via `data.terraform_remote_state`, provisionando cluster EKS, Node Group, ECR, NLB interno, namespace `oficina` e Metrics Server.
+1. **`oficina-mecanica-infra-base`**: Provisiona a VPC, subnets públicas/privadas, IGW, NAT Gateway, tabelas de roteamento e o Security Group de identidade dos nós (`secgrp-eks-nodes-oficina-mecanica`), exportando o estado no S3.
+2. **`oficina-mecanica-infra-k8s`**: Consome a VPC, subnets e `eks_nodes_security_group_id` do estado de rede via `data.terraform_remote_state`, provisionando cluster EKS, Launch Template (IMDSv2 hop limit 2) e Node Group (2 nós `t3.medium` com `LabRole`), repositórios ECR por serviço, NLB interno multi-listener + SMTP, namespaces por serviço + `platform` + legado `oficina` e Metrics Server, além de aplicar o Datadog Agent e o MailHog no namespace `platform` via job `platform-apply`.
 3. **`oficina-mecanica-infra-database`**: Consome a VPC e as subnets privadas e provisiona RDS PostgreSQL, DB subnet group e security group. O RDS gera a master password e mantém seu Secret no Secrets Manager; Terraform publica somente o ARN e deixa a rotação desabilitada.
 4. **`oficina-mecanica-work-order-service` (CD)**:
    - **`build-push-image`**: Constrói a imagem Docker multi-stage da aplicação NestJS e publica no Amazon ECR a tag por commit (`:sha`) e a tag móvel `:latest`.
@@ -231,13 +233,13 @@ Ao desfazer o caminho público, respeite a ordem inversa das dependências: reve
 
 Este é um ambiente **acadêmico** com orçamento de laboratório; as decisões abaixo são conscientes. Documentá-las é parte do rigor do projeto.
 
-- **Autoscaling é de pods (API), não de cluster.** O HPA do `oficina-api` escala **1→5 réplicas** por CPU (70%) e memória (80%). O node group é mantido **fixo em 1** (`desired = min = max = 1`, um único `t3.medium`): não há Cluster Autoscaler nem Karpenter. *Produção*: escala real do node group e autoscaling de nodes caso a demanda de pods exceda a capacidade disponível.
-- **"Duas AZs" é requisito do EKS, não alta disponibilidade.** As 2 subnets por camada existem porque o control plane exige ≥ 2 AZs (bloco `validation`), mas com **1 node** (o workload vive numa única AZ por vez) e **1 NAT Gateway** (todo o egresso por uma AZ só, na `public[0]`), não há redundância entre zonas — o sistema é **efetivamente single-AZ**. *Produção*: nodes distribuídos nas AZs e um NAT por AZ.
+- **Autoscaling é de pods (API), não de cluster.** O HPA do `oficina-api` escala **1→5 réplicas** por CPU (70%) e memória (80%). O node group é mantido **fixo em 2 nós** (`desired = min = max = 2`, dois `t3.medium`): não há Cluster Autoscaler nem Karpenter. *Produção*: escala dinâmica do node group e autoscaling de nodes caso a demanda de pods exceda a capacidade disponível.
+- **Um único NAT Gateway entre duas AZs.** As 2 subnets por camada atendem à exigência de ≥ 2 AZs do EKS e distribuem os **2 worker nodes** do Node Group, mas todo o egresso das subnets privadas continua passando por **1 NAT Gateway** (na `public[0]`) — ponto único de falha para saída à internet. *Produção*: um NAT Gateway por AZ.
 - **Sem VPC endpoints.** O `pull` de imagens do ECR e o acesso ao state no S3 saem pela internet (NAT/IGW). *Produção*: VPC endpoints (gateway para S3, interface para ECR/CloudWatch) reduzem custo de NAT e mantêm o tráfego privado.
 - **ECR `MUTABLE`, mas o pipeline fixa `:sha`.** O repositório permite sobrescrever tags, porém o CD publica com tag imutável por commit (`:sha`) e move `latest` em paralelo — imutabilidade por **convenção**, não imposta pelo registry. *Produção*: `IMMUTABLE` no ECR para garantir por política.
 - **State com lock nativo do S3.** O backend usa `use_lockfile = true` (Terraform ≥ 1.11) em vez de uma tabela DynamoDB de lock — mais simples, sem recurso extra.
-- **A coleta depende de configuração operacional.** Os manifestos do Agent existem em `k8s/06-datadog-secret.yaml`, `k8s/07-datadog-agent.yaml` e `k8s/08-datadog-service.yaml`; o CD os aplica somente quando `vars.ENABLE_TELEMETRY_COLLECTION == 'true'` e exige `DD_API_KEY`. Separadamente, `vars.OTEL_EXPORTER_OTLP_ENDPOINT` liga ou desliga o SDK da aplicação. Dashboards, oito monitores de query e o teste sintético com monitor associado são declarados no repositório de monitoramento.
-- **A capacidade de pods é limitada a um node.** O `t3.medium` suporta até 17 pods com a configuração atual do VPC CNI; o HPA, os workloads de sistema e o DaemonSet do Agent compartilham esse teto. Ver [kubernetes.md › Autoscaling](kubernetes.md#autoscaling-da-api-hpa).
+- **A coleta depende de configuração operacional.** O Datadog Agent e o MailHog rodam no namespace `platform`, aplicados pelo job `platform-apply` do CD do `oficina-mecanica-infra-k8s` (que exige `DD_API_KEY`). Neste repositório, `vars.ENABLE_TELEMETRY_COLLECTION` fica em `false` após o cutover para o `platform`, e `vars.OTEL_EXPORTER_OTLP_ENDPOINT` (`http://datadog-agent.platform.svc.cluster.local:4318`) liga ou desliga o SDK da aplicação. Dashboards, oito monitores de query e o teste sintético com monitor associado são declarados no repositório de monitoramento.
+- **A capacidade de pods é limitada a dois nodes.** Cada `t3.medium` suporta até 17 pods com a configuração atual do VPC CNI (34 pods no total nos 2 nós); os microsserviços, os HPAs, os workloads de sistema, o MailHog e o DaemonSet do Agent compartilham esse teto. Ver [kubernetes.md › Autoscaling](kubernetes.md#autoscaling-da-api-hpa).
 - **O balanceador falha aberto, e com um nó só isso é o caso comum.** Se **nenhum** alvo estiver saudável — ou o target group estiver vazio —, o NLB volta a encaminhar para todos, independentemente da saúde deles. Com `desired = min = max = 1`, qualquer reinício do nó ou queda do banco cai nesse caso. Consequência prática: sem banco, `/api/health/ready` responde `503` **vindo da aplicação** (não um `5xx` do API Gateway) e `/api/health/live` responde `200` — é a prontidão, e não a vivacidade, que distingue "a solução responde" de "a solução está utilizável". O API Gateway só devolve `5xx` própria quando o caminho de rede em si falha (VPC Link inativo, listener ausente, conexão recusada). *Produção*: mais de um nó, fora do orçamento deste laboratório.
 - **Sem TLS entre o API Gateway e o cluster.** O listener do NLB é TCP:80; a criptografia termina no API Gateway. Coerente com a postura atual do cluster, que também não tem TLS interno. *Produção*: listener HTTPS com certificado no balanceador.
 - **Custo é o driver das escolhas.** O control plane do EKS, o NAT Gateway, o RDS `db.t4g.micro` Single-AZ e o NLB interno existem enquanto as respectivas stacks estão aplicadas. O NLB é um recurso incondicional da stack Terraform do Kubernetes.
