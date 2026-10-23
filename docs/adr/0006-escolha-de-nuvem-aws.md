@@ -36,7 +36,7 @@ Ofereceria deploy mais simples, sem gestão de infraestrutura nenhuma. Descartad
 
 ### PostgreSQL self-hosted dentro do cluster (`StatefulSet`)
 
-Foi a abordagem de uma fase anterior do projeto, e não uma alternativa hipotética: o Postgres rodou dentro do EKS num `StatefulSet` com volume `emptyDir` (efêmero, sem persistência real entre reagendamentos de pod), consequência direta de o EBS CSI Driver não ter credenciais IAM disponíveis no ambiente Academy (a conta lab bloqueia IAM/IRSA). A análise completa dessa tentativa (incluindo os diagnósticos de `CrashLoopBackOff` com `gp2`/`gp3`) está registrada em [ADR 0001 do `oficina-mecanica-infra-database`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database/blob/main/docs/adr/0001-banco-gerenciado-amazon-rds.md#postgresql-auto-hospedado-dentro-do-cluster-eks). Foi abandonada em favor do Amazon RDS, fora do cluster — a mesma direção que aquela análise já apontava.
+Foi a abordagem de uma fase anterior do projeto, e não uma alternativa hipotética: o Postgres rodou dentro do EKS num `StatefulSet` com volume `emptyDir` (efêmero, sem persistência real entre reagendamentos de pod), consequência direta de o EBS CSI Driver não ter credenciais IAM disponíveis no ambiente Academy (a conta lab bloqueia IAM/IRSA). A análise completa dessa tentativa (incluindo os diagnósticos de `CrashLoopBackOff` com `gp2`/`gp3`) está registrada em [ADR 0001 do `oficina-mecanica-infra-database-work-order`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0001-banco-gerenciado-amazon-rds.md#postgresql-auto-hospedado-dentro-do-cluster-eks). Foi abandonada em favor do Amazon RDS, fora do cluster — a mesma direção que aquela análise já apontava.
 
 ## Consequências
 

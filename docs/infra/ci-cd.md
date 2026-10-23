@@ -275,7 +275,7 @@ Para que os workflows e o provisionamento funcionem corretamente, é necessário
 | Secret | `JWT_REFRESH_SECRET` | `cd.yml` | Assinatura dos refresh tokens JWT |
 | Secret | `CUSTOMER_JWT_PUBLIC_KEY` | `cd.yml` | Chave **pública** RS256 usada para verificar o token externo (`customer-jwt`) do Cliente da Oficina — a chave privada correspondente vive na função serverless externa, fora deste repositório. Pode ser cadastrada no formato PEM natural (multilinha); `prepare-deploy` cria o Secret via `kubectl create secret --from-literal`, que não exige convertê-la para uma linha só — ver [kubernetes.md](kubernetes.md#convenções-labels-e-wiring-de-configuração) |
 | Secret | `DD_API_KEY` | `cd.yml` | Chave usada pelo Datadog Agent; obrigatória quando `ENABLE_TELEMETRY_COLLECTION == 'true'` |
-| Variable | `RDS_INSTANCE_IDENTIFIER` | `cd.yml` | Identificador estável usado para descobrir endpoint, porta, banco, usuário e ARN; valor de produção: `rds-oficina-mecanica` |
+| Variable | `RDS_INSTANCE_IDENTIFIER` | `cd.yml` | Identificador estável usado para descobrir endpoint, porta, banco, usuário e ARN; valor de produção: `rds-oficina-mecanica-work-order` |
 | Variable | `ENABLE_TELEMETRY_COLLECTION` | `cd.yml` | Quando `true`, aplica o Secret, o DaemonSet e o Service do Datadog Agent |
 | Variable | `OTEL_EXPORTER_OTLP_ENDPOINT` | `cd.yml` | Renderizada no ConfigMap da API; vazia desliga o SDK OpenTelemetry, e preenchida aponta traces e métricas para um coletor OTLP/HTTP |
 | Variable | `PRISMA_GENERATE_DATABASE_URL` | `ci.yml`, `cd.yml`, `sast.yml` | URL fake usada apenas pelo `prisma generate` (só parseada, nunca conectada); há fallback embutido nos workflows |

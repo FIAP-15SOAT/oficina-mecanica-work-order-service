@@ -79,4 +79,4 @@ descartáveis e uma URL própria. Detalhes e alternativas estão no
 - [ADR 0001 — Uso do PostgreSQL como banco de dados relacional](adr/0001-uso-do-postgresql-como-banco-de-dados.md)
 - [ADR 0004 — Autenticação externa de clientes por CPF](adr/0004-autenticacao-de-clientes.md)
 - [ADR 0010 — Concorrência otimista via coluna `version`](adr/0010-concorrencia-otimista-via-version.md)
-- [`oficina-mecanica-infra-database` — ADRs do banco gerenciado (RDS)](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database/tree/main/docs/adr)
+- [`oficina-mecanica-infra-database-work-order` — ADRs de dados gerenciados (RDS e ElastiCache)](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/tree/main/docs/adr)
