@@ -41,13 +41,22 @@ Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgr
 - **`stock_movements`** (`StockMovement`) — histórico de entradas/saídas/ajustes de estoque de uma peça/insumo, opcionalmente vinculado à OS que o originou (`work_order_id` nulo em ajustes manuais; `onDelete: SetNull` preserva o histórico mesmo se a OS for excluída).
 - **`stock_reservations`** (`StockReservation`) — reserva de estoque de uma peça/insumo para uma OS específica, liberada ou efetivada conforme o ciclo de vida da OS.
 
+### Mensageria
+
+- **`outbox`** (`OutboxMessage`) — mensagens a publicar, gravadas na mesma transação da mudança de estado que as origina e apagadas pelo relay depois de publicadas no tópico SNS; por isso a tabela fica quase sempre vazia.
+  - **Duas identidades.** `id` (`BIGSERIAL`) dá ao relay a ordem de criação, que a fila FIFO preserva por OS: o UUID v4 não tem ordem, e `created_at` empata no mesmo milissegundo. `message_id` (UUID v4, único) é a identidade da mensagem entre serviços, usada como `MessageDeduplicationId` e como chave de idempotência de quem consome; um número sequencial colidiria entre serviços.
+  - **Conteúdo.** `type` é um tipo do catálogo de mensagens (`app/src/domain/messaging/`), `payload` é o corpo (`JSONB`) e `work_order_id` é a OS da mensagem, nula nas mensagens sem OS.
+  - **`trace_context`** guarda o contexto de trace W3C da requisição que gravou a linha (`traceparent` e, quando houver, `tracestate`). O relay publica dentro desse contexto, e o processamento no serviço que consome aparece no mesmo trace da requisição.
+  - **`created_at`** é `TIMESTAMPTZ(3)`: o `occurredAt` da mensagem sai dele em UTC, qualquer que seja o fuso da sessão do PostgreSQL.
+  - **`work_order_id`** é FK `Restrict` para `work_orders`. Os outros serviços usam a mesma tabela sem a FK, porque lá o id é de uma OS que não pertence a eles.
+
 ## Enums
 
 `UserRole`, `CustomerType`, `WorkOrderStatus`, `WorkOrderServiceStatus`, `QuoteStatus`, `StockMovementType`, `Unit`, `PartSupplyCategory`. `UserRole` **não** ganhou um valor `CUSTOMER` — o acesso externo não é modelado como papel interno (ver [ADR 0004](adr/0004-autenticacao-de-clientes.md)).
 
 ## Convenções de modelagem
 
-- **IDs**: `uuid` v4 (`@db.Uuid`) gerados pelo Prisma — exceto o número da OS, gerado por uma **sequence PostgreSQL** (`work_order_number_seq`, formatada com 6 dígitos zero-padded — `000001`, `000002`, …).
+- **IDs**: `uuid` v4 (`@db.Uuid`) gerados pelo Prisma — exceto o número da OS, gerado por uma **sequence PostgreSQL** (`work_order_number_seq`, formatada com 6 dígitos zero-padded — `000001`, `000002`, …), e o `id` sequencial do `outbox` (ver [Mensageria](#mensageria)).
 - **Timestamps**: `created_at` / `updated_at` em todas as entidades não-imutáveis (`Address`, `StatusHistory`, `StockMovement` e `StockReservation` guardam apenas `created_at`).
 - **Concorrência otimista**: coluna `version Int @default(1)` em `WorkOrder`, `Quote` e `PartSupply`.
 - **Cascade deletes** para itens dependentes (`WorkOrderService`, `WorkOrderPartSupply`, `QuoteService`, `QuotePartSupply`, `StatusHistory`, `StockReservation`, `Address`).

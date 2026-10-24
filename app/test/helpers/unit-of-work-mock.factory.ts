@@ -8,6 +8,7 @@ import { createMockStockMovementRepository } from './stock-movement-mock.factory
 import { createMockStockReservationRepository } from './stock-reservation-mock.factory';
 import { createMockQuoteRepository } from './quote-mock.factory';
 import { createMockPartSupplyRepository } from './part-supply-mock.factory';
+import { createMockOutboxRepository } from './outbox-mock.factory';
 
 export function createMockRepositories(): jest.Mocked<IRepositories> {
   return {
@@ -75,6 +76,7 @@ export function createMockRepositories(): jest.Mocked<IRepositories> {
       incrementAttempts: jest.fn(),
       delete: jest.fn(),
     },
+    outbox: createMockOutboxRepository(),
   };
 }
 

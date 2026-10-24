@@ -220,6 +220,7 @@ model WorkOrder {
   statusHistory     StatusHistory[]
   stockMovements    StockMovement[]
   stockReservations StockReservation[]
+  outboxMessages    OutboxMessage[]
 
   @@index([customerId])
   @@index([vehicleId])
@@ -397,4 +398,20 @@ model PasswordResetCode {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("password_reset_codes")
+}
+
+// ─── Outbox ───────────────────────────────────────────────────────────────────
+
+model OutboxMessage {
+  id           BigInt   @id @default(autoincrement())
+  messageId    String   @unique @default(uuid()) @map("message_id") @db.Uuid
+  type         String   @db.VarChar(64)
+  workOrderId  String?  @map("work_order_id") @db.Uuid
+  payload      Json
+  traceContext Json     @default("{}") @map("trace_context")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  workOrder WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: Restrict)
+
+  @@map("outbox")
 }
