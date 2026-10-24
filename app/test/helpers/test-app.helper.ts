@@ -5,6 +5,7 @@ import { Logger } from 'nestjs-pino';
 import { join } from 'path';
 import { GenericContainer, StartedTestContainer } from 'testcontainers';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import { StartedValkeyContainer, ValkeyContainer } from '@testcontainers/valkey';
 import type { Server } from 'http';
 import { execSync } from 'child_process';
 import { lookup } from 'dns/promises';
@@ -34,6 +35,7 @@ export interface TestContext {
   prisma: PrismaService;
   postgresContainer: StartedPostgreSqlContainer;
   mailhogContainer: StartedTestContainer;
+  valkeyContainer: StartedValkeyContainer;
   logCapture?: LogCapture;
 }
 
@@ -100,8 +102,12 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
     .withPassword('test')
     .start();
 
-  const mailhogContainer = await new GenericContainer('mailhog/mailhog')
+  const mailhogContainer = await new GenericContainer('mailhog/mailhog:v1.0.1')
     .withExposedPorts(1025, 8025)
+    .start();
+
+  const valkeyContainer = await new ValkeyContainer('valkey/valkey:9.1')
+    .withPassword('test')
     .start();
 
   const databaseUrl = postgresContainer.getConnectionUri();
@@ -111,6 +117,8 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
   // at once a dropped query for "localhost" costs a 5 s retry and expires the 5 s Prisma transaction.
   process.env.MAIL_HOST = (await lookup(mailhogContainer.getHost(), { family: 4 })).address;
   process.env.MAIL_PORT = mailhogContainer.getMappedPort(1025).toString();
+  process.env.CACHE_URL = valkeyContainer.getConnectionUrl();
+  process.env.CACHE_TTL_SECONDS = '43200';
   process.env.JWT_SECRET = 'test-jwt-secret-key-for-e2e';
   process.env.JWT_EXPIRATION = '15m';
   process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-key-for-e2e';
@@ -168,6 +176,7 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
     prisma,
     postgresContainer,
     mailhogContainer,
+    valkeyContainer,
     logCapture: logCaptureSeam?.capture,
   };
 }
@@ -176,4 +185,5 @@ export async function teardownTestApp(ctx: TestContext): Promise<void> {
   if (ctx?.app) await ctx.app.close();
   if (ctx?.postgresContainer) await ctx.postgresContainer.stop();
   if (ctx?.mailhogContainer) await ctx.mailhogContainer.stop();
+  if (ctx?.valkeyContainer) await ctx.valkeyContainer.stop();
 }

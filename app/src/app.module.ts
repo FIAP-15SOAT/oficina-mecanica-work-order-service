@@ -25,6 +25,7 @@ import { QuoteModule } from './infrastructure/http/controllers/quote/quote.modul
 import { StockModule } from './infrastructure/http/controllers/stock/stock.module';
 import { MeModule } from './infrastructure/http/controllers/me/me.module';
 import { MessagingModule } from './infrastructure/messaging/messaging.module';
+import { CacheModule } from './infrastructure/cache/cache.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { MessagingModule } from './infrastructure/messaging/messaging.module';
     PrismaModule,
     RepositoriesModule,
     MessagingModule,
+    CacheModule,
     HealthModule,
     AuthModule,
     UserModule,
