@@ -422,6 +422,14 @@ export const ERROR_FIELDS: readonly FieldDefinition[] = [
   field('exception.stacktrace', 'string', 'high', 'adapter', 'sanitized', true),
 ];
 
+export const MESSAGING_FIELDS: readonly FieldDefinition[] = [
+  field('messaging.system', 'string', 'fixed', 'adapter', 'clear', true),
+  field('messaging.destination.name', 'string', 'low', 'adapter', 'clear', true),
+  field('messaging.message.id', 'string', 'high', 'adapter', 'identifier', true),
+  field('messaging.operation', 'string', 'fixed', 'adapter', 'clear', true),
+  field('oficina.messaging.message.type', 'string', 'low', 'adapter', 'clear', true),
+];
+
 export const EVENT_NAME_FIELD = field('oficina.event.name', 'string', 'low', 'adapter', 'clear');
 
 const CATALOG_FIELDS: readonly FieldDefinition[] = Object.values(LOGICAL_FIELDS).map((definition) =>
@@ -442,6 +450,7 @@ export const FIELD_DICTIONARY: readonly FieldDefinition[] = [
   ...HTTP_FIELDS,
   ...IDENTITY_FIELDS,
   ...ERROR_FIELDS,
+  ...MESSAGING_FIELDS,
   EVENT_NAME_FIELD,
   ...CATALOG_FIELDS,
 ];
