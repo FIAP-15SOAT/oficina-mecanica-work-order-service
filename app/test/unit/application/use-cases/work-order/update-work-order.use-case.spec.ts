@@ -11,8 +11,12 @@ import {
   createMockWorkOrderRepository,
 } from '../../../../helpers/work-order-mock.factory';
 import { createMockUser, createMockUserRepository } from '../../../../helpers/user-mock.factory';
+import { ICache } from '@application/ports/output/cache.service.interface';
+import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
+import { createMockCache } from '../../../../helpers/cache-mock.factory';
 
 describe('UpdateWorkOrderUseCase', () => {
+  let cache: jest.Mocked<ICache>;
   let useCase: UpdateWorkOrderUseCase;
   let workOrderRepository: jest.Mocked<IWorkOrderRepository>;
   let userRepository: jest.Mocked<IUserRepository>;
@@ -20,7 +24,8 @@ describe('UpdateWorkOrderUseCase', () => {
   beforeEach(() => {
     workOrderRepository = createMockWorkOrderRepository();
     userRepository = createMockUserRepository();
-    useCase = new UpdateWorkOrderUseCase(workOrderRepository, userRepository);
+    cache = createMockCache();
+    useCase = new UpdateWorkOrderUseCase(workOrderRepository, userRepository, cache);
   });
 
   it('should update a work order in RECEIVED status', async () => {
@@ -134,5 +139,33 @@ describe('UpdateWorkOrderUseCase', () => {
     ).rejects.toThrow(ResourceNotFoundException);
 
     expect(userRepository.findById).toHaveBeenCalledWith('bad-user');
+  });
+
+  it('should delete the work order cache keys after the commit', async () => {
+    const workOrder = createMockWorkOrder({ status: WorkOrderStatus.RECEIVED });
+
+    workOrderRepository.findById.mockResolvedValue(workOrder);
+    workOrderRepository.update.mockResolvedValue(workOrder);
+
+    await useCase.execute(workOrder.id, { problemDescription: 'Barulho', userId: randomUUID() });
+
+    expect(cache.delete).toHaveBeenCalledWith([workOrderCacheKey(workOrder.id)]);
+
+    expect(cache.delete.mock.invocationCallOrder[0]).toBeGreaterThan(
+      workOrderRepository.update.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('should not touch the cache when the write fails', async () => {
+    const workOrder = createMockWorkOrder({ status: WorkOrderStatus.RECEIVED });
+
+    workOrderRepository.findById.mockResolvedValue(workOrder);
+    workOrderRepository.update.mockRejectedValue(new Error('write failed'));
+
+    await expect(
+      useCase.execute(workOrder.id, { problemDescription: 'Barulho', userId: randomUUID() }),
+    ).rejects.toThrow('write failed');
+
+    expect(cache.delete).not.toHaveBeenCalled();
   });
 });

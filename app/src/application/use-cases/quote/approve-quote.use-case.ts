@@ -12,6 +12,8 @@ import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { recordWorkOrderTransition } from '@application/metrics/work-order-metrics';
 import { IApproveQuoteUseCase } from '@application/ports/input/quote/approve-quote.use-case.interface';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
+import { ICache } from '@application/ports/output/cache.service.interface';
+import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 
 interface StockReservationSummary {
   reservedItemCount: number;
@@ -24,6 +26,7 @@ export class ApproveQuoteUseCase implements IApproveQuoteUseCase {
     private readonly logger: ILogger,
     private readonly metrics: IMetrics,
     private readonly statusHistoryRepository: IStatusHistoryRepository,
+    private readonly cache: ICache,
   ) {}
 
   async execute(quoteId: string, userId?: string | null): Promise<Quote> {
@@ -88,6 +91,8 @@ export class ApproveQuoteUseCase implements IApproveQuoteUseCase {
         customerId: workOrder.customerId,
       };
     });
+
+    await this.cache.delete([workOrderCacheKey(workOrderId)]);
 
     if (reservation.reservedItemCount > 0) {
       this.logger.event(BUSINESS_EVENTS.STOCK_RESERVED, {

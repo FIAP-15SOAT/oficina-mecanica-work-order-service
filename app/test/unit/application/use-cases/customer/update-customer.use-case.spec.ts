@@ -13,8 +13,18 @@ import {
 import { createMockUser } from '../../../../helpers/user-mock.factory';
 import { Document } from '@domain/value-objects/document.vo';
 import { Email } from '@domain/value-objects/email.vo';
+import { ICache } from '@application/ports/output/cache.service.interface';
+import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
+import { createMockCache } from '../../../../helpers/cache-mock.factory';
+import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
+import {
+  createMockWorkOrder,
+  createMockWorkOrderRepository,
+} from '../../../../helpers/work-order-mock.factory';
 
 describe('UpdateCustomerUseCase', () => {
+  let cache: jest.Mocked<ICache>;
+  let workOrderRepository: jest.Mocked<IWorkOrderRepository>;
   let useCase: UpdateCustomerUseCase;
   let customerRepository: jest.Mocked<ICustomerRepository>;
   let userCustomerRepository: jest.Mocked<IUserCustomerRepository>;
@@ -31,7 +41,14 @@ describe('UpdateCustomerUseCase', () => {
   beforeEach(() => {
     customerRepository = createMockCustomerRepository();
     userCustomerRepository = { findUsersByCustomerId: jest.fn().mockResolvedValue([]) } as never;
-    useCase = new UpdateCustomerUseCase(customerRepository, userCustomerRepository);
+    cache = createMockCache();
+    workOrderRepository = createMockWorkOrderRepository();
+    useCase = new UpdateCustomerUseCase(
+      customerRepository,
+      userCustomerRepository,
+      workOrderRepository,
+      cache,
+    );
   });
 
   it('should update customer successfully', async () => {
@@ -266,5 +283,38 @@ describe('UpdateCustomerUseCase', () => {
     await useCase.execute('cust-1', { ...validInput, document: '12345678909' });
 
     expect(customerRepository.hasWorkOrders).not.toHaveBeenCalled();
+  });
+
+  it('should delete the keys of every work order of the customer', async () => {
+    const existing = createMockCustomer({ id: 'cust-1' });
+
+    customerRepository.findById.mockResolvedValue(existing);
+    customerRepository.update.mockResolvedValue(existing);
+    workOrderRepository.findByCustomerId.mockResolvedValue([
+      createMockWorkOrder({ id: 'wo-1' }),
+      createMockWorkOrder({ id: 'wo-2' }),
+    ]);
+
+    await useCase.execute('cust-1', validInput);
+
+    expect(workOrderRepository.findByCustomerId).toHaveBeenCalledWith('cust-1');
+
+    expect(cache.delete).toHaveBeenCalledWith([
+      workOrderCacheKey('wo-1'),
+      workOrderCacheKey('wo-2'),
+    ]);
+
+    expect(cache.delete.mock.invocationCallOrder[0]).toBeGreaterThan(
+      customerRepository.update.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('should not touch the cache when the write fails', async () => {
+    customerRepository.findById.mockResolvedValue(createMockCustomer({ id: 'cust-1' }));
+    customerRepository.update.mockRejectedValue(new Error('write failed'));
+
+    await expect(useCase.execute('cust-1', validInput)).rejects.toThrow('write failed');
+
+    expect(cache.delete).not.toHaveBeenCalled();
   });
 });

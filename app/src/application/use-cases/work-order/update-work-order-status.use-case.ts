@@ -12,6 +12,8 @@ import { recordWorkOrderTransition } from '@application/metrics/work-order-metri
 
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
+import { ICache } from '@application/ports/output/cache.service.interface';
+import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 
 export class UpdateWorkOrderStatusUseCase {
   private static readonly PATCH_STATUS_ALLOWED = new Set<WorkOrderStatus>([
@@ -25,6 +27,7 @@ export class UpdateWorkOrderStatusUseCase {
     private readonly logger: ILogger,
     private readonly metrics: IMetrics,
     private readonly statusHistoryRepository: IStatusHistoryRepository,
+    private readonly cache: ICache,
   ) {}
 
   async execute(id: string, dto: UpdateWorkOrderStatusDto): Promise<WorkOrder> {
@@ -60,6 +63,8 @@ export class UpdateWorkOrderStatusUseCase {
         return { workOrder: saved, previousStatus, transition };
       },
     );
+
+    await this.cache.delete([workOrderCacheKey(workOrder.id)]);
 
     this.logger.event(BUSINESS_EVENTS.WORK_ORDER_STATUS_UPDATED, {
       workOrderId: workOrder.id,

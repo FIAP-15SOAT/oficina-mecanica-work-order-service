@@ -11,6 +11,8 @@ import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { recordWorkOrderTransition } from '@application/metrics/work-order-metrics';
 import { IRejectQuoteUseCase } from '@application/ports/input/quote/reject-quote.use-case.interface';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
+import { ICache } from '@application/ports/output/cache.service.interface';
+import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 
 export class RejectQuoteUseCase implements IRejectQuoteUseCase {
   constructor(
@@ -18,6 +20,7 @@ export class RejectQuoteUseCase implements IRejectQuoteUseCase {
     private readonly logger: ILogger,
     private readonly metrics: IMetrics,
     private readonly statusHistoryRepository: IStatusHistoryRepository,
+    private readonly cache: ICache,
   ) {}
 
   async execute(quoteId: string, notes?: string | null, userId?: string | null): Promise<Quote> {
@@ -90,6 +93,8 @@ export class RejectQuoteUseCase implements IRejectQuoteUseCase {
         customerId,
       };
     });
+
+    await this.cache.delete([workOrderCacheKey(workOrderId)]);
 
     this.logger.event(BUSINESS_EVENTS.QUOTE_REJECTED, {
       quoteId: quote.id,

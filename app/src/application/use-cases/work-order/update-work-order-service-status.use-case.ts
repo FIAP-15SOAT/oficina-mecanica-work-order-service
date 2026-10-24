@@ -15,6 +15,8 @@ import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { recordWorkOrderTransition } from '@application/metrics/work-order-metrics';
 
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
+import { ICache } from '@application/ports/output/cache.service.interface';
+import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 
 interface StockConsumptionSummary {
   consumedItemCount: number;
@@ -29,6 +31,7 @@ export class UpdateWorkOrderServiceStatusUseCase {
     private readonly logger: ILogger,
     private readonly metrics: IMetrics,
     private readonly statusHistoryRepository: IStatusHistoryRepository,
+    private readonly cache: ICache,
   ) {}
 
   async execute(dto: UpdateWorkOrderServiceStatusDto): Promise<WorkOrderService> {
@@ -94,6 +97,8 @@ export class UpdateWorkOrderServiceStatusUseCase {
         transition,
       };
     });
+
+    await this.cache.delete([workOrderCacheKey(workOrderId)]);
 
     if (consumption.consumedItemCount > 0) {
       this.logger.event(BUSINESS_EVENTS.STOCK_CONSUMED, {

@@ -1,5 +1,6 @@
 import type { Server } from 'http';
 import { randomUUID } from 'node:crypto';
+import Redis from 'ioredis';
 import request from 'supertest';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
@@ -9,13 +10,16 @@ describe('WorkOrder (E2E)', () => {
   let ctx: TestContext;
   let httpServer: Server;
   let adminAuth: AuthTokens;
+  let redis: Redis;
 
   beforeAll(async () => {
-    ctx = await setupTestApp();
+    ctx = await setupTestApp({ captureLogs: true });
     httpServer = ctx.httpServer;
+    redis = new Redis(ctx.valkeyContainer.getConnectionUrl());
   });
 
   afterAll(async () => {
+    await redis.quit();
     await teardownTestApp(ctx);
   });
 
@@ -1924,6 +1928,78 @@ describe('WorkOrder (E2E)', () => {
           data: { status: 'IN_DIAGNOSIS', version: { increment: 1 } },
         }),
       ).rejects.toMatchObject({ code: 'P2025' });
+    });
+  });
+
+  // Last describe: the cache-down case pauses Valkey for 3 s.
+  describe('GET /api/work-orders/:id — cache', () => {
+    async function createCachedWorkOrder() {
+      const customer = await createCustomer();
+      const vehicle = await createVehicle(customer.id);
+      const workOrder = await createWorkOrder(customer.id, vehicle.id);
+
+      return { ...workOrder, customerId: customer.id, vehicleId: vehicle.id };
+    }
+
+    function getDetail(id: string) {
+      return request(httpServer)
+        .get(`/api/work-orders/${id}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .expect(200);
+    }
+
+    it('should serve the second read from the cache with the same body', async () => {
+      const { id } = await createCachedWorkOrder();
+
+      const first = await getDetail(id);
+      const ttl = await redis.ttl(`work-order:work-order:${id}`);
+      const second = await getDetail(id);
+
+      expect(second.body).toEqual(first.body);
+      expect(ttl).toBeGreaterThanOrEqual(43_190);
+      expect(ttl).toBeLessThanOrEqual(43_200);
+    });
+
+    it('should show the new status after a status change', async () => {
+      const { id } = await createCachedWorkOrder();
+      await getDetail(id);
+
+      await request(httpServer)
+        .patch(`/api/work-orders/${id}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ status: 'IN_DIAGNOSIS' })
+        .expect(200);
+
+      expect((await getDetail(id)).body.data.status).toBe('IN_DIAGNOSIS');
+    });
+
+    it('should show the new plate after the vehicle changes', async () => {
+      const { id, customerId, vehicleId } = await createCachedWorkOrder();
+
+      await getDetail(id);
+
+      await request(httpServer)
+        .put(`/api/vehicles/${vehicleId}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ customerId, plate: 'XYZ-9876', brand: 'Toyota', model: 'Corolla', year: 2020 })
+        .expect(200);
+
+      expect((await getDetail(id)).body.data.vehicle.plate).toBe('XYZ9876');
+    });
+
+    it('should answer from PostgreSQL when the cache is down', async () => {
+      const { id } = await createCachedWorkOrder();
+      ctx.logCapture!.clear();
+      // Accepts the connection and answers nothing: the command timeout is what returns the read.
+      await redis.call('CLIENT', 'PAUSE', '3000', 'ALL');
+
+      const response = await getDetail(id);
+      await request(httpServer).get('/api/health/ready').expect(200);
+
+      expect(response.body.data.id).toBe(id);
+      expect(ctx.logCapture!.lines()).toContainEqual(
+        expect.objectContaining({ 'oficina.event.name': 'cache.unavailable' }),
+      );
     });
   });
 });

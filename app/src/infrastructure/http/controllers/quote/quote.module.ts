@@ -21,6 +21,7 @@ import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interf
 import { IEmailSenderService } from '@application/ports/output/email-sender.service.interface';
 import { ILogger } from '@application/ports/output/logger.service.interface';
 import { IMetrics } from '@application/ports/output/metrics.service.interface';
+import { ICache } from '@application/ports/output/cache.service.interface';
 import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
 
 import { QuoteController as QuoteCleanController } from '@interface-adapters/quote/quote.controller';
@@ -39,18 +40,21 @@ import { QuoteController } from './quote.controller';
         logger: ILogger,
         metrics: IMetrics,
         statusHistoryRepository: IStatusHistoryRepository,
+        cache: ICache,
       ) => {
         const approveQuoteUseCase = new ApproveQuoteUseCase(
           unitOfWork,
           logger.forContext(ApproveQuoteUseCase.name),
           metrics,
           statusHistoryRepository,
+          cache,
         );
         const rejectQuoteUseCase = new RejectQuoteUseCase(
           unitOfWork,
           logger.forContext(RejectQuoteUseCase.name),
           metrics,
           statusHistoryRepository,
+          cache,
         );
 
         return new QuoteCleanController(
@@ -68,6 +72,7 @@ import { QuoteController } from './quote.controller';
             logger.forContext(SubmitQuoteUseCase.name),
             metrics,
             statusHistoryRepository,
+            cache,
           ),
           new UpdateQuoteStatusUseCase(approveQuoteUseCase, rejectQuoteUseCase),
           new FindAllQuotesPaginatedUseCase(quoteRepository),
@@ -80,6 +85,7 @@ import { QuoteController } from './quote.controller';
         'ILogger',
         'IMetrics',
         'IStatusHistoryRepository',
+        'ICache',
       ],
     },
   ],

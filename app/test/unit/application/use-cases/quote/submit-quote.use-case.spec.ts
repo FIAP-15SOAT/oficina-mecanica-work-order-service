@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { SubmitQuoteUseCase } from '@application/use-cases/quote/submit-quote.use-case';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
@@ -19,12 +20,16 @@ import {
   arrangeStatusHistory,
   createMockStatusHistory,
 } from '../../../../helpers/status-history-mock.factory';
+import { ICache } from '@application/ports/output/cache.service.interface';
+import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
+import { createMockCache } from '../../../../helpers/cache-mock.factory';
 
 const mockEmailSender = {
   send: jest.fn().mockResolvedValue(undefined),
 };
 
 describe('SubmitQuoteUseCase', () => {
+  let cache: jest.Mocked<ICache>;
   let useCase: SubmitQuoteUseCase;
   let logger: jest.Mocked<ILogger>;
   let mockRepos: jest.Mocked<IRepositories>;
@@ -39,12 +44,14 @@ describe('SubmitQuoteUseCase', () => {
     (mockRepos.userCustomer.findUsersByCustomerId as jest.Mock).mockResolvedValue([]);
     metrics = createMockMetrics();
     logger = createMockLogger();
+    cache = createMockCache();
     useCase = new SubmitQuoteUseCase(
       mockUow,
       mockEmailSender,
       logger,
       metrics,
       mockRepos.statusHistory,
+      cache,
     );
   });
 
@@ -351,5 +358,42 @@ describe('SubmitQuoteUseCase', () => {
       expect(metrics.record).not.toHaveBeenCalled();
       expect(mockRepos.statusHistory.findByWorkOrderId).not.toHaveBeenCalled();
     });
+  });
+
+  it('should delete the work order cache keys after the commit', async () => {
+    const quote = createMockQuote({
+      status: QuoteStatus.PENDING,
+      services: [createMockQuoteService()],
+    });
+
+    const workOrder = createMockWorkOrder({
+      id: quote.workOrderId,
+      status: WorkOrderStatus.IN_DIAGNOSIS,
+    });
+
+    (mockRepos.quote.findByIdWithDetails as jest.Mock).mockResolvedValue(quote);
+    (mockRepos.workOrder.findById as jest.Mock).mockResolvedValue(workOrder);
+    (mockRepos.customer.findById as jest.Mock).mockResolvedValue(
+      createMockCustomer({ id: workOrder.customerId }),
+    );
+    (mockRepos.quote.update as jest.Mock).mockResolvedValue(quote);
+    (mockRepos.workOrder.update as jest.Mock).mockResolvedValue(workOrder);
+    (mockRepos.statusHistory.create as jest.Mock).mockResolvedValue({});
+
+    await useCase.execute(quote.id);
+
+    expect(cache.delete).toHaveBeenCalledWith([workOrderCacheKey(workOrder.id)]);
+
+    expect(cache.delete.mock.invocationCallOrder[0]).toBeGreaterThan(
+      jest.mocked(mockRepos.workOrder.update).mock.invocationCallOrder[0],
+    );
+  });
+
+  it('should not touch the cache when the write fails', async () => {
+    mockUow.executeTransaction.mockRejectedValueOnce(new Error('commit failed'));
+
+    await expect(useCase.execute(randomUUID())).rejects.toThrow('commit failed');
+
+    expect(cache.delete).not.toHaveBeenCalled();
   });
 });

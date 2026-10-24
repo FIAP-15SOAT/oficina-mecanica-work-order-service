@@ -23,6 +23,7 @@ import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status
 import { IHashService } from '@application/ports/output/hash.service.interface';
 import { ILogger } from '@application/ports/output/logger.service.interface';
 import { IMetrics } from '@application/ports/output/metrics.service.interface';
+import { ICache } from '@application/ports/output/cache.service.interface';
 
 import { MeController as MeCleanController } from '@interface-adapters/me/me.controller';
 import { MeController } from './me.controller';
@@ -43,6 +44,7 @@ import { MeController } from './me.controller';
         logger: ILogger,
         metrics: IMetrics,
         statusHistoryRepository: IStatusHistoryRepository,
+        cache: ICache,
       ) => {
         const customerAccessPolicy = new CustomerAccessPolicy(
           userCustomerRepository,
@@ -53,12 +55,14 @@ import { MeController } from './me.controller';
           logger.forContext(ApproveQuoteUseCase.name),
           metrics,
           statusHistoryRepository,
+          cache,
         );
         const rejectQuoteUseCase = new RejectQuoteUseCase(
           unitOfWork,
           logger.forContext(RejectQuoteUseCase.name),
           metrics,
           statusHistoryRepository,
+          cache,
         );
         const updateQuoteStatusUseCase = new UpdateQuoteStatusUseCase(
           approveQuoteUseCase,
@@ -98,6 +102,7 @@ import { MeController } from './me.controller';
         'ILogger',
         'IMetrics',
         'IStatusHistoryRepository',
+        'ICache',
       ],
     },
   ],

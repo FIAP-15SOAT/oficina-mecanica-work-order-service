@@ -82,6 +82,22 @@ export class PrismaWorkOrderRepository implements IWorkOrderRepository {
     return record ? WorkOrderMapper.toDomain(record) : null;
   }
 
+  async findByCustomerId(customerId: string): Promise<WorkOrder[]> {
+    const records = await this.prisma.workOrder.findMany({
+      where: { customerId },
+    });
+
+    return records.map((record) => WorkOrderMapper.toDomain(record));
+  }
+
+  async findByVehicleId(vehicleId: string): Promise<WorkOrder[]> {
+    const records = await this.prisma.workOrder.findMany({
+      where: { vehicleId },
+    });
+
+    return records.map((record) => WorkOrderMapper.toDomain(record));
+  }
+
   async findAllPaginated(
     pagination: PaginationInput,
     filters: WorkOrderFilters,

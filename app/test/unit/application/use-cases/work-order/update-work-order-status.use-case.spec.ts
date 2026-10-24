@@ -14,8 +14,13 @@ import {
   arrangeStatusHistory,
   createMockStatusHistory,
 } from '../../../../helpers/status-history-mock.factory';
+import { ICache } from '@application/ports/output/cache.service.interface';
+import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
+import { createMockCache } from '../../../../helpers/cache-mock.factory';
+import { randomUUID } from 'node:crypto';
 
 describe('UpdateWorkOrderStatusUseCase', () => {
+  let cache: jest.Mocked<ICache>;
   let useCase: UpdateWorkOrderStatusUseCase;
   let logger: jest.Mocked<ILogger>;
   let mockRepos: jest.Mocked<IRepositories>;
@@ -28,7 +33,14 @@ describe('UpdateWorkOrderStatusUseCase', () => {
     mockUow = unitOfWork;
     metrics = createMockMetrics();
     logger = createMockLogger();
-    useCase = new UpdateWorkOrderStatusUseCase(mockUow, logger, metrics, mockRepos.statusHistory);
+    cache = createMockCache();
+    useCase = new UpdateWorkOrderStatusUseCase(
+      mockUow,
+      logger,
+      metrics,
+      mockRepos.statusHistory,
+      cache,
+    );
   });
 
   it('should transition RECEIVED -> IN_DIAGNOSIS', async () => {
@@ -247,5 +259,39 @@ describe('UpdateWorkOrderStatusUseCase', () => {
 
       expect(calls).toEqual(['commit', 'record']);
     });
+  });
+
+  it('should delete the work order cache keys after the commit', async () => {
+    const workOrder = createMockWorkOrder({ status: WorkOrderStatus.RECEIVED });
+
+    (mockRepos.workOrder.findById as jest.Mock).mockResolvedValue(workOrder);
+
+    (mockRepos.workOrder.update as jest.Mock).mockResolvedValue(workOrder);
+
+    (mockRepos.statusHistory.create as jest.Mock).mockResolvedValue({});
+
+    await useCase.execute(workOrder.id, {
+      status: WorkOrderStatus.IN_DIAGNOSIS,
+      userId: '550e8400-e29b-41d4-a716-446655440099',
+    });
+
+    expect(cache.delete).toHaveBeenCalledWith([workOrderCacheKey(workOrder.id)]);
+
+    expect(cache.delete.mock.invocationCallOrder[0]).toBeGreaterThan(
+      jest.mocked(mockRepos.workOrder.update).mock.invocationCallOrder[0],
+    );
+  });
+
+  it('should not touch the cache when the write fails', async () => {
+    mockUow.executeTransaction.mockRejectedValueOnce(new Error('commit failed'));
+
+    await expect(
+      useCase.execute(randomUUID(), {
+        status: WorkOrderStatus.IN_DIAGNOSIS,
+        userId: '550e8400-e29b-41d4-a716-446655440099',
+      }),
+    ).rejects.toThrow('commit failed');
+
+    expect(cache.delete).not.toHaveBeenCalled();
   });
 });

@@ -19,6 +19,8 @@ export interface IWorkOrderRepository {
   create(workOrder: WorkOrder): Promise<WorkOrder>;
   findById(id: string): Promise<WorkOrder | null>;
   findByIdWithDetails(id: string): Promise<WorkOrder | null>;
+  findByCustomerId(customerId: string): Promise<WorkOrder[]>;
+  findByVehicleId(vehicleId: string): Promise<WorkOrder[]>;
   findAllPaginated(
     pagination: PaginationInput,
     filters: WorkOrderFilters,

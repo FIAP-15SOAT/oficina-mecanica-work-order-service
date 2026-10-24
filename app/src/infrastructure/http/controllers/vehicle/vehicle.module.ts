@@ -9,6 +9,8 @@ import { FindVehiclesByCustomerIdUseCase } from '@application/use-cases/vehicle/
 
 import { ICustomerRepository } from '@domain/interfaces/repositories/customer.repository.interface';
 import { IVehicleRepository } from '@domain/interfaces/repositories/vehicle.repository.interface';
+import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
+import { ICache } from '@application/ports/output/cache.service.interface';
 
 import { VehicleController as VehicleCleanController } from '@interface-adapters/vehicle/vehicle.controller';
 import { VehicleController } from './vehicle.controller';
@@ -22,16 +24,23 @@ import { CustomerVehiclesController } from './customer-vehicles.controller';
       useFactory: (
         vehicleRepository: IVehicleRepository,
         customerRepository: ICustomerRepository,
+        workOrderRepository: IWorkOrderRepository,
+        cache: ICache,
       ) =>
         new VehicleCleanController(
           new CreateVehicleUseCase(vehicleRepository, customerRepository),
           new FindAllVehiclesUseCase(vehicleRepository),
           new FindVehicleByIdUseCase(vehicleRepository),
-          new UpdateVehicleUseCase(vehicleRepository, customerRepository),
+          new UpdateVehicleUseCase(
+            vehicleRepository,
+            customerRepository,
+            workOrderRepository,
+            cache,
+          ),
           new DeleteVehicleUseCase(vehicleRepository),
           new FindVehiclesByCustomerIdUseCase(vehicleRepository, customerRepository),
         ),
-      inject: ['IVehicleRepository', 'ICustomerRepository'],
+      inject: ['IVehicleRepository', 'ICustomerRepository', 'IWorkOrderRepository', 'ICache'],
     },
   ],
 })
