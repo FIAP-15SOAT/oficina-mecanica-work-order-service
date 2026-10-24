@@ -474,7 +474,7 @@ describe('PrismaWorkOrderRepository', () => {
   });
 
   describe('updateServiceItemStatus', () => {
-    it('should atomically update service item and work order root', async () => {
+    it('should update the service item and then the work order with the version check, without a nested $transaction', async () => {
       const workOrderId = randomUUID();
       const serviceId = randomUUID();
       const workOrder = WorkOrder.reconstitute({
@@ -524,6 +524,10 @@ describe('PrismaWorkOrderRepository', () => {
           data: expect.objectContaining({ version: { increment: 1 } }),
         }),
       );
+      expect(prisma.workOrderService.update.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.workOrder.update.mock.invocationCallOrder[0],
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('should throw ConcurrencyException on P2025 during atomic update', async () => {

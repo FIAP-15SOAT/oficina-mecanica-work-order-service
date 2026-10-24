@@ -188,29 +188,27 @@ export class PrismaWorkOrderRepository implements IWorkOrderRepository {
 
   async updateServiceItemStatus(workOrder: WorkOrder, item: WorkOrderService): Promise<void> {
     try {
-      await this.prisma.$transaction([
-        this.prisma.workOrderService.update({
-          where: {
-            workOrderId_serviceId: { workOrderId: item.workOrderId, serviceId: item.serviceId },
-          },
-          data: {
-            status: item.status,
-            startedAt: item.startedAt,
-            finishedAt: item.finishedAt,
-            updatedAt: item.updatedAt,
-          },
-        }),
-        this.prisma.workOrder.update({
-          where: { id: workOrder.id, version: workOrder.version },
-          data: {
-            status: workOrder.status,
-            startedAt: workOrder.startedAt,
-            finishedAt: workOrder.finishedAt,
-            updatedAt: workOrder.updatedAt,
-            version: { increment: 1 },
-          },
-        }),
-      ]);
+      await this.prisma.workOrderService.update({
+        where: {
+          workOrderId_serviceId: { workOrderId: item.workOrderId, serviceId: item.serviceId },
+        },
+        data: {
+          status: item.status,
+          startedAt: item.startedAt,
+          finishedAt: item.finishedAt,
+          updatedAt: item.updatedAt,
+        },
+      });
+      await this.prisma.workOrder.update({
+        where: { id: workOrder.id, version: workOrder.version },
+        data: {
+          status: workOrder.status,
+          startedAt: workOrder.startedAt,
+          finishedAt: workOrder.finishedAt,
+          updatedAt: workOrder.updatedAt,
+          version: { increment: 1 },
+        },
+      });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         throw new ConcurrencyException(
