@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-sns": "^3.1156.0",
+    "@aws-sdk/client-sqs": "^3.1156.0",
     "@nestjs-modules/mailer": "^3.0.2",
     "@nestjs/common": "^12.2.0",
     "@nestjs/config": "^12.0.1",
@@ -69,6 +70,7 @@
     "proxy-addr": "^2.0.7",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "sqs-consumer": "^15.0.4",
     "tsx": "^4.21.0",
     "uuid": "^8.3.2"
   },

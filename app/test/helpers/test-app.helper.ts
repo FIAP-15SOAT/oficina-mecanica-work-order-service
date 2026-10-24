@@ -14,6 +14,7 @@ import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/infrastructure/config/app-bootstrap';
 import { PrismaService } from '../../src/infrastructure/persistence/prisma/prisma.service';
 import { OutboxRelayService } from '../../src/infrastructure/messaging/outbox-relay.service';
+import { SqsConsumerService } from '../../src/infrastructure/messaging/sqs-consumer.service';
 import { LOGGER_DESTINATION, LOGGER_LEVEL } from '../../src/infrastructure/logging/logging.module';
 import {
   CUSTOMER_JWT_TEST_PUBLIC_KEY,
@@ -128,8 +129,9 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
     imports: [AppModule],
   });
 
-  // Suites without a broker get an inert relay; the messaging suite runs the real one.
+  // Suites without a broker get an inert relay and consumer; the messaging suite runs the real ones.
   builder.overrideProvider(OutboxRelayService).useValue({});
+  builder.overrideProvider(SqsConsumerService).useValue({});
 
   const captureLogs = options.captureLogs === true || options.captureBootstrap === true;
   const logCaptureSeam = captureLogs ? createLogCapture() : undefined;
