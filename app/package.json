@@ -32,6 +32,7 @@
     "db:reset": "node -e \"if(['production','staging'].includes(process.env.NODE_ENV)){console.error('ERROR: db:reset is blocked in production/staging');process.exit(1)}\" && prisma migrate reset --force && prisma db seed"
   },
   "dependencies": {
+    "@aws-sdk/client-sns": "^3.1156.0",
     "@nestjs-modules/mailer": "^3.0.2",
     "@nestjs/common": "^12.2.0",
     "@nestjs/config": "^12.0.1",

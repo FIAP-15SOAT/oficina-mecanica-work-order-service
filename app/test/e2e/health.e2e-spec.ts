@@ -10,6 +10,7 @@ import { HealthFailureCategory } from '@infrastructure/logging/technical-event.c
 import { PrismaService } from '@infrastructure/persistence/prisma/prisma.service';
 
 import { AppModule } from '../../src/app.module';
+import { OutboxRelayService } from '../../src/infrastructure/messaging/outbox-relay.service';
 import { configureApp } from '../../src/infrastructure/config/app-bootstrap';
 
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
@@ -442,7 +443,11 @@ const UNREACHABLE_DATABASE_URL = 'postgresql://nobody:nobody@127.0.0.1:1/nodb';
  * `describe` existe para provar, e sem escutar de fato não há porta a assertar.
  */
 async function bootWithoutDatabase(): Promise<NestExpressApplication> {
-  const moduleFixture = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  // No broker here either: the relay is inert, as in setupTestApp.
+  const moduleFixture = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(OutboxRelayService)
+    .useValue({})
+    .compile();
   const app = moduleFixture.createNestApplication<NestExpressApplication>();
 
   configureApp(app, { allowedOrigins: true, withSwagger: true });

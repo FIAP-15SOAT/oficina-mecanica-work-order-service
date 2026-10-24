@@ -13,6 +13,7 @@ import type { DestinationStream } from 'pino';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/infrastructure/config/app-bootstrap';
 import { PrismaService } from '../../src/infrastructure/persistence/prisma/prisma.service';
+import { OutboxRelayService } from '../../src/infrastructure/messaging/outbox-relay.service';
 import { LOGGER_DESTINATION, LOGGER_LEVEL } from '../../src/infrastructure/logging/logging.module';
 import {
   CUSTOMER_JWT_TEST_PUBLIC_KEY,
@@ -126,6 +127,9 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
   const builder = Test.createTestingModule({
     imports: [AppModule],
   });
+
+  // Suites without a broker get an inert relay; the messaging suite runs the real one.
+  builder.overrideProvider(OutboxRelayService).useValue({});
 
   const captureLogs = options.captureLogs === true || options.captureBootstrap === true;
   const logCaptureSeam = captureLogs ? createLogCapture() : undefined;

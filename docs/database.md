@@ -48,6 +48,7 @@ Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgr
   - **Conteúdo.** `type` é um tipo do catálogo de mensagens (`app/src/domain/messaging/`), `payload` é o corpo (`JSONB`) e `work_order_id` é a OS da mensagem, nula nas mensagens sem OS.
   - **`trace_context`** guarda o contexto de trace W3C da requisição que gravou a linha (`traceparent` e, quando houver, `tracestate`). O relay publica dentro desse contexto, e o processamento no serviço que consome aparece no mesmo trace da requisição.
   - **`created_at`** é `TIMESTAMPTZ(3)`: o `occurredAt` da mensagem sai dele em UTC, qualquer que seja o fuso da sessão do PostgreSQL.
+  - **Um relay por vez.** Toda réplica do serviço roda um relay, que a cada 500 ms abre uma transação, lê até 10 linhas por `id`, publica uma a uma e apaga as publicadas. A transação começa com `pg_try_advisory_xact_lock(7310001)`, uma trava consultiva do PostgreSQL: só uma transação a obtém, as outras recebem `false` na hora e pulam aquele ciclo, sem esperar nem ocupar conexão, e a trava se solta sozinha no `COMMIT` ou no `ROLLBACK`. Sem ela, duas réplicas publicariam linhas do mesmo lote ao mesmo tempo e a ordem da OS na fila FIFO se perderia. O número não tem significado: é a chave que identifica essa trava no banco (`OUTBOX_RELAY_LOCK_KEY`), igual em todas as réplicas e sem outro uso no mesmo banco.
   - **`work_order_id`** é FK `Restrict` para `work_orders`. Os outros serviços usam a mesma tabela sem a FK, porque lá o id é de uma OS que não pertence a eles.
 
 ## Enums

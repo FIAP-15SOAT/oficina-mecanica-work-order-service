@@ -24,6 +24,7 @@ import { WorkOrderModule } from './infrastructure/http/controllers/work-order/wo
 import { QuoteModule } from './infrastructure/http/controllers/quote/quote.module';
 import { StockModule } from './infrastructure/http/controllers/stock/stock.module';
 import { MeModule } from './infrastructure/http/controllers/me/me.module';
+import { MessagingModule } from './infrastructure/messaging/messaging.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { MeModule } from './infrastructure/http/controllers/me/me.module';
     TelemetryModule,
     PrismaModule,
     RepositoriesModule,
+    MessagingModule,
     HealthModule,
     AuthModule,
     UserModule,
