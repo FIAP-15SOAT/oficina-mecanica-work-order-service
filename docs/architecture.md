@@ -15,6 +15,7 @@ Clean Architecture + DDD do backend da Oficina Mecânica — camadas estritas, e
 - [Ciclo de vida do Orçamento](#ciclo-de-vida-do-orçamento)
 - [Estoque, reservas e movimentações](#estoque-reservas-e-movimentações)
 - [Aprovação de orçamento pelo Cliente da Oficina autenticado](#aprovação-de-orçamento-pelo-cliente-da-oficina-autenticado)
+- [Mensageria, cache e chamadas internas](#mensageria-cache-e-chamadas-internas)
 - [Exceções por Camada](#exceções-por-camada)
 - [Observabilidade](#observabilidade)
 - [Decisões de Arquitetura (ADRs)](#decisões-de-arquitetura-adrs)
@@ -42,15 +43,23 @@ app/src/
 │   ├── constants/                   # Regex compartilhadas (placa, telefone, e-mail, senha)
 │   │                                # + limites de validação por agregado
 │   ├── validators/                  # DocumentValidator (CPF/CNPJ com dígito verificador)
+│   ├── messaging/                   # Catálogo de mensagens por escopo (inventory, billing,
+│   │                                # notification) + message-catalog (OutboxMessage: união
+│   │                                # discriminada por `type`)
 │   └── interfaces/                  # Contratos da camada de domínio (permanecem no domínio)
 │       ├── common/                  # PaginationQuery, PaginatedResult, SortCriterion
 │       └── repositories/            # Contratos de repositórios (IRepository) + IUnitOfWork
+│                                    # (inclui IOutboxRepository)
 │
 ├── application/                     # Camada de aplicação (orquestração de casos de uso, sem framework)
 │   ├── ports/
 │   │   ├── input/<domínio>/         # I<Nome>UseCase (input ports) + DTOs de entrada
 │   │   └── output/                  # IEmailSenderService, IHashService, ITokenService,
-│   │                                # ILogger (output ports)
+│   │                                # ILogger, IMetrics, ICache, IInternalHttpClient
+│   │                                # (output ports)
+│   ├── messaging/                   # MessageEnvelope + MessageHandler (contrato dos handlers)
+│   ├── keys/                        # Chaves de cache (work-order:work-order:<id>)
+│   ├── mappers/                     # WorkOrderCacheMapper (snapshot versionado da OS no cache)
 │   ├── metrics/                     # IMetrics é a porta; aqui ficam o catálogo tipado das
 │   │                                # métricas de negócio e o cálculo puro de permanência
 │   │                                # por status e dos dois totais
@@ -80,7 +89,7 @@ app/src/
 │   │   └── quote/                   # CRUD, itens, envio por e-mail, aprovação/rejeição
 │   │                                # (Approve/Reject/Submit/UpdateStatus)
 │   ├── exceptions/                  # ResourceNotFoundException, ResourceConflictException,
-│   │                                # UnauthorizedAccessException
+│   │                                # UnauthorizedAccessException, ServiceRequestRejectedException
 │   └── utils/                       # PaginationUtil (sanitização e cálculo de páginas)
 │
 ├── interface-adapters/<domínio>/    # Adapters livres de framework (POJOs, zero @nestjs/*)
@@ -101,19 +110,31 @@ app/src/
 │   │   │                            # postgres.health-check (SELECT 1 com query_timeout
 │   │   │                            #   próprio + prazo do chamador; categoria fechada),
 │   │   │                            # readiness-state (ready|draining, single-flight, transição)
+│   ├── messaging/                   # MessagingModule (@Global: SNSClient, SQSClient),
+│   │                                # OutboxRelayService (relay do outbox → SNS FIFO),
+│   │                                # SqsConsumerService (sqs-consumer + span CONSUMER),
+│   │                                # MessageHandlerRegistry, MessageEnvelopeDto,
+│   │                                # messaging-log-bindings (campos messaging.* das linhas)
+│   ├── cache/                       # CacheModule (@Global, token 'ICache') +
+│   │                                # ValkeyCacheAdapter + valkey-client (ioredis)
+│   ├── clients/                     # ClientsModule + InternalHttpClient (@nestjs/axios;
+│   │                                #   x-request-id, prazo e erros do dono)
 │   ├── http/                        # Borda NestJS — @Controller fino que delega ao Clean Controller
-│   │   ├── http.constants.ts        # Prefixo global (`api`) — módulo folha lido por
-│   │   │                            #   config/app-bootstrap e por health/health.constants
+│   │   ├── http.constants.ts        # Prefixo global (`api`) e prefixo interno (`internal`) —
+│   │   │                            #   módulo folha lido por config/app-bootstrap e por
+│   │   │                            #   health/health.constants
 │   │   ├── controllers/<domínio>/   # @Controller + module + dto/requests + dto/responses
 │   │   │                            # (@ApiProperty; *ResponseDto implements o tipo puro)
 │   │   │                            # domínios no singular; auth em controllers/auth/;
 │   │   │                            # customer-access/ tem dois controllers
 │   │   │                            # (CustomerAccessController, UserCustomersController);
-│   │   │                            # me/ expõe as rotas do usuário externo; e as rotas
+│   │   │                            # me/ expõe as rotas do usuário externo; internal/ as
+│   │   │                            # rotas /internal entre serviços; e as rotas
 │   │   │                            # de saúde em controllers/health/
-│   │   ├── guards/                  # JwtAuthGuard, RolesGuard, CustomerJwtAuthGuard,
-│   │   │                            # AnyAuthGuard (aceita interno OU externo)
-│   │   ├── decorators/              # @CurrentUser, @Roles, @Public
+│   │   ├── guards/                  # AuthenticationGuard (global, nega por padrão) +
+│   │   │                            # JwtAuthGuard, CustomerJwtAuthGuard, AnyAuthGuard
+│   │   │                            # (aceita interno OU externo), RolesGuard
+│   │   ├── decorators/              # @CurrentUser, @Roles, @Public, @CustomerArea
 │   │   ├── strategies/              # JwtStrategy (HS256, interno),
 │   │   │                            # CustomerJwtStrategy (RS256, externo) — Passport,
 │   │   │                            # nunca um verificador compartilhado
@@ -125,9 +146,9 @@ app/src/
 │   │   ├── validators/              # IsValidCpfCnpj (adapter class-validator)
 │   │   └── common/dto/              # PaginationDto, PaginatedResponseDto compartilhados
 │   ├── persistence/prisma/          # PrismaService + PrismaModule (singleton de conexão)
-│   │   ├── repositories/            # Implementações Prisma (10 repositórios) + PrismaUnitOfWork +
+│   │   ├── repositories/            # Implementações Prisma (13 repositórios, outbox incluído) + PrismaUnitOfWork +
 │   │   │                            # RepositoriesModule (@Global) — única pasta a importar @generated/client
-│   │   ├── mappers/                 # Conversão Prisma model → Entidade de domínio (14 mappers)
+│   │   ├── mappers/                 # Conversão Prisma model → Entidade de domínio (16 mappers)
 │   │   └── helpers/                 # Helpers de paginação, existência e ordenação (Prisma)
 │   ├── logging/                     # LoggingModule (@Global) + PinoLoggerAdapter,
 │   │   │                            # logger.config (config + trust proxy),
@@ -166,7 +187,7 @@ app/test/
 ├── helpers/                         # Mock factories reutilizáveis (incluindo
 │                                    # UnitOfWorkMockFactory) e helpers de E2E
 │                                    # (auth, db cleanup, test app bootstrap)
-├── unit/                            # 216 suites de testes unitários (espelham src/)
+├── unit/                            # 229 suites de testes unitários (espelham src/)
 │   ├── domain/                      # entities/, value-objects/, validators/
 │   ├── application/use-cases/       # auth, customer, customer-access, me,
 │   │                                # part-supply, quote, service, stock, user,
@@ -174,15 +195,20 @@ app/test/
 │   ├── interface-adapters/          # Clean Controllers + Presenters por domínio
 │   └── infrastructure/              # http/ (controllers, filters, interceptors, pipes,
 │                                    # validators, auth), persistence/prisma, services
-└── e2e/                             # 15 suites de testes E2E (Testcontainers + PostgreSQL real)
+├── contracts/                       # Fixtures do contrato das rotas /internal
+│                                    # (internal-work-order.json)
+└── e2e/                             # 17 suites de testes E2E (Testcontainers: PostgreSQL,
+    │                                #   Valkey e LocalStack reais)
     ├── all-exceptions.filter.e2e-spec.ts
     ├── auth.e2e-spec.ts
     ├── customer.e2e-spec.ts
     ├── customer-access.e2e-spec.ts
     ├── health.e2e-spec.ts
+    ├── internal.e2e-spec.ts           # GET /internal/work-orders/:id contra a fixture
     ├── logging.e2e-spec.ts
     ├── me.e2e-spec.ts                 # /api/me/*: identidade externa, senha, OS e
     │                                  # orçamentos vinculados, decisão de orçamento
+    ├── messaging.e2e-spec.ts          # outbox → SNS → SQS → handler, lock do relay
     ├── part-supply.e2e-spec.ts
     ├── quote.e2e-spec.ts
     ├── service.e2e-spec.ts
@@ -195,7 +221,7 @@ app/test/
 app/prisma.config.ts                 # Configuração do Prisma v7 (schema, migrations, seed e datasource)
 
 app/prisma/
-├── schema.prisma                    # Schema do banco (18 modelos, 8 enums)
+├── schema.prisma                    # Schema do banco (19 modelos, 8 enums)
 ├── migrations/                      # Migrations geradas pelo Prisma — inclui a sequence
 │                                    # `work_order_number_seq` (números de OS),
 │                                    # endurecimento de cascade deletes,
@@ -204,11 +230,12 @@ app/prisma/
 ├── seed.ts                          # Entry point do seed
 └── seeds/                           # Scripts de seed por entidade (work-order-status-info,
                                      # user, customer, vehicle, service, part-supply, work-order)
+                                     # + seed-ids (UUIDs canônicos, ver seed-ids.md)
 ```
 
 ## Modelos do banco de dados
 
-18 modelos, cobrindo identidade/acesso, veículos, catálogo, Ordem de Serviço, orçamento e estoque. Diagrama entidade-relacionamento (com os tipos reais do Postgres), explicação tabela a tabela, enums e convenções de modelagem: ver [`docs/database.md`](database.md).
+19 modelos, cobrindo identidade/acesso, veículos, catálogo, Ordem de Serviço, orçamento, estoque e o outbox da mensageria. Diagrama entidade-relacionamento (com os tipos reais do Postgres), explicação tabela a tabela, enums e convenções de modelagem: ver [`docs/database.md`](database.md).
 
 ## DDD — Aggregate Roots, Entidades e Value Objects
 
@@ -231,7 +258,9 @@ Esse mecanismo protege fluxos críticos como atualização de status de OS, apro
 
 ## Perfis de usuário (RBAC)
 
-A autorização **interna** é feita por papel via `JwtAuthGuard` + `RolesGuard` + decorator `@Roles(...)`. Os guards são aplicados **por controller** (`@UseGuards(JwtAuthGuard, RolesGuard)` na classe), não como guard global. O decorator `@Public()` libera uma rota específica dentro de um controller protegido — o `JwtAuthGuard` lê o metadata `IS_PUBLIC_KEY` e pula a autenticação; o único uso hoje é `POST /auth/password-reset-confirmations` (confirmação de reset de senha por código numérico enviado por e-mail — não há JWT nesse ponto do fluxo). O `AuthController` não tem guard de classe, então `POST /auth/login`, `POST /auth/refresh` e `POST /auth/password-reset-confirmations` já são públicos sem precisar de guard.
+A **autenticação** é negada por padrão: o `AuthenticationGuard` (`infrastructure/http/guards/authentication.guard.ts`) é registrado como `APP_GUARD` e roda em toda rota. Sem marcação, a rota exige o token de funcionário (`JwtAuthGuard`); `@Public()` dispensa o token; `@CustomerArea()` exige o token do Cliente da Oficina (`CustomerJwtAuthGuard`) e `@CustomerArea('any')` aceita qualquer um dos dois (`AnyAuthGuard`). Uma rota nova sem marcação nasce protegida, e esquecer o guard deixa de abrir a rota. Os usos de `@Public()` são, por método, `POST /auth/login`, `POST /auth/refresh` e `POST /auth/password-reset-confirmations` (não há JWT nesses pontos do fluxo) e, por classe, as rotas de saúde e as rotas `/internal` (ver [Chamadas internas](#chamadas-internas)).
+
+A **autorização interna** é por papel, via `RolesGuard` + decorator `@Roles(...)`, aplicada **por controller** (`@UseGuards(RolesGuard)` na classe). O `RolesGuard` roda depois do guard global, com o `req.user` já preenchido.
 
 | Perfil | Permissões |
 |---|---|
@@ -257,7 +286,7 @@ Dois fluxos de autenticação totalmente isolados, cada um com sua própria estr
 | Algoritmo | HS256 | RS256 |
 | Chave | `JWT_SECRET` (simétrica) | `CUSTOMER_JWT_PUBLIC_KEY` (só a pública — a privada vive na função serverless externa) |
 | Emissor do token | `POST /api/auth/login` (interno) | Função serverless externa, autenticando por CPF + senha |
-| Guard HTTP | `JwtAuthGuard` | `CustomerJwtAuthGuard` (`AnyAuthGuard` aceita os dois em `GET /api/me` e `PATCH /api/me/password`) |
+| Guard HTTP (escolhido pelo `AuthenticationGuard`) | `JwtAuthGuard` (rota sem marcação) | `CustomerJwtAuthGuard` (`@CustomerArea()`); `AnyAuthGuard` aceita os dois em `GET /api/me` e `PATCH /api/me/password` (`@CustomerArea('any')`) |
 | Carrega `role`/`customerId` no payload? | `role`, sim | **Não** — só `sub` (o `userId`) |
 
 Diagrama de sequência completo desse fluxo (função serverless externa + `AnyAuthGuard` + `CustomerJwtStrategy`): ver [`docs/sequence-diagrams.md`](sequence-diagrams.md#autenticação-externa-do-cliente-da-oficina-cpf).
@@ -344,6 +373,65 @@ O fluxo atual exige autenticação do Cliente da Oficina por CPF e senha e mant�
 3. Com esse token, o cliente consulta seus orçamentos vinculados — `GET /api/me/work-orders`, `GET /api/me/work-orders/:id/quotes`, `GET /api/me/quotes/:id` — e decide em `POST /api/me/quotes/:id/decisions` (body `{ action: 'approve' | 'reject', reason? }`). Cada uma dessas rotas passa pela `CustomerAccessPolicy` antes de tocar o orçamento (ver [seção anterior](#identidade-externa-autenticação-e-autorização-por-vínculo)); um orçamento de um cliente não vinculado ao usuário autenticado responde **HTTP 404**, nunca 403.
 4. A materialização da decisão (reserva de estoque, transição de status da OS, rejeição de propostas concorrentes) usa a lógica de domínio compartilhada: `DecideMyQuoteUseCase` delega para `UpdateQuoteStatusUseCase`, também usado por `PATCH /quotes/:id` (aprovação/rejeição manual), que por sua vez chama `ApproveQuoteUseCase`/`RejectQuoteUseCase`.
 
+## Mensageria, cache e chamadas internas
+
+O serviço conversa com os outros serviços da oficina por dois caminhos: **mensagens** assíncronas num tópico SNS FIFO (`oficina-events.fifo`), entregues a cada serviço pela própria fila SQS FIFO, e **chamadas REST internas** (`/internal/...`) pela rede do cluster. Cada serviço é o único cliente do próprio PostgreSQL e do próprio cache: nenhum lê o banco de outro.
+
+### Outbox e relay
+
+Uma mensagem nunca é publicada de dentro do caso de uso. Ela é gravada na tabela `outbox` pelo `IOutboxRepository` (`repos.outbox.add(message)`), dentro da **mesma transação** do Unit of Work que muda o estado: ou as duas escritas são confirmadas, ou nenhuma. Não há dupla escrita entre banco e broker.
+
+- O tipo e o payload vêm do catálogo tipado e fechado de `domain/messaging/` (`inventory`, `billing` e `notification`). `OutboxMessage` é uma união discriminada por `type`: tipo fora do catálogo, ou payload de outro tipo, não compila.
+- A linha guarda `id` sequencial (ordem de criação), `message_id` (UUID v4, a identidade da mensagem entre serviços), `type`, `work_order_id`, `payload` (`jsonb`), `trace_context` (o contexto W3C ativo no momento do `add`) e `created_at` (`timestamptz`). `work_order_id` tem FK `Restrict` para `work_orders`.
+- O `OutboxRelayService` roda no próprio processo a cada 500 ms (um `setTimeout` rearmado ao fim de cada lote, então dois lotes nunca se sobrepõem). Cada lote abre uma transação e tenta `pg_try_advisory_xact_lock`: só uma réplica publica por vez, e as outras pulam a rodada em vez de esperar.
+- Com o lock, o relay lê até **10 linhas** por `id`, publica uma a uma por `PublishCommand`, com o contexto de trace da linha restaurado, e apaga as publicadas na mesma transação. Ele **para no primeiro erro**, para não furar a ordem: a linha que falhou e as seguintes ficam para o próximo lote. Cada falha registra `messaging.outbox.publish_failed`. O lote é pequeno para caber nos 5 s da transação interativa do Prisma depois de um acúmulo.
+- A mensagem publicada leva o envelope `{ messageId, type, occurredAt, workOrderId, payload }`, o `MessageGroupId` igual ao `workOrderId` (ordem por OS; sem OS, o próprio `messageId`), o `MessageDeduplicationId` igual ao `messageId` e o atributo `type`, que as filter policies do tópico usam para rotear.
+- No encerramento, o relay para no `beforeApplicationShutdown` e espera o lote em voo, antes de o Prisma desconectar.
+
+### Consumo de mensagens
+
+O `SqsConsumerService` lê a fila do serviço (`WORK_ORDER_QUEUE_NAME`, URL resolvida por `GetQueueUrl`) com `sqs-consumer`, em long polling de 20 s e **uma mensagem por vez** (`batchSize: 1`): com lote maior, a biblioteca processaria as mensagens em paralelo e furaria a ordem por OS.
+
+Para cada mensagem, o consumidor:
+
+1. extrai o contexto W3C dos atributos e abre um span `CONSUMER` (`process work-order.fifo`), a única instrumentação manual da aplicação (ver [Observabilidade](observability.md#consumo-de-mensagens));
+2. valida o envelope (`MessageEnvelopeDto`, class-validator) e, quando o handler declara uma classe de payload, o payload. A mensagem de erro leva só os nomes das propriedades, nunca valores;
+3. procura o handler pelo `type` no `MessageHandlerRegistry`, que os módulos preenchem no `onModuleInit`, e o chama.
+
+Toda linha de log desse processamento carrega `messaging.*`, `oficina.messaging.message.type`, `oficina.work_order.id` e `request.id` igual ao `messageId`, então as linhas de uma mensagem se correlacionam como as de uma requisição.
+
+**A mensagem só é apagada da fila quando o handler termina sem erro.** Erro, envelope inválido ou tipo sem handler deixam a mensagem na fila, e o SQS a entrega de novo depois do visibility timeout. Tipo sem handler registra `messaging.message.unhandled` (`warn`): a fila só recebe os tipos que a filter policy roteia ao serviço, então chegar sem handler é uma janela de deploy, e confirmar perderia a mensagem. Na quinta entrega (`ApproximateReceiveCount` = 5, o `maxReceiveCount` da fila) o consumidor registra `messaging.message.dead_lettered` e o SQS move a mensagem para a DLQ (`work-order-dlq.fifo`), de onde ela volta por redrive. Os handlers devem ser idempotentes pelo `messageId`, porque o SQS entrega pelo menos uma vez.
+
+No encerramento, o consumidor para no `beforeApplicationShutdown` com `stop({ abort: true })`, que cancela o long polling, e espera o evento `stopped`. O handler em voo tem 5 s para terminar.
+
+### Cache do detalhe da OS
+
+O detalhe da OS (`GET /api/work-orders/:id` e `GET /internal/work-orders/:id`) usa **cache-aside** no Valkey (ElastiCache no cluster), pela porta `ICache` (`application/ports/output/`) e o `ValkeyCacheAdapter` sobre `ioredis`.
+
+- **Chave e validade:** `work-order:work-order:<id>` (`workOrderCacheKey`), com TTL de `CACHE_TTL_SECONDS` (padrão 43.200 s, 12 h).
+- **Valor:** um snapshot JSON da OS montado pelo `WorkOrderCacheMapper`, com `cacheVersion`. O snapshot não leva o usuário atribuído: na leitura do cache, o caso de uso busca o usuário por id, então o hash de senha não vai ao cache e o nome do mecânico não fica velho. Valor que não se lê (JSON inválido, campo que o domínio rejeita ou `cacheVersion` diferente do atual) conta como falta e é relido do banco e regravado. Assim, um valor gravado por outra versão do código não responde 500 depois de um deploy.
+- **Invalidação depois do commit:** os casos de uso que escrevem na OS (`UpdateWorkOrder`, `UpdateWorkOrderStatus`, `UpdateWorkOrderServiceStatus`, `SubmitQuote`, `ApproveQuote` e `RejectQuote`), no cliente (`UpdateCustomer`) e no veículo (`UpdateVehicle`) apagam as chaves afetadas **depois** da transação, com o resultado devolvido do callback, como os eventos de negócio. Cliente e veículo buscam as próprias OS para saber quais chaves apagar. A exclusão de cliente e de veículo não invalida nada: ela só acontece quando nenhuma OS os referencia.
+- **Itens de catálogo:** escrita em serviço ou peça não invalida o detalhe das OS. Nome, descrição, SKU, unidade e categoria dos itens podem ficar até 12 h desatualizados no cache; preço, quantidade, total e status não, porque o item da OS guarda o próprio preço e as escritas na OS apagam a chave.
+- **Cache fora do ar vira leitura no banco**, nunca erro nem fila de espera: o cliente roda com `enableOfflineQueue: false`, `maxRetriesPerRequest: 1` e `commandTimeout` de 500 ms, para que um Valkey que aceita TCP e não responde também caia para o banco. Falha de leitura ou gravação registra `cache.unavailable` (`warn`) e a leitura conta como falta; falha de exclusão registra `cache.invalidation_failed` (`error`), e a chave expira pelo TTL.
+
+A área do Cliente da Oficina (`/api/me/*`) não usa o cache.
+
+### Chamadas internas
+
+As rotas `/internal/...` atendem só outros serviços, pela rede do cluster. Elas ficam em `infrastructure/http/controllers/internal/`, **fora do prefixo `api`** (que é o que o API Gateway encaminha), marcadas com `@Public()` e fora do Swagger (`@ApiExcludeController`). Cada uma delega ao Clean Controller existente.
+
+| Rota | Resposta |
+|---|---|
+| `GET /internal/work-orders/:id` | `200` com o mesmo corpo de `GET /api/work-orders/:id` (`{ data: { ... } }`), `400` para id que não é UUID, `404` para OS inexistente |
+
+O dono de cada rota versiona a fixture da resposta em `app/test/contracts/`, conferida pelo próprio e2e (ver [Testes](testing.md#contrato-das-rotas-internal)).
+
+Para chamar outro serviço, o caso de uso usa a porta `IInternalHttpClient` (`application/ports/output/`), implementada pelo `InternalHttpClient` sobre o `HttpService` do `@nestjs/axios`:
+
+- envia o `x-request-id` do contexto atual (o da requisição HTTP ou, num handler de mensagem, o `messageId`). O `traceparent` é injetado pela instrumentação HTTP do OpenTelemetry, e a chamada aparece como span `CLIENT`;
+- usa prazo de 2 s por padrão (`timeoutMs` muda o prazo de uma chamada), sem retentativa e sem seguir redirecionamento;
+- converte o 4xx do serviço chamado em `ServiceRequestRejectedException`, que o filtro responde com o mesmo status e a mensagem do dono; timeout, falha de conexão e 5xx viram `ServiceIntegrationException` (503).
+
 ## Exceções por Camada
 
 Cada camada tem sua própria hierarquia de exceções, sem dependência de framework HTTP. O mapeamento para status HTTP acontece exclusivamente nos **Exception Filters** registrados como `APP_FILTER` em `app.module.ts` (`AllExceptionsFilter`, `DomainExceptionFilter`, `ApplicationExceptionFilter`, `InfrastructureExceptionFilter`).
@@ -356,6 +444,7 @@ Cada camada tem sua própria hierarquia de exceções, sem dependência de frame
 | Application | `ResourceNotFoundException` | 404 |
 | Application | `ResourceConflictException` | 409 |
 | Application | `UnauthorizedAccessException` | 401 |
+| Application | `ServiceRequestRejectedException` | o 4xx devolvido pelo serviço chamado |
 | Infrastructure | `AuthenticationFailedException` | 401 |
 | Infrastructure | `ConcurrencyException` | 409 |
 | Infrastructure | `DatabaseOperationException` | 503 |
@@ -388,9 +477,9 @@ Decisões arquiteturais relevantes são registradas em [`docs/adr/`](./adr) no f
 - [ADR 0002 — Logging Estruturado em JSON com Nomenclatura OpenTelemetry](./adr/0002-logging-estruturado.md) *(parcialmente superado pelos ADRs 0003 e 0005)*
 - [ADR 0003 — Health Checks: Liveness e Readiness como Endpoints Dedicados](./adr/0003-health-checks.md) *(política de volume das probes contrariada pelo 0005)*
 - [ADR 0004 — Autenticação externa de clientes por CPF via função serverless](./adr/0004-autenticacao-de-clientes.md)
-- [ADR 0005 — Instrumentação OpenTelemetry: traces, correlação e métricas de negócio](./adr/0005-opentelemetry.md)
+- [ADR 0005 — Instrumentação OpenTelemetry: traces, correlação e métricas de negócio](./adr/0005-opentelemetry.md) *(emendado pelo 0021)*
 - [ADR 0006 — Escolha de nuvem: AWS (EKS + RDS) no ambiente `prod-simulated`](./adr/0006-escolha-de-nuvem-aws.md)
-- [ADR 0007 — Padrão de comunicação: REST síncrono num monólito modular](./adr/0007-padrao-de-comunicacao-rest-monolito.md)
+- [ADR 0007 — Padrão de comunicação: REST síncrono num monólito modular](./adr/0007-padrao-de-comunicacao-rest-monolito.md) *(superado em parte pelos ADRs 0018 e 0020)*
 - [ADR 0008 — Autoscaling via HPA de pods, não autoscaling de cluster](./adr/0008-autoscaling-via-hpa.md)
 - [ADR 0009 — Clean Architecture e DDD em camadas, com fronteira livre de framework](./adr/0009-clean-architecture-ddd-em-camadas.md)
 - [ADR 0010 — Concorrência otimista via coluna `version`](./adr/0010-concorrencia-otimista-via-version.md)
@@ -401,6 +490,10 @@ Decisões arquiteturais relevantes são registradas em [`docs/adr/`](./adr) no f
 - [ADR 0015 — Testes E2E contra PostgreSQL real via Testcontainers, não mocks](./adr/0015-testcontainers-e2e-postgresql-real.md)
 - [ADR 0016 — Sanitização e validação de entrada em duas camadas](./adr/0016-sanitizacao-e-validacao-em-duas-camadas.md)
 - [ADR 0017 — Materialização da credencial do banco no CD](./adr/0017-materializacao-da-credencial-do-banco-no-cd.md)
+- [ADR 0018 — Mensageria SNS/SQS FIFO com outbox transacional](./adr/0018-mensageria-sns-sqs-fifo-com-outbox.md)
+- [ADR 0019 — Cache do dono no ElastiCache](./adr/0019-cache-do-dono-no-elasticache.md)
+- [ADR 0020 — Chamadas internas pela rede do cluster e rotas públicas negadas por padrão](./adr/0020-chamadas-internas-e-rotas-negadas-por-padrao.md)
+- [ADR 0021 — Span de consumo de mensagens](./adr/0021-span-de-consumo-de-mensagens.md)
 
 ## Modelo C4
 

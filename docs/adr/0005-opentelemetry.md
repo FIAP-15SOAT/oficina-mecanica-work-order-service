@@ -4,6 +4,8 @@
 
 Aceito — 2026-09-05
 
+Emendado pelo [ADR 0021](0021-span-de-consumo-de-mensagens.md): o span `CONSUMER` do consumidor de mensagens é a única exceção à regra de nenhum span criado por código, e a lista de instrumentações ganha `aws-sdk` e `ioredis`.
+
 Supera parcialmente o [ADR 0002](0002-logging-estruturado.md): a restrição anterior de não emitir identificadores de trace é substituída por identificadores reais quando há span ativo. Também corrige a recomendação anterior de instrumentação das probes no [ADR 0003](0003-health-checks.md); a política vigente está descrita abaixo, em "Probes de saúde excluídas na entrada".
 
 ## Contexto

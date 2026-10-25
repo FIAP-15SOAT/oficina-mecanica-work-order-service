@@ -20,9 +20,9 @@ A solução roda inteiramente na região **`us-east-1`**, dentro de uma única V
 
 A primeira vista preserva o fluxo arquitetural resumido; a segunda detalha rede, ownership e workloads sem alterar a separação entre os recursos gerenciados e o cluster.
 
-![Arquitetura de infraestrutura: API Gateway e Lambda na entrada pública, API e Datadog Agent no EKS, Amazon RDS fora do cluster e Datadog como destino da telemetria](../diagrams/infrastructure-diagram.png)
+![Arquitetura de infraestrutura: API Gateway e Lambda na entrada pública, API e Datadog Agent no EKS, Amazon RDS e Amazon ElastiCache fora do cluster, Amazon SNS e SQS FIFO para a mensageria da API e Datadog como destino da telemetria](../diagrams/infrastructure-diagram.png)
 
-![Arquitetura de referência detalhada: fluxo API Gateway, VPC Link, NLB interno e NodePort; subnets públicas e privadas; cluster EKS, Lambda, RDS e serviços de suporte](../diagrams/infrastructure-details.png)
+![Arquitetura de referência detalhada: fluxo API Gateway, VPC Link, NLB interno e NodePort; subnets públicas e privadas; cluster EKS, Lambda, RDS, ElastiCache, SNS e SQS FIFO e serviços de suporte](../diagrams/infrastructure-details.png)
 
 ## As sete camadas de provisionamento
 

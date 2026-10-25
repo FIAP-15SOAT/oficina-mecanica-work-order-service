@@ -5,6 +5,7 @@
 ## Índice
 
 - [Endpoints disponíveis](#endpoints-disponíveis)
+- [Rotas internas (`/internal`)](#rotas-internas-internal)
 - [Formato de resposta](#formato-de-resposta)
   - [Exceção: as rotas de saúde](#exceção-as-rotas-de-saúde)
 
@@ -13,7 +14,7 @@ Após iniciar a aplicação:
 - **Swagger:** `http://localhost:3000/api/docs`
 - **Base URL:** `http://localhost:3000/api`
 
-Todas as rotas autenticadas exigem o header `Authorization: Bearer <token>` (access token). Tokens são obtidos em `POST /auth/login` e renovados em `POST /auth/refresh`.
+Toda rota exige o header `Authorization: Bearer <token>` (access token), salvo as marcadas como públicas. A autenticação é negada por padrão: um guard global exige o token de funcionário em toda rota sem marcação, `@Public()` dispensa o token e `@CustomerArea()` troca o token exigido pelo do Cliente da Oficina (ver [Perfis de usuário (RBAC)](architecture.md#perfis-de-usuário-rbac)). Tokens de funcionário são obtidos em `POST /auth/login` e renovados em `POST /auth/refresh`. Um token de cliente numa rota de funcionário responde **401**.
 
 ## Endpoints disponíveis
 
@@ -212,6 +213,18 @@ Todas as rotas autenticadas exigem o header `Authorization: Bearer <token>` (acc
 | POST | `/quotes/:quoteId/decisions` | Aprovar (`{ "action": "approve" }`) ou rejeitar (`{ "action": "reject", "reason": "..." }`) um orçamento vinculado | `customer-jwt` |
 
 > O token `customer-jwt` (RS256) é emitido por uma **função serverless externa** a esta aplicação, após autenticar o Cliente da Oficina por CPF + senha — a API só verifica a assinatura com `CUSTOMER_JWT_PUBLIC_KEY`. Toda rota `/api/me/*` que aponta a um recurso específico (`workOrderId`/`quoteId`) resolve a autorização **por vínculo** a cada requisição, consultando `UserCustomer` no banco — o token nunca carrega `customerId`. Um recurso inexistente e um recurso de um cliente não vinculado respondem igualmente **404** (nunca 403), para não virar oráculo de enumeração. Ver [Identidade externa, autenticação e autorização por vínculo](architecture.md#identidade-externa-autenticação-e-autorização-por-vínculo).
+
+---
+
+## Rotas internas (`/internal`)
+
+Rotas para os outros serviços da oficina, pela rede do cluster. Ficam **fora do prefixo `/api`** (base `http://localhost:3000/internal`), não passam pelo API Gateway, não pedem token e não aparecem no Swagger.
+
+| Método | Rota | Descrição | Acesso |
+|---|---|---|---|
+| GET | `/internal/work-orders/:id` | Detalhe da OS, com o mesmo corpo de `GET /api/work-orders/:id`. `400` para id que não é UUID e `404` para OS inexistente | Rede do cluster |
+
+O corpo segue o mesmo envelope das rotas públicas. O contrato fica numa fixture versionada em `app/test/contracts/`, conferida pelo e2e (ver [Contrato das rotas `/internal`](testing.md#contrato-das-rotas-internal)); detalhes do cliente que chama essas rotas em [Chamadas internas](architecture.md#chamadas-internas).
 
 ---
 

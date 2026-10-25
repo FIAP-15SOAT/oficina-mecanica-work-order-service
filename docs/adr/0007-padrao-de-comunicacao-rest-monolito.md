@@ -4,6 +4,8 @@
 
 Aceito — 2026-09-07
 
+Superado em parte pelos ADRs [0018](0018-mensageria-sns-sqs-fifo-com-outbox.md) (mensageria assíncrona entre serviços) e [0020](0020-chamadas-internas-e-rotas-negadas-por-padrao.md) (chamadas REST internas entre serviços). A API pública continua REST síncrona, documentada em OpenAPI.
+
 ## Contexto
 
 O enunciado da Fase 1 do desafio exige explicitamente um "back-end monolítico em arquitetura em camadas" com "APIs RESTful documentadas via Swagger". O sistema tem um único consumidor direto conhecido (o front-end/cliente HTTP da oficina) e uma única integração externa de fato assíncrona (o e-mail de notificação de orçamento, via SMTP) — não há, hoje, um segundo serviço backend que precise conversar com esta API em tempo real, nem um requisito de processamento em lote ou de alta taxa de eventos que justificasse um barramento de mensagens.

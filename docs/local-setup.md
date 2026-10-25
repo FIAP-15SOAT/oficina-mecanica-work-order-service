@@ -10,7 +10,7 @@ Setup local (API na máquina, infra no Docker), variáveis de ambiente e dados d
 
 ## Setup local
 
-Neste modo a API roda diretamente na sua máquina com `npm run start:dev`, enquanto apenas a infraestrutura (PostgreSQL 18 e MailHog) é provida via Docker. Pré-requisitos: **Node.js 24.9+** (24.15+ para os comandos de geração do CLI, como `nest generate`, mínimo do `@nestjs/schematics` 12) e Docker com Docker Compose.
+Neste modo a API roda diretamente na sua máquina com `npm run start:dev`, enquanto apenas a infraestrutura (PostgreSQL 18, MailHog, Valkey e LocalStack) é provida via Docker. Pré-requisitos: **Node.js 24.9+** (24.15+ para os comandos de geração do CLI, como `nest generate`, mínimo do `@nestjs/schematics` 12) e Docker com Docker Compose.
 
 ### MailHog
 
@@ -24,6 +24,16 @@ MAIL_PORT=1025
 MAIL_FROM="Oficina Mecânica <noreply@oficina.local>"
 ```
 
+### Valkey (cache)
+
+O Valkey 9.1 do compose faz o papel do ElastiCache: guarda o detalhe das ordens de serviço (cache-aside, ver [Cache do detalhe da OS](architecture.md#cache-do-detalhe-da-os)). Ele exige a senha `valkey` e escuta em `127.0.0.1:6379`, o que o `CACHE_URL` do `.env.example` já reflete. Se o Valkey estiver parado, a API continua respondendo: a leitura cai para o banco e o log registra `cache.unavailable`.
+
+### LocalStack (SNS e SQS)
+
+O LocalStack 4.14.0 emula o SNS e o SQS em `http://localhost:4566`. Ao subir, o script `app/localstack/init-topology.sh` cria o tópico `oficina-events.fifo`, as filas FIFO de cada serviço com as DLQs (`maxReceiveCount` 5) e as assinaturas com as filter policies por `type`. O container só fica saudável depois que o script termina. O script é cópia do repositório de mensageria da oficina e não é editado aqui.
+
+A API acha o LocalStack por `AWS_ENDPOINT_URL`, variável que o próprio SDK da AWS lê; `AWS_ACCESS_KEY_ID` e `AWS_SECRET_ACCESS_KEY` aceitam qualquer valor (`test`). No cluster, `AWS_ENDPOINT_URL` não existe e o SDK usa os endpoints reais da região.
+
 ### Passo a passo
 
 > Toda a aplicação vive em `app/` (não há `package.json` na raiz). Execute os comandos abaixo — e todos os `npm`/`prisma`/`docker compose` — a partir de `app/`.
@@ -36,8 +46,8 @@ npm install
 # 2. Copiar e ajustar variáveis de ambiente
 cp .env.example .env
 
-# 3. Subir apenas PostgreSQL e MailHog (sem o container da API)
-docker compose up postgres mailhog -d
+# 3. Subir a infraestrutura (PostgreSQL, MailHog, Valkey e LocalStack), sem o container da API
+docker compose up postgres mailhog valkey localstack -d --wait
 
 # 4. Configurar banco (migrate + generate + seed)
 npm run db:setup
@@ -53,6 +63,7 @@ Após a inicialização:
 - **API:** `http://localhost:3000`
 - **Swagger:** `http://localhost:3000/api/docs`
 - **MailHog (interface web):** `http://localhost:8025`
+- **LocalStack (SNS/SQS):** `http://localhost:4566`
 
 Para executar chamadas à API, use o Swagger em `/api/docs` ou importe a collection e o environment do Postman (`collections/oficina-collection.json` e `collections/oficina-environment.json`) — o passo a passo está em [Testes › Postman / Newman](testing.md#postman--newman).
 
@@ -89,6 +100,20 @@ MAIL_HOST=localhost
 MAIL_PORT=1025
 MAIL_FROM="Oficina Mecânica <noreply@oficina.local>"
 
+# Mensageria (SNS/SQS FIFO). Localmente, o LocalStack do compose cria o tópico e
+# as filas; AWS_ENDPOINT_URL é lido pelo próprio SDK e não existe no cluster.
+AWS_REGION=us-east-1
+AWS_ENDPOINT_URL=http://localhost:4566
+AWS_ACCESS_KEY_ID=test
+AWS_SECRET_ACCESS_KEY=test
+WORK_ORDER_QUEUE_NAME=work-order.fifo
+MESSAGING_TOPIC_ARN=arn:aws:sns:us-east-1:000000000000:oficina-events.fifo
+
+# Cache (Valkey). redis:// local; rediss:// com senha no cluster.
+CACHE_URL=redis://:valkey@localhost:6379
+# Validade de cada entrada em segundos (padrão: 43200, 12 h).
+CACHE_TTL_SECONDS=43200
+
 # Observabilidade — todas opcionais; nenhuma variável ausente ou inválida impede o boot
 # Níveis aceitos: fatal | error | warn | info | debug | trace | silent (default: info)
 LOG_LEVEL=info
@@ -107,6 +132,8 @@ OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta
 ```
 
 `SERVICE_VERSION` **não** é configurada por env em desenvolvimento: ela é assada na imagem (`ARG SERVICE_VERSION` no `Dockerfile`, alimentado pelo `github.sha` no `cd.yml`) e cai para `dev` fora do contêiner. `deployment.environment.name` reaproveita o `NODE_ENV` já existente — não há variável nova para ambiente.
+
+`WORK_ORDER_QUEUE_NAME`, `MESSAGING_TOPIC_ARN` e `CACHE_URL` são obrigatórias: sem elas a API não sobe. No cluster, o CD monta o ARN do tópico com a conta da AWS e o `CACHE_URL` usa `rediss://` com a senha do ElastiCache.
 
 > **Atenção**: em produção, gere segredos fortes para `JWT_SECRET`, `JWT_REFRESH_SECRET` e `CUSTOMER_JWT_PUBLIC_KEY`. Os valores padrão do `docker-compose.yml` são apenas placeholders.
 
@@ -172,3 +199,5 @@ O seed também cria dois usuários do fluxo **externo** (Cliente da Oficina, `ro
 Ambos com senha `Tech@2026`. Esse CPF + senha é o que se informa na [`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth) para obter um `customer-jwt` válido contra este seed.
 
 Os scripts de seed em `prisma/seeds/` são executados em ordem pelo entrypoint `prisma/seed.ts`: `work-order-status-info.seed.ts` (tabela de referência de prioridade dos status de OS), depois `user.seed.ts`, `part-supply.seed.ts`, `service.seed.ts`, `customer.seed.ts`, `user-customer.seed.ts` (os vínculos da tabela acima), `vehicle.seed.ts` e `work-order.seed.ts`. Eles populam dados de referência para acelerar o onboarding e os testes manuais. Todos são idempotentes (`upsert`), então podem rodar a cada deploy sem duplicar registros.
+
+Usuários, clientes, veículos, serviços e peças nascem com **UUIDs fixos**, os mesmos em todos os serviços da oficina, para que as referências entre serviços casem desde o primeiro deploy. A lista canônica está em [Ids canônicos do seed](seed-ids.md).

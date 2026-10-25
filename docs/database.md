@@ -4,7 +4,7 @@ Modelo relacional (PostgreSQL) da API, definido em [`prisma/schema.prisma`](../a
 
 ## Diagrama entidade-relacionamento
 
-<p align="center"><img src="diagrams/database-er.png" alt="Diagrama entidade-relacionamento dos 18 modelos do schema Prisma: User, Customer, Address, Vehicle, Service, PartSupply, WorkOrderStatusInfo, WorkOrder e seus itens de linha (WorkOrderService, WorkOrderPartSupply), Quote e seus itens de linha (QuoteService, QuotePartSupply), StatusHistory, StockMovement, StockReservation, UserCustomer e PasswordResetCode, com tipos reais do Postgres, chaves primárias, estrangeiras e únicas" width="100%"></p>
+<p align="center"><img src="diagrams/database-er.png" alt="Diagrama entidade-relacionamento dos 19 modelos do schema Prisma: User, Customer, Address, Vehicle, Service, PartSupply, WorkOrderStatusInfo, WorkOrder e seus itens de linha (WorkOrderService, WorkOrderPartSupply), Quote e seus itens de linha (QuoteService, QuotePartSupply), StatusHistory, StockMovement, StockReservation, UserCustomer, PasswordResetCode e OutboxMessage (tabela outbox), com tipos reais do Postgres, chaves primárias, estrangeiras e únicas" width="100%"></p>
 
 Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgres** (`VARCHAR(n)`, `TIMESTAMP(3)`, `DECIMAL(10,2)`, os enums nomeados, etc.), conferidos a partir das migrations — não os tipos abstratos do schema Prisma (`String`, `Int`, `DateTime`).
 
