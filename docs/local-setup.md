@@ -111,7 +111,8 @@ MESSAGING_TOPIC_ARN=arn:aws:sns:us-east-1:000000000000:oficina-events.fifo
 
 # Cache (Valkey). redis:// local; rediss:// com senha no cluster.
 CACHE_URL=redis://:valkey@localhost:6379
-# Validade de cada entrada em segundos (padrão: 43200, 12 h).
+# Validade de cada entrada em segundos: inteiro maior que zero (vazio = 43200, 12 h).
+# Outro valor impede a API de subir.
 CACHE_TTL_SECONDS=43200
 
 # Observabilidade — todas opcionais; nenhuma variável ausente ou inválida impede o boot
@@ -133,7 +134,7 @@ OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta
 
 `SERVICE_VERSION` **não** é configurada por env em desenvolvimento: ela é assada na imagem (`ARG SERVICE_VERSION` no `Dockerfile`, alimentado pelo `github.sha` no `cd.yml`) e cai para `dev` fora do contêiner. `deployment.environment.name` reaproveita o `NODE_ENV` já existente — não há variável nova para ambiente.
 
-`WORK_ORDER_QUEUE_NAME`, `MESSAGING_TOPIC_ARN` e `CACHE_URL` são obrigatórias: sem elas a API não sobe. No cluster, o CD monta o ARN do tópico com a conta da AWS e o `CACHE_URL` usa `rediss://` com a senha do ElastiCache.
+`WORK_ORDER_QUEUE_NAME`, `MESSAGING_TOPIC_ARN` e `CACHE_URL` são obrigatórias: sem elas a API não sobe. `CACHE_TTL_SECONDS` é opcional, mas um valor que não seja inteiro maior que zero também impede o boot, porque faria toda gravação no cache falhar. No cluster, o CD monta o ARN do tópico com a conta da AWS e o `CACHE_URL` usa `rediss://` com a senha do ElastiCache.
 
 > **Atenção**: em produção, gere segredos fortes para `JWT_SECRET`, `JWT_REFRESH_SECRET` e `CUSTOMER_JWT_PUBLIC_KEY`. Os valores padrão do `docker-compose.yml` são apenas placeholders.
 

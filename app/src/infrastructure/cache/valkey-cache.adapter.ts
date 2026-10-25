@@ -21,7 +21,7 @@ export class ValkeyCacheAdapter implements ICache, OnApplicationShutdown {
     @Inject('ILogger') private readonly logger: ILogger,
   ) {
     this.client = createCacheClient(config.getOrThrow<string>('CACHE_URL'));
-    this.ttlSeconds = Number(config.get('CACHE_TTL_SECONDS', DEFAULT_CACHE_TTL_SECONDS));
+    this.ttlSeconds = this.resolveTtlSeconds(config.get<string>('CACHE_TTL_SECONDS'));
   }
 
   async get(key: string): Promise<string | null> {
@@ -58,5 +58,22 @@ export class ValkeyCacheAdapter implements ICache, OnApplicationShutdown {
     // With the offline queue off, quit rejects while the server is unreachable and leaves the
     // client reconnecting; a rejected hook would also skip the shutdown hooks that follow.
     await this.client.quit().catch(() => this.client.disconnect());
+  }
+
+  // A ttl that is not a positive safe integer makes every SET fail, logged as an unavailable cache.
+  private resolveTtlSeconds(value: string | undefined): number {
+    const raw = value?.trim();
+
+    if (!raw) {
+      return DEFAULT_CACHE_TTL_SECONDS;
+    }
+
+    const ttlSeconds = Number(raw);
+
+    if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 1) {
+      throw new Error(`CACHE_TTL_SECONDS inválido: "${value}"`);
+    }
+
+    return ttlSeconds;
   }
 }

@@ -56,6 +56,33 @@ describe('ValkeyCacheAdapter', () => {
 
       expect(client.set).toHaveBeenCalledWith('k', 'v', 'EX', 43_200);
     });
+
+    it.each(['', '  '])(
+      'should default the ttl when CACHE_TTL_SECONDS is blank (%p)',
+      async (ttl) => {
+        client.set.mockResolvedValueOnce('OK');
+
+        await new ValkeyCacheAdapter(
+          new ConfigService({ CACHE_URL, CACHE_TTL_SECONDS: ttl }),
+          logger,
+        ).set('k', 'v');
+
+        expect(client.set).toHaveBeenCalledWith('k', 'v', 'EX', 43_200);
+      },
+    );
+
+    it.each(['abc', '0', '-60', '1.5', '1e16'])(
+      'should fail when CACHE_TTL_SECONDS is not a positive integer (%p)',
+      (ttl) => {
+        expect(
+          () =>
+            new ValkeyCacheAdapter(
+              new ConfigService({ CACHE_URL, CACHE_TTL_SECONDS: ttl }),
+              logger,
+            ),
+        ).toThrow(`CACHE_TTL_SECONDS inválido: "${ttl}"`);
+      },
+    );
   });
 
   describe('get', () => {
