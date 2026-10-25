@@ -66,7 +66,6 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
       messageSystemAttributeNames: ['ApproximateReceiveCount'],
       messageAttributeNames: ['All'],
       suppressFifoWarning: true,
-      useQueueUrlAsEndpoint: false,
       pollingCompleteWaitTimeMs: 5_000,
       handleMessage: (message) => this.handleMessage(message),
     });

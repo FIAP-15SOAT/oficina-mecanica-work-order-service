@@ -142,7 +142,6 @@ describe('SqsConsumerService', () => {
           messageSystemAttributeNames: ['ApproximateReceiveCount'],
           messageAttributeNames: ['All'],
           suppressFifoWarning: true,
-          useQueueUrlAsEndpoint: false,
           pollingCompleteWaitTimeMs: 5_000,
         }),
       );
