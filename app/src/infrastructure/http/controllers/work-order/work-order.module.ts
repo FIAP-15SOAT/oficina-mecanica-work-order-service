@@ -70,5 +70,6 @@ import { WorkOrderController } from './work-order.controller';
       ],
     },
   ],
+  exports: [WorkOrderCleanController],
 })
 export class WorkOrderModule {}

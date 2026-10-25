@@ -24,6 +24,7 @@ import { WorkOrderModule } from './infrastructure/http/controllers/work-order/wo
 import { QuoteModule } from './infrastructure/http/controllers/quote/quote.module';
 import { StockModule } from './infrastructure/http/controllers/stock/stock.module';
 import { MeModule } from './infrastructure/http/controllers/me/me.module';
+import { InternalModule } from './infrastructure/http/controllers/internal/internal.module';
 import { MessagingModule } from './infrastructure/messaging/messaging.module';
 import { CacheModule } from './infrastructure/cache/cache.module';
 import { ClientsModule } from './infrastructure/clients/clients.module';
@@ -66,6 +67,7 @@ import { ClientsModule } from './infrastructure/clients/clients.module';
     QuoteModule,
     StockModule,
     MeModule,
+    InternalModule,
   ],
   providers: [
     {

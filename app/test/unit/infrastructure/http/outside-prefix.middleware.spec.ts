@@ -20,6 +20,16 @@ describe('rejectOutsideGlobalPrefix', () => {
     expect(run('/api')).toHaveBeenCalledWith();
   });
 
+  it('should let /internal paths through', () => {
+    expect(run('/internal/work-orders/1')).toHaveBeenCalledWith();
+  });
+
+  it('should hand Nest a 404 for the bare internal prefix', () => {
+    const [error] = run('/internal').mock.calls[0] as [unknown];
+
+    expect(error).toBeInstanceOf(NotFoundException);
+  });
+
   it('should hand Nest a 404 for a path outside the prefix', () => {
     const next = run('/customers', '/customers?page=2');
     const [error] = next.mock.calls[0] as [NotFoundException];

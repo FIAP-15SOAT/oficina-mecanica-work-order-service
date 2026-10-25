@@ -1,0 +1,38 @@
+{
+  "$source": "oficina-mecanica-work-order-service app/test/contracts/internal-work-order.json",
+  "data": {
+    "id": "6f1c2b9e-4d3a-4e8b-9c7d-2a1b3c4d5e6f",
+    "number": "000001",
+    "customer": {
+      "id": "0b8e7d6c-5a4f-4e3d-8c2b-1a0f9e8d7c6b",
+      "name": "Cliente Interno",
+      "type": "INDIVIDUAL",
+      "document": "52998224725",
+      "email": "cliente.interno@test.com",
+      "phone": "11999999999"
+    },
+    "vehicle": {
+      "id": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+      "plate": "ABC1234",
+      "brand": "Toyota",
+      "model": "Corolla",
+      "year": 2020,
+      "color": null,
+      "mileage": null
+    },
+    "assignedUser": null,
+    "status": "RECEIVED",
+    "problemDescription": null,
+    "internalNotes": null,
+    "mileageAtService": null,
+    "totalAmount": 0,
+    "approvedAt": null,
+    "startedAt": null,
+    "finishedAt": null,
+    "deliveredAt": null,
+    "createdAt": "2026-10-25T10:00:00.000-03:00",
+    "updatedAt": "2026-10-25T10:00:00.000-03:00",
+    "services": [],
+    "partSupplies": []
+  }
+}
