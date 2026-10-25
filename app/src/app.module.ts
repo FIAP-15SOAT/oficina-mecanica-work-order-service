@@ -26,6 +26,7 @@ import { StockModule } from './infrastructure/http/controllers/stock/stock.modul
 import { MeModule } from './infrastructure/http/controllers/me/me.module';
 import { MessagingModule } from './infrastructure/messaging/messaging.module';
 import { CacheModule } from './infrastructure/cache/cache.module';
+import { ClientsModule } from './infrastructure/clients/clients.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { CacheModule } from './infrastructure/cache/cache.module';
     RepositoriesModule,
     MessagingModule,
     CacheModule,
+    ClientsModule,
     HealthModule,
     AuthModule,
     UserModule,
