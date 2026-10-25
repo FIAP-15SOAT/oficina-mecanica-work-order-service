@@ -41,6 +41,7 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
   private readonly queueName: string;
   private readonly consumedMessagesCounterMetric: Counter;
   private consumer?: Consumer;
+  private stopping = false;
 
   constructor(
     private readonly sqs: SQSClient,
@@ -70,11 +71,17 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
       handleMessage: (message) => this.handleMessage(message),
     });
 
-    this.consumer.on('error', (error) => this.logger.error('sqs receive failed', error));
+    // Receive and delete failures; the requests the shutdown abort cancels are expected, not errors.
+    this.consumer.on('error', (error) => {
+      if (!this.stopping) {
+        this.logger.error('sqs consumer error', error);
+      }
+    });
     this.consumer.start();
   }
 
   beforeApplicationShutdown(): Promise<void> {
+    this.stopping = true;
     const consumer = this.consumer;
 
     if (!consumer) {

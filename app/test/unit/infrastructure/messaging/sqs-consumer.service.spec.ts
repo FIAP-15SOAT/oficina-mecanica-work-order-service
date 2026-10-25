@@ -148,7 +148,7 @@ describe('SqsConsumerService', () => {
       expect(consumer.start).toHaveBeenCalled();
     });
 
-    it('should log receive errors from the consumer', async () => {
+    it('should log errors from the consumer', async () => {
       await service.onApplicationBootstrap();
       const error = new Error('access denied');
 
@@ -156,7 +156,17 @@ describe('SqsConsumerService', () => {
       listener(error);
 
       expect(event).toBe('error');
-      expect(logger.error).toHaveBeenCalledWith('sqs receive failed', error);
+      expect(logger.error).toHaveBeenCalledWith('sqs consumer error', error);
+    });
+
+    it('should not log the requests the shutdown abort cancels', async () => {
+      await service.onApplicationBootstrap();
+      const [, listener] = consumer.on.mock.calls[0] as [string, (error: Error) => void];
+
+      void service.beforeApplicationShutdown();
+      listener(new Error('Request aborted'));
+
+      expect(logger.error).not.toHaveBeenCalled();
     });
 
     it('should hand received messages to handleMessage', async () => {

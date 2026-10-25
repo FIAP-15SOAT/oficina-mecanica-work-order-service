@@ -11,6 +11,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { TECHNICAL_EVENTS } from '@infrastructure/logging/technical-event.catalog';
 import { messagingLogBindings } from '@infrastructure/messaging/messaging-log-bindings';
 import {
+  OUTBOX_BATCH_BUDGET_MS,
   OUTBOX_POLL_INTERVAL_MS,
   OutboxRelayService,
 } from '@infrastructure/messaging/outbox-relay.service';
@@ -152,6 +153,26 @@ describe('OutboxRelayService', () => {
           workOrderId: 'wo-1',
         }),
       });
+    });
+
+    it('should stop publishing once the batch budget is spent and delete what it published', async () => {
+      const rows = [1, 2, 3, 4].map((id) => createRow(id));
+      const { prisma, tx } = createPrisma(rows);
+      let now = 0;
+      const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+      sns.send.mockImplementation(() => {
+        now += OUTBOX_BATCH_BUDGET_MS * 0.6;
+        return Promise.resolve({});
+      });
+
+      await createRelay(prisma).runBatch();
+      clock.mockRestore();
+
+      expect(sns.send).toHaveBeenCalledTimes(2);
+      expect(tx.outboxMessage.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: [1n, 2n] } },
+      });
+      expect(rows.map((row) => row.id)).toEqual([3n, 4n]);
     });
 
     it('should not delete anything when the first publish fails', async () => {

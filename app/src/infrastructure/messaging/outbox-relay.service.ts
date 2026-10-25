@@ -23,6 +23,9 @@ export const OUTBOX_BATCH_SIZE = 10;
 
 export const OUTBOX_POLL_INTERVAL_MS = 500;
 
+// No publish starts after it: plus one SNS request timeout, the deletes still commit inside 5 s.
+export const OUTBOX_BATCH_BUDGET_MS = 2_000;
+
 interface OutboxRow {
   messageId: string;
   type: string;
@@ -63,6 +66,8 @@ export class OutboxRelayService implements OnApplicationBootstrap, BeforeApplica
 
   async runBatch(): Promise<void> {
     await this.prisma.$transaction(async (tx) => {
+      const deadline = Date.now() + OUTBOX_BATCH_BUDGET_MS;
+
       // Only one replica publishes at a time; the others skip the tick instead of waiting.
       const [{ locked }] = await tx.$queryRaw<{ locked: boolean }[]>`
         SELECT pg_try_advisory_xact_lock(${OUTBOX_RELAY_LOCK_KEY}::bigint) AS locked`;
@@ -79,7 +84,7 @@ export class OutboxRelayService implements OnApplicationBootstrap, BeforeApplica
       const published: bigint[] = [];
 
       for (const row of rows) {
-        if (!(await this.publish(row))) {
+        if (Date.now() >= deadline || !(await this.publish(row))) {
           break;
         }
 

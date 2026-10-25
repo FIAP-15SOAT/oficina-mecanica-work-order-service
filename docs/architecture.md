@@ -111,6 +111,7 @@ app/src/
 │   │   │                            #   próprio + prazo do chamador; categoria fechada),
 │   │   │                            # readiness-state (ready|draining, single-flight, transição)
 │   ├── messaging/                   # MessagingModule (@Global: SNSClient, SQSClient),
+│   │                                # messaging-clients (clientes SNS/SQS com prazo por pedido),
 │   │                                # OutboxRelayService (relay do outbox → SNS FIFO),
 │   │                                # SqsConsumerService (sqs-consumer + span CONSUMER),
 │   │                                # MessageHandlerRegistry, MessageEnvelopeDto,
@@ -384,7 +385,7 @@ Uma mensagem nunca é publicada de dentro do caso de uso. Ela é gravada na tabe
 - O tipo e o payload vêm do catálogo tipado e fechado de `domain/messaging/` (`inventory`, `billing` e `notification`). `OutboxMessage` é uma união discriminada por `type`: tipo fora do catálogo, ou payload de outro tipo, não compila.
 - A linha guarda `id` sequencial (ordem de criação), `message_id` (UUID v4, a identidade da mensagem entre serviços), `type`, `work_order_id`, `payload` (`jsonb`), `trace_context` (o contexto W3C ativo no momento do `add`) e `created_at` (`timestamptz`). `work_order_id` tem FK `Restrict` para `work_orders`.
 - O `OutboxRelayService` roda no próprio processo a cada 500 ms (um `setTimeout` rearmado ao fim de cada lote, então dois lotes nunca se sobrepõem). Cada lote abre uma transação e tenta `pg_try_advisory_xact_lock`: só uma réplica publica por vez, e as outras pulam a rodada em vez de esperar.
-- Com o lock, o relay lê até **10 linhas** por `id`, publica uma a uma por `PublishCommand`, com o contexto de trace da linha restaurado, e apaga as publicadas na mesma transação. Ele **para no primeiro erro**, para não furar a ordem: a linha que falhou e as seguintes ficam para o próximo lote. Cada falha registra `messaging.outbox.publish_failed`. O lote é pequeno para caber nos 5 s da transação interativa do Prisma depois de um acúmulo.
+- Com o lock, o relay lê até **10 linhas** por `id`, publica uma a uma por `PublishCommand`, com o contexto de trace da linha restaurado, e apaga as publicadas na mesma transação. Ele **para no primeiro erro**, para não furar a ordem: a linha que falhou e as seguintes ficam para o próximo lote. Cada falha registra `messaging.outbox.publish_failed`. O lote tem de caber nos 5 s da transação interativa do Prisma, senão as exclusões são desfeitas e o mesmo início é republicado a cada rodada. Por isso cada `Publish` tem prazo de 2 s, sem retentativa do SDK (a retentativa é o próximo lote), e o relay não começa uma publicação depois de 2 s de lote: as que ficaram saem na rodada seguinte.
 - A mensagem publicada leva o envelope `{ messageId, type, occurredAt, workOrderId, payload }`, o `MessageGroupId` igual ao `workOrderId` (ordem por OS; sem OS, o próprio `messageId`), o `MessageDeduplicationId` igual ao `messageId` e o atributo `type`, que as filter policies do tópico usam para rotear.
 - No encerramento, o relay para no `beforeApplicationShutdown` e espera o lote em voo, antes de o Prisma desconectar.
 
@@ -402,7 +403,7 @@ Toda linha de log desse processamento carrega `messaging.*`, `oficina.messaging.
 
 **A mensagem só é apagada da fila quando o handler termina sem erro.** Erro, envelope inválido ou tipo sem handler deixam a mensagem na fila, e o SQS a entrega de novo depois do visibility timeout. Tipo sem handler registra `messaging.message.unhandled` (`warn`): a fila só recebe os tipos que a filter policy roteia ao serviço, então chegar sem handler é uma janela de deploy, e confirmar perderia a mensagem. Na quinta entrega (`ApproximateReceiveCount` = 5, o `maxReceiveCount` da fila) o consumidor registra `messaging.message.dead_lettered` e o SQS move a mensagem para a DLQ (`work-order-dlq.fifo`), de onde ela volta por redrive. Os handlers devem ser idempotentes pelo `messageId`, porque o SQS entrega pelo menos uma vez.
 
-No encerramento, o consumidor para no `beforeApplicationShutdown` com `stop({ abort: true })`, que cancela o long polling, e espera o evento `stopped`. O handler em voo tem 5 s para terminar.
+No encerramento, o consumidor para no `beforeApplicationShutdown` com `stop({ abort: true })`, que cancela o long polling, e espera o evento `stopped`. O handler em voo tem 5 s para terminar. O `abort` também cancela o `DeleteMessage` de um handler que acabou de terminar: essa mensagem volta, e a idempotência por `messageId` a absorve. Os pedidos cancelados pelo encerramento não viram log de erro. Fora dele, o cliente SQS tem prazo de 25 s por pedido, acima dos 20 s do long polling, para que uma conexão que não responde não trave o consumidor.
 
 ### Cache do detalhe da OS
 
