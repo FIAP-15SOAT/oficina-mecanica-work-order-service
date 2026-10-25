@@ -1,3 +1,4 @@
+import { Controller, Get } from '@nestjs/common';
 import type { Server } from 'http';
 import type { StartedTestContainer } from 'testcontainers';
 import * as bcrypt from 'bcrypt';
@@ -47,12 +48,20 @@ async function fetchLatestResetCode(
   throw new Error(`No password reset email found for ${toEmail}`);
 }
 
+@Controller('unmarked-test-route')
+class UnmarkedTestController {
+  @Get()
+  find(): { data: string } {
+    return { data: 'reached' };
+  }
+}
+
 describe('Auth (E2E)', () => {
   let ctx: TestContext;
   let httpServer: Server;
 
   beforeAll(async () => {
-    ctx = await setupTestApp();
+    ctx = await setupTestApp({ controllers: [UnmarkedTestController] });
     httpServer = ctx.httpServer;
   });
 
@@ -62,6 +71,31 @@ describe('Auth (E2E)', () => {
 
   beforeEach(async () => {
     await cleanDatabase(ctx.prisma);
+  });
+
+  // ─── Global authentication guard ─────────────────────────────────────────
+
+  describe('Route without an authentication marker', () => {
+    it('should answer 401 with the error body on an unmarked test route without token', async () => {
+      const res = await request(httpServer).get('/api/unmarked-test-route').expect(401);
+
+      expect(res.body).toEqual({
+        statusCode: 401,
+        error: 'Unauthorized',
+        message: 'Token de autenticação inválido ou ausente.',
+      });
+    });
+
+    it('should answer 200 on an unmarked test route with a staff token', async () => {
+      const auth = await registerAndLogin(httpServer, { email: 'unmarked@e2e.test' }, ctx.prisma);
+
+      const res = await request(httpServer)
+        .get('/api/unmarked-test-route')
+        .set('Authorization', `Bearer ${auth.accessToken}`)
+        .expect(200);
+
+      expect(res.body).toEqual({ data: 'reached' });
+    });
   });
 
   // ─── POST /api/auth/login ─────────────────────────────────────────────────

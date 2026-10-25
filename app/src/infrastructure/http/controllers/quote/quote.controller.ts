@@ -30,7 +30,6 @@ import {
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 
-import { JwtAuthGuard } from '@infrastructure/http/guards/jwt-auth.guard';
 import { RolesGuard } from '@infrastructure/http/guards/roles.guard';
 import { Roles } from '@infrastructure/http/decorators/roles.decorator';
 import { CurrentPrincipal } from '@infrastructure/http/decorators/current-principal.decorator';
@@ -56,7 +55,7 @@ import {
 @ApiProduces('application/json')
 @ApiInternalServerErrorResponse({ description: 'Erro interno do servidor' })
 @Controller('quotes')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @ApiBearerAuth('access-token')
 export class QuoteController {
   constructor(private readonly controller: QuoteCleanController) {}

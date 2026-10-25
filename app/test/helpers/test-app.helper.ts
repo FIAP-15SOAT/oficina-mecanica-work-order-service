@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, Type } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { Logger } from 'nestjs-pino';
@@ -51,6 +51,8 @@ export interface SetupTestAppOptions {
    * antes do `pino-http`, que é quem registra o ouvinte de conclusão.
    */
   configure?: (app: NestExpressApplication) => void;
+  /** Extra controllers mounted next to AppModule, for routes that exist only in the test. */
+  controllers?: Type[];
 }
 
 interface LogCaptureSeam {
@@ -135,6 +137,7 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
 
   const builder = Test.createTestingModule({
     imports: [AppModule],
+    controllers: options.controllers,
   });
 
   // Suites without a broker get an inert relay and consumer; the messaging suite runs the real ones.

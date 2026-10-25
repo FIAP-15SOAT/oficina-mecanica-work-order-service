@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_FILTER } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MailerModule } from '@nestjs-modules/mailer';
 
@@ -7,6 +7,10 @@ import { AllExceptionsFilter } from './infrastructure/http/filters/all-exception
 import { ApplicationExceptionFilter } from './infrastructure/http/filters/application-exception.filter';
 import { DomainExceptionFilter } from './infrastructure/http/filters/domain-exception.filter';
 import { InfrastructureExceptionFilter } from './infrastructure/http/filters/infrastructure-exception.filter';
+import { AnyAuthGuard } from './infrastructure/http/guards/any-auth.guard';
+import { AuthenticationGuard } from './infrastructure/http/guards/authentication.guard';
+import { CustomerJwtAuthGuard } from './infrastructure/http/guards/customer-jwt-auth.guard';
+import { JwtAuthGuard } from './infrastructure/http/guards/jwt-auth.guard';
 
 import { LoggingModule } from './infrastructure/logging/logging.module';
 import { TelemetryModule } from './infrastructure/telemetry/telemetry.module';
@@ -85,6 +89,13 @@ import { ClientsModule } from './infrastructure/clients/clients.module';
     {
       provide: APP_FILTER,
       useClass: InfrastructureExceptionFilter,
+    },
+    JwtAuthGuard,
+    CustomerJwtAuthGuard,
+    AnyAuthGuard,
+    {
+      provide: APP_GUARD,
+      useClass: AuthenticationGuard,
     },
   ],
 })

@@ -26,6 +26,7 @@ export class AuthController {
   constructor(private readonly controller: AuthCleanController) {}
 
   @Post('login')
+  @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Autenticar usuário' })
   @ApiOkResponse({ type: AuthDataResponseDto, description: 'Login realizado com sucesso' })
@@ -36,6 +37,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Public()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Renovar tokens com refresh token' })
   @ApiOkResponse({ type: AuthDataResponseDto, description: 'Tokens renovados com sucesso' })

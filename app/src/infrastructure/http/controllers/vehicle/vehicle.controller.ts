@@ -30,7 +30,6 @@ import {
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 
-import { JwtAuthGuard } from '@infrastructure/http/guards/jwt-auth.guard';
 import { Roles } from '@infrastructure/http/decorators/roles.decorator';
 import { RolesGuard } from '@infrastructure/http/guards/roles.guard';
 import { UserRole } from '@domain/enums/user-role.enum';
@@ -47,7 +46,7 @@ import { VehiclePaginatedResponseDto } from './dto/responses/vehicle-paginated-r
 @ApiProduces('application/json')
 @ApiInternalServerErrorResponse({ description: 'Erro interno do servidor' })
 @ApiBearerAuth('access-token')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @Controller('vehicles')
 export class VehicleController {
   constructor(private readonly controller: VehicleCleanController) {}
