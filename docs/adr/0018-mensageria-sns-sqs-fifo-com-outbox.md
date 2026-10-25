@@ -18,7 +18,7 @@ As mensagens de uma mesma ordem de serviço precisam chegar em ordem: um `invent
 
 **Outbox transacional no PostgreSQL do serviço, relay no próprio processo, um tópico SNS FIFO e uma fila SQS FIFO por consumidor.**
 
-1. **A mensagem é uma linha da tabela `outbox`**, gravada pelo `IOutboxRepository` dentro da mesma transação do Unit of Work que muda o estado. Ou as duas escritas são confirmadas, ou nenhuma. O tipo e o payload vêm de um catálogo tipado e fechado em `domain/messaging/`: tipo desconhecido não compila.
+1. **A mensagem é uma linha da tabela `outbox`**, gravada pelo `IOutboxRepository` dentro da mesma transação do Unit of Work que muda o estado. Ou as duas escritas são confirmadas, ou nenhuma. O tipo e o payload vêm de um catálogo tipado e fechado em `domain/messaging/`: tipo desconhecido não compila. Quem grava uma mensagem de uma OS atualiza a linha dela (com `version`) ou a trava (`SELECT … FOR UPDATE`) na mesma transação, **antes** do `add`. O `id` da linha do outbox é atribuído no `INSERT`, não no `COMMIT`; sem a trava, duas transações da mesma OS podem confirmar na ordem inversa à dos `id`, e o relay, que publica por `id`, inverteria a ordem na fila.
 2. **O relay roda no processo** (`OutboxRelayService`), a cada 500 ms. Cada lote abre uma transação, toma `pg_try_advisory_xact_lock` (só uma réplica publica; as outras pulam a rodada), lê até 10 linhas por `id` sequencial, publica uma a uma por `PublishCommand` e apaga as publicadas na mesma transação. Na primeira falha, o lote para, para não furar a ordem. Cada `Publish` tem prazo de 2 s, sem retentativa do SDK, e nenhuma publicação começa depois de 2 s de lote, para que as exclusões confirmem dentro dos 5 s da transação.
 3. **Um tópico FIFO para toda a solução** (`oficina-events.fifo`) e **uma fila FIFO por serviço consumidor**, com filter policy por atributo `type`. O `MessageGroupId` é o `workOrderId` (ordem por OS) e o `MessageDeduplicationId` é o `messageId`.
 4. **O envelope tem cinco campos**: `messageId`, `type`, `occurredAt`, `workOrderId` e `payload`. Correlação e causalidade vêm do contexto W3C nos atributos da mensagem, gravado na linha do outbox.
@@ -40,6 +40,9 @@ As mensagens de uma mesma ordem de serviço precisam chegar em ordem: um `invent
 | Filas standard com versão do agregado | Mais vazão, mas a ordem por OS passaria a exigir checagem de versão em todo handler | A vazão da FIFO limitar |
 | Envelope com `kind`, `source`, `correlationId`, `causationId`, `sagaId` e sufixo de versão | Mais metadado explícito, redundante com o tipo, o `workOrderId` e o trace | — |
 | `handleMessageBatch` em sequência | Lotes de recebimento maiores, mais código no adaptador; o `handleMessage` com lote maior processaria em paralelo e furaria a FIFO | A vazão do consumo limitar |
+| Classe de payload opcional no registro do handler | Menos código por tipo de mensagem, mas o payload vem de outro serviço e o tipo TypeScript não é conferido em execução: um campo ausente vira `undefined`, e num filtro do Prisma isso significa "sem filtro" | — |
+| Recusar no registro a classe de payload sem regras de validação | Pegaria no boot a classe que esqueceu os decorators, mas o payload vazio de `inventory.stock.consume` não tem campo a decorar e exigiria uma classe marcadora especial; a classe sem campos declara o payload vazio, e a revisão confere os decorators das outras | Uma classe de payload sem decorators chegar à `main` |
+| Pausa entre recebimentos por `pollingWaitTimeMs` | Uma opção da biblioteca, sem código, mas atrasa toda consulta, inclusive a seguinte a uma mensagem processada; a pausa só depois de recebimento com falha não afeta o fluxo normal | A biblioteca passar a pausar em qualquer erro de recebimento |
 | Confirmar mensagem sem handler | Fila sem retentativas inúteis, mas um tipo novo publicado antes do consumidor estar pronto se perderia em silêncio; a DLQ o guarda para redrive | — |
 
 ## Consequências
@@ -56,6 +59,7 @@ As mensagens de uma mesma ordem de serviço precisam chegar em ordem: um `invent
 - Latência de até ~500 ms entre o commit e a publicação, mais o long polling do consumidor.
 - Uma falha persistente na publicação segura todas as mensagens do serviço, porque o relay para no primeiro erro. Cada falha registra `messaging.outbox.publish_failed`, que precisa de monitor.
 - O SQS entrega pelo menos uma vez: todo handler precisa ser idempotente.
+- A ordem por OS depende de cada produtor seguir a regra do item 1 (atualizar ou travar a linha da OS antes do `add`); o código não a verifica.
 - O relay consulta o banco a cada 500 ms por réplica, mesmo sem mensagens.
 - Uma mensagem com falha segura as seguintes do mesmo grupo até ir para a DLQ (cinco entregas com visibility timeout de 30 s).
 
