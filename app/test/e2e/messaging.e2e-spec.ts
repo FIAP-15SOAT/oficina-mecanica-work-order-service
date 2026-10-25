@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
+import { IsISO8601, IsString, IsUUID } from 'class-validator';
 import {
   GetQueueAttributesCommand,
   GetQueueUrlCommand,
@@ -13,6 +14,22 @@ import { DECLARED_FIELD_NAMES } from '@infrastructure/logging/field-registry';
 import { MessageHandlerRegistry } from '@infrastructure/messaging/message-handler.registry';
 import { OUTBOX_RELAY_LOCK_KEY } from '@infrastructure/messaging/outbox-relay.service';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
+
+class StockReservedPayload {
+  @IsUUID('4')
+  quoteId!: string;
+}
+
+class PaymentApprovedPayload {
+  @IsString()
+  paymentId!: string;
+
+  @IsString()
+  amount!: string;
+
+  @IsISO8601()
+  paidAt!: string;
+}
 
 async function waitFor(
   condition: () => boolean | Promise<boolean>,
@@ -114,10 +131,14 @@ describe('Messaging (E2E)', () => {
   it('should publish an outbox message and consume it back through a test handler', async () => {
     const received: MessageEnvelope[] = [];
 
-    registry.register('inventory.stock.reserved', (envelope) => {
-      received.push(envelope);
-      return Promise.resolve();
-    });
+    registry.register(
+      'inventory.stock.reserved',
+      (envelope) => {
+        received.push(envelope);
+        return Promise.resolve();
+      },
+      StockReservedPayload,
+    );
 
     const workOrderId = await createWorkOrder();
     const quoteId = randomUUID();
@@ -202,16 +223,20 @@ describe('Messaging (E2E)', () => {
     const seen: string[] = [];
     let failed = false;
 
-    registry.register('billing.payment.approved', ({ payload }) => {
-      seen.push(payload.paymentId);
+    registry.register(
+      'billing.payment.approved',
+      ({ payload }) => {
+        seen.push(payload.paymentId);
 
-      if (payload.paymentId === 'A' && !failed) {
-        failed = true;
-        return Promise.reject(new Error('first delivery of A fails'));
-      }
+        if (payload.paymentId === 'A' && !failed) {
+          failed = true;
+          return Promise.reject(new Error('first delivery of A fails'));
+        }
 
-      return Promise.resolve();
-    });
+        return Promise.resolve();
+      },
+      PaymentApprovedPayload,
+    );
 
     const workOrderId = await createWorkOrder();
     const paidAt = new Date().toISOString();

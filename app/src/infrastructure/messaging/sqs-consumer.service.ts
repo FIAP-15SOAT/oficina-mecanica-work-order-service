@@ -18,7 +18,7 @@ import {
 } from '@opentelemetry/api';
 import { GetQueueUrlCommand, Message, SQSClient } from '@aws-sdk/client-sqs';
 import { plainToInstance } from 'class-transformer';
-import { validate } from 'class-validator';
+import { validate, ValidatorOptions } from 'class-validator';
 import { PinoLogger } from 'nestjs-pino';
 import { Consumer } from 'sqs-consumer';
 
@@ -31,6 +31,9 @@ import { MessageHandlerRegistry } from './message-handler.registry';
 import { messagingLogBindings } from './messaging-log-bindings';
 
 export const MAX_RECEIVE_COUNT = 5;
+// The library polls again at once after a failed receive (it pauses only on credential and
+// throttling errors), so an unreachable endpoint would log dozens of errors per second.
+export const RECEIVE_FAILURE_PAUSE_MS = 10_000;
 
 type ConsumeOutcome = 'success' | 'retry' | 'dead_lettered';
 
@@ -42,6 +45,8 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
   private readonly consumedMessagesCounterMetric: Counter;
   private consumer?: Consumer;
   private stopping = false;
+  private receiveFailed = false;
+  private pause?: { timer: NodeJS.Timeout; end: () => void };
 
   constructor(
     private readonly sqs: SQSClient,
@@ -68,11 +73,19 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
       messageAttributeNames: ['All'],
       suppressFifoWarning: true,
       pollingCompleteWaitTimeMs: 5_000,
+      // The pause below is the single rule; the library's own pause would add to it.
+      authenticationErrorTimeout: 0,
+      preReceiveMessageCallback: () => this.pauseAfterReceiveFailure(),
       handleMessage: (message) => this.handleMessage(message),
     });
 
     // Receive and delete failures; the requests the shutdown abort cancels are expected, not errors.
-    this.consumer.on('error', (error) => {
+    // Only a failed receive comes without the message.
+    this.consumer.on('error', (error, message) => {
+      if (!message) {
+        this.receiveFailed = true;
+      }
+
       if (!this.stopping) {
         this.logger.error('sqs consumer error', error);
       }
@@ -82,6 +95,7 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
 
   beforeApplicationShutdown(): Promise<void> {
     this.stopping = true;
+    this.endPause();
     const consumer = this.consumer;
 
     if (!consumer) {
@@ -123,6 +137,25 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
       throw error;
     } finally {
       span.end();
+    }
+  }
+
+  private pauseAfterReceiveFailure(): Promise<void> {
+    if (!this.receiveFailed) {
+      return Promise.resolve();
+    }
+
+    this.receiveFailed = false;
+
+    return new Promise((resolve) => {
+      this.pause = { timer: setTimeout(resolve, RECEIVE_FAILURE_PAUSE_MS), end: resolve };
+    });
+  }
+
+  private endPause(): void {
+    if (this.pause) {
+      clearTimeout(this.pause.timer);
+      this.pause.end();
     }
   }
 
@@ -198,9 +231,11 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
       throw new UnhandledMessageError(`no handler registered for ${envelope.type}`);
     }
 
-    if (entry.payloadClass) {
-      await this.validateOrThrow(entry.payloadClass, envelope.payload, 'invalid message payload');
-    }
+    // A payload class without fields declares an empty payload; by default class-validator rejects
+    // an instance with no validation metadata.
+    await this.validateOrThrow(entry.payloadClass, envelope.payload, 'invalid message payload', {
+      forbidUnknownValues: false,
+    });
 
     await entry.handler(envelope as MessageEnvelope);
   }
@@ -225,9 +260,10 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
     target: new () => T,
     plain: object,
     reason: string,
+    options?: ValidatorOptions,
   ): Promise<T> {
     const instance = plainToInstance(target, plain);
-    const errors = await validate(instance);
+    const errors = await validate(instance, options);
 
     if (errors.length > 0) {
       throw new Error(`${reason}: ${errors.map((error) => error.property).join(', ')}`);

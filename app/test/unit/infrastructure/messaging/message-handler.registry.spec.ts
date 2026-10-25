@@ -16,11 +16,11 @@ describe('MessageHandlerRegistry', () => {
 
   describe('register', () => {
     it('should reject a second handler for the same type', () => {
-      registry.register('inventory.stock.reserved', jest.fn());
+      registry.register('inventory.stock.reserved', jest.fn(), ReservedPayload);
 
-      expect(() => registry.register('inventory.stock.reserved', jest.fn())).toThrow(
-        'inventory.stock.reserved',
-      );
+      expect(() =>
+        registry.register('inventory.stock.reserved', jest.fn(), ReservedPayload),
+      ).toThrow('inventory.stock.reserved');
     });
   });
 

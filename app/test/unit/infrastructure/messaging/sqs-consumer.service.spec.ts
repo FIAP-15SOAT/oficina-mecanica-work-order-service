@@ -19,7 +19,10 @@ import { Consumer } from 'sqs-consumer';
 import { TECHNICAL_EVENTS } from '@infrastructure/logging/technical-event.catalog';
 import { MessageHandlerRegistry } from '@infrastructure/messaging/message-handler.registry';
 import { messagingLogBindings } from '@infrastructure/messaging/messaging-log-bindings';
-import { SqsConsumerService } from '@infrastructure/messaging/sqs-consumer.service';
+import {
+  RECEIVE_FAILURE_PAUSE_MS,
+  SqsConsumerService,
+} from '@infrastructure/messaging/sqs-consumer.service';
 import { createMockLogger } from '../../../helpers/logger-mock.factory';
 
 jest.mock('sqs-consumer');
@@ -35,6 +38,8 @@ class ReservedPayload {
   @IsUUID('4')
   quoteId!: string;
 }
+
+class ConsumePayload {}
 
 function createMessage(
   body: Record<string, unknown> = {},
@@ -143,6 +148,7 @@ describe('SqsConsumerService', () => {
           messageAttributeNames: ['All'],
           suppressFifoWarning: true,
           pollingCompleteWaitTimeMs: 5_000,
+          authenticationErrorTimeout: 0,
         }),
       );
       expect(consumer.start).toHaveBeenCalled();
@@ -172,7 +178,7 @@ describe('SqsConsumerService', () => {
     it('should hand received messages to handleMessage', async () => {
       await service.onApplicationBootstrap();
       const handler = jest.fn().mockResolvedValue(undefined);
-      registry.register('inventory.stock.reserved', handler);
+      registry.register('inventory.stock.reserved', handler, ReservedPayload);
       const message = createMessage();
 
       const { handleMessage } = (Consumer.create as jest.Mock).mock.lastCall?.[0] as {
@@ -180,6 +186,97 @@ describe('SqsConsumerService', () => {
       };
 
       await expect(handleMessage(message)).resolves.toBe(message);
+    });
+  });
+
+  describe('pause after a failed receive', () => {
+    type ErrorListener = (error: Error, message?: Message) => void;
+
+    beforeEach(() => jest.useFakeTimers());
+    afterEach(() => jest.useRealTimers());
+
+    async function bootstrap(): Promise<{
+      beforeReceive: () => Promise<void>;
+      onError: ErrorListener;
+    }> {
+      await service.onApplicationBootstrap();
+
+      const { preReceiveMessageCallback } = (Consumer.create as jest.Mock).mock.lastCall?.[0] as {
+        preReceiveMessageCallback: () => Promise<void>;
+      };
+
+      const [, onError] = consumer.on.mock.calls.find(([event]) => event === 'error') as [
+        string,
+        ErrorListener,
+      ];
+
+      return { beforeReceive: preReceiveMessageCallback, onError };
+    }
+
+    function track(promise: Promise<void>): { done: boolean } {
+      const state = { done: false };
+
+      void promise.then(() => {
+        state.done = true;
+      });
+
+      return state;
+    }
+
+    it('should receive at once when the last receive did not fail', async () => {
+      const { beforeReceive } = await bootstrap();
+
+      const receive = track(beforeReceive());
+      await jest.advanceTimersByTimeAsync(0);
+
+      expect(receive.done).toBe(true);
+    });
+
+    it('should hold the next receive for 10 s after a failed receive', async () => {
+      const { beforeReceive, onError } = await bootstrap();
+      onError(new Error('connect ECONNREFUSED'));
+
+      const receive = track(beforeReceive());
+      await jest.advanceTimersByTimeAsync(RECEIVE_FAILURE_PAUSE_MS - 1);
+      const heldBeforeTheEnd = !receive.done;
+      await jest.advanceTimersByTimeAsync(1);
+
+      expect(RECEIVE_FAILURE_PAUSE_MS).toBe(10_000);
+      expect(heldBeforeTheEnd).toBe(true);
+      expect(receive.done).toBe(true);
+    });
+
+    it('should pause once per failed receive', async () => {
+      const { beforeReceive, onError } = await bootstrap();
+      onError(new Error('connect ECONNREFUSED'));
+      void beforeReceive();
+      await jest.advanceTimersByTimeAsync(RECEIVE_FAILURE_PAUSE_MS);
+
+      const receive = track(beforeReceive());
+      await jest.advanceTimersByTimeAsync(0);
+
+      expect(receive.done).toBe(true);
+    });
+
+    it('should not pause after a failure tied to a message', async () => {
+      const { beforeReceive, onError } = await bootstrap();
+      onError(new Error('delete failed'), createMessage());
+
+      const receive = track(beforeReceive());
+      await jest.advanceTimersByTimeAsync(0);
+
+      expect(receive.done).toBe(true);
+    });
+
+    it('should end the pause on shutdown', async () => {
+      const { beforeReceive, onError } = await bootstrap();
+      onError(new Error('connect ECONNREFUSED'));
+      const receive = track(beforeReceive());
+
+      void service.beforeApplicationShutdown();
+      await jest.advanceTimersByTimeAsync(0);
+
+      expect(receive.done).toBe(true);
     });
   });
 
@@ -202,7 +299,9 @@ describe('SqsConsumerService', () => {
 
     it('should treat a message without attributes as a first delivery without trace parent', async () => {
       const handler = jest.fn().mockResolvedValue(undefined);
-      registry.register('inventory.stock.reserved', handler);
+
+      registry.register('inventory.stock.reserved', handler, ReservedPayload);
+
       const { MessageId, Body } = createMessage();
 
       await expect(service.handleMessage({ MessageId, Body })).resolves.toEqual({
@@ -216,8 +315,10 @@ describe('SqsConsumerService', () => {
 
     it('should accept an envelope without work order', async () => {
       const handler = jest.fn().mockResolvedValue(undefined);
-      registry.register('notification.email.send', handler);
-      const message = createMessage({ type: 'notification.email.send', workOrderId: null });
+
+      registry.register('inventory.stock.reserved', handler, ReservedPayload);
+
+      const message = createMessage({ workOrderId: null });
 
       await expect(service.handleMessage(message)).resolves.toBe(message);
     });
@@ -247,7 +348,7 @@ describe('SqsConsumerService', () => {
     });
 
     it('should not acknowledge an envelope without messageId', async () => {
-      registry.register('inventory.stock.reserved', jest.fn());
+      registry.register('inventory.stock.reserved', jest.fn(), ReservedPayload);
 
       await expect(service.handleMessage(createMessage({ messageId: undefined }))).rejects.toThrow(
         'messageId',
@@ -261,7 +362,7 @@ describe('SqsConsumerService', () => {
     });
 
     it('should not acknowledge an occurredAt outside ISO-8601', async () => {
-      registry.register('inventory.stock.reserved', jest.fn());
+      registry.register('inventory.stock.reserved', jest.fn(), ReservedPayload);
 
       await expect(
         service.handleMessage(createMessage({ occurredAt: '05/11/2026' })),
@@ -298,6 +399,17 @@ describe('SqsConsumerService', () => {
       );
     });
 
+    it('should accept an empty payload when the handler payload class declares no fields', async () => {
+      const handler = jest.fn().mockResolvedValue(undefined);
+
+      registry.register('inventory.stock.consume', handler, ConsumePayload);
+
+      const message = createMessage({ type: 'inventory.stock.consume', payload: {} });
+
+      await expect(service.handleMessage(message)).resolves.toBe(message);
+      expect(handler).toHaveBeenCalled();
+    });
+
     it('should not acknowledge a payload rejected by the handler payload class', async () => {
       const handler = jest.fn();
       registry.register('inventory.stock.reserved', handler, ReservedPayload);
@@ -316,7 +428,12 @@ describe('SqsConsumerService', () => {
 
     it('should rethrow a handler failure and log messaging.message.failed when ApproximateReceiveCount is below 5', async () => {
       const error = new Error('use case failed');
-      registry.register('inventory.stock.reserved', jest.fn().mockRejectedValue(error));
+
+      registry.register(
+        'inventory.stock.reserved',
+        jest.fn().mockRejectedValue(error),
+        ReservedPayload,
+      );
 
       await expect(service.handleMessage(createMessage({}, 4))).rejects.toBe(error);
 
@@ -334,7 +451,12 @@ describe('SqsConsumerService', () => {
 
     it('should log messaging.message.dead_lettered and rethrow when ApproximateReceiveCount is 5', async () => {
       const error = new Error('use case failed');
-      registry.register('inventory.stock.reserved', jest.fn().mockRejectedValue(error));
+
+      registry.register(
+        'inventory.stock.reserved',
+        jest.fn().mockRejectedValue(error),
+        ReservedPayload,
+      );
 
       await expect(service.handleMessage(createMessage({}, 5))).rejects.toBe(error);
 
@@ -351,7 +473,11 @@ describe('SqsConsumerService', () => {
     });
 
     it('should open a CONSUMER span named process work-order.fifo, child of the traceparent attribute', async () => {
-      registry.register('inventory.stock.reserved', jest.fn().mockResolvedValue(undefined));
+      registry.register(
+        'inventory.stock.reserved',
+        jest.fn().mockResolvedValue(undefined),
+        ReservedPayload,
+      );
 
       await service.handleMessage(createMessage({}, 1, { traceparent: true }));
 
@@ -373,6 +499,7 @@ describe('SqsConsumerService', () => {
       registry.register(
         'inventory.stock.reserved',
         jest.fn().mockRejectedValue(new Error('use case failed')),
+        ReservedPayload,
       );
 
       await expect(service.handleMessage(createMessage())).rejects.toThrow();
@@ -383,7 +510,11 @@ describe('SqsConsumerService', () => {
     });
 
     it('should bind messaging fields and request.id to the processing context', async () => {
-      registry.register('inventory.stock.reserved', jest.fn().mockResolvedValue(undefined));
+      registry.register(
+        'inventory.stock.reserved',
+        jest.fn().mockResolvedValue(undefined),
+        ReservedPayload,
+      );
 
       await service.handleMessage(createMessage());
 
@@ -420,7 +551,7 @@ describe('SqsConsumerService', () => {
         .mockResolvedValueOnce(undefined)
         .mockRejectedValueOnce(new Error('retry'))
         .mockRejectedValueOnce(new Error('give up'));
-      registry.register('inventory.stock.reserved', handler);
+      registry.register('inventory.stock.reserved', handler, ReservedPayload);
 
       await service.handleMessage(createMessage());
       await service.handleMessage(createMessage({}, 2)).catch(() => undefined);
