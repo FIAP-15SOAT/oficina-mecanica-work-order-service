@@ -3,7 +3,8 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { Logger } from 'nestjs-pino';
 import { join } from 'path';
-import { GenericContainer, StartedTestContainer } from 'testcontainers';
+import { GenericContainer, StartedTestContainer, Wait } from 'testcontainers';
+import { LocalstackContainer, StartedLocalStackContainer } from '@testcontainers/localstack';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { StartedValkeyContainer, ValkeyContainer } from '@testcontainers/valkey';
 import type { Server } from 'http';
@@ -36,6 +37,7 @@ export interface TestContext {
   postgresContainer: StartedPostgreSqlContainer;
   mailhogContainer: StartedTestContainer;
   valkeyContainer: StartedValkeyContainer;
+  localstackContainer?: StartedLocalStackContainer;
   logCapture?: LogCapture;
 }
 
@@ -53,6 +55,8 @@ export interface SetupTestAppOptions {
   configure?: (app: NestExpressApplication) => void;
   /** Extra controllers mounted next to AppModule, for routes that exist only in the test. */
   controllers?: Type[];
+  /** Starts LocalStack with the messaging topology and runs the real relay and consumer. */
+  withMessaging?: boolean;
 }
 
 interface LogCaptureSeam {
@@ -112,6 +116,28 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
     .withPassword('test')
     .start();
 
+  const localstackContainer = options.withMessaging
+    ? await new LocalstackContainer('localstack/localstack:4.14.0')
+        .withCopyFilesToContainer([
+          {
+            source: join(__dirname, '..', '..', 'localstack', 'init-topology.sh'),
+            target: '/etc/localstack/init/ready.d/init-topology.sh',
+            mode: 0o755,
+          },
+        ])
+        .withWaitStrategy(Wait.forLogMessage('oficina-events.fifo topology ready'))
+        .start()
+    : undefined;
+
+  if (localstackContainer) {
+    process.env.AWS_ENDPOINT_URL = localstackContainer.getConnectionUri();
+    process.env.AWS_REGION = 'us-east-1';
+    process.env.AWS_ACCESS_KEY_ID = 'test';
+    process.env.AWS_SECRET_ACCESS_KEY = 'test';
+    process.env.WORK_ORDER_QUEUE_NAME = 'work-order.fifo';
+    process.env.MESSAGING_TOPIC_ARN = 'arn:aws:sns:us-east-1:000000000000:oficina-events.fifo';
+  }
+
   const databaseUrl = postgresContainer.getConnectionUri();
 
   process.env.DATABASE_URL = databaseUrl;
@@ -141,8 +167,10 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
   });
 
   // Suites without a broker get an inert relay and consumer; the messaging suite runs the real ones.
-  builder.overrideProvider(OutboxRelayService).useValue({});
-  builder.overrideProvider(SqsConsumerService).useValue({});
+  if (!localstackContainer) {
+    builder.overrideProvider(OutboxRelayService).useValue({});
+    builder.overrideProvider(SqsConsumerService).useValue({});
+  }
 
   const captureLogs = options.captureLogs === true || options.captureBootstrap === true;
   const logCaptureSeam = captureLogs ? createLogCapture() : undefined;
@@ -180,6 +208,7 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
     postgresContainer,
     mailhogContainer,
     valkeyContainer,
+    localstackContainer,
     logCapture: logCaptureSeam?.capture,
   };
 }
@@ -189,4 +218,5 @@ export async function teardownTestApp(ctx: TestContext): Promise<void> {
   if (ctx?.postgresContainer) await ctx.postgresContainer.stop();
   if (ctx?.mailhogContainer) await ctx.mailhogContainer.stop();
   if (ctx?.valkeyContainer) await ctx.valkeyContainer.stop();
+  if (ctx?.localstackContainer) await ctx.localstackContainer.stop();
 }
