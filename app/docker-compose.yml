@@ -56,6 +56,14 @@ services:
       CUSTOMER_JWT_AUDIENCE: ${CUSTOMER_JWT_AUDIENCE:-oficina-api}
       MAIL_HOST: mailhog
       MAIL_PORT: 1025
+      AWS_REGION: us-east-1
+      AWS_ENDPOINT_URL: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      WORK_ORDER_QUEUE_NAME: work-order.fifo
+      MESSAGING_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:oficina-events.fifo
+      CACHE_URL: redis://:valkey@valkey:6379
+      CACHE_TTL_SECONDS: 43200
       TZ: America/Sao_Paulo
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health/ready"]
@@ -72,6 +80,38 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      localstack:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+
+  localstack:
+    image: localstack/localstack:4.14.0
+    container_name: techchallenge-localstack
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4566:4566"
+    volumes:
+      - ./localstack/init-topology.sh:/etc/localstack/init/ready.d/init-topology.sh:ro
+    healthcheck:
+      # Healthy only after the ready.d script created the topic and the queues.
+      test: ["CMD-SHELL", "curl -fs http://localhost:4566/_localstack/init/ready | grep -q '\"completed\": true'"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
+  valkey:
+    image: valkey/valkey:9.1
+    container_name: techchallenge-valkey
+    restart: unless-stopped
+    command: ["valkey-server", "--requirepass", "valkey"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "valkey", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   mailhog:
     image: mailhog/mailhog:v1.0.1
