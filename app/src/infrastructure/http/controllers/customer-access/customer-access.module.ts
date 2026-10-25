@@ -15,6 +15,8 @@ import { ILogger } from '@application/ports/output/logger.service.interface';
 import { ICustomerRepository } from '@domain/interfaces/repositories/customer.repository.interface';
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IUserCustomerRepository } from '@domain/interfaces/repositories/user-customer.repository.interface';
+import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
+import { ICache } from '@application/ports/output/cache.service.interface';
 
 import { CustomerAccessController as CustomerAccessCleanController } from '@interface-adapters/customer-access/customer-access.controller';
 import { CustomerAccessController } from './customer-access.controller';
@@ -34,6 +36,8 @@ import { UserCustomersController } from './user-customers.controller';
         customerRepository: ICustomerRepository,
         userRepository: IUserRepository,
         userCustomerRepository: IUserCustomerRepository,
+        workOrderRepository: IWorkOrderRepository,
+        cache: ICache,
       ) =>
         new CustomerAccessCleanController(
           new GrantCustomerAccessUseCase(
@@ -50,6 +54,8 @@ import { UserCustomersController } from './user-customers.controller';
           ),
           new UpdateCustomerStatusUseCase(
             customerRepository,
+            workOrderRepository,
+            cache,
             logger.forContext(UpdateCustomerStatusUseCase.name),
           ),
         ),
@@ -61,6 +67,8 @@ import { UserCustomersController } from './user-customers.controller';
         'ICustomerRepository',
         'IUserRepository',
         'IUserCustomerRepository',
+        'IWorkOrderRepository',
+        'ICache',
       ],
     },
   ],

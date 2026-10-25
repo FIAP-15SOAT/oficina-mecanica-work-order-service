@@ -210,4 +210,16 @@ describe('UpdateVehicleUseCase', () => {
 
     expect(cache.delete).not.toHaveBeenCalled();
   });
+
+  it('should not write the vehicle when the work order lookup fails', async () => {
+    vehicleRepository.findById.mockResolvedValue(
+      createMockVehicle({ id: 'veh-1', customerId: customerId1, plate: Plate.create('ABC1234') }),
+    );
+
+    workOrderRepository.findByVehicleId.mockRejectedValue(new Error('lookup failed'));
+
+    await expect(useCase.execute('veh-1', validInput)).rejects.toThrow('lookup failed');
+
+    expect(vehicleRepository.update).not.toHaveBeenCalled();
+  });
 });

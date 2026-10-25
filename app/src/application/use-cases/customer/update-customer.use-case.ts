@@ -36,9 +36,12 @@ export class UpdateCustomerUseCase implements IUpdateCustomerUseCase {
 
     existing.update(input);
 
+    // Read before the write: a failed lookup must fail the request before anything is stored.
+    const cacheKeys = await this.findWorkOrderCacheKeys(id);
+
     const updated = await this.customerRepository.update(existing);
 
-    await this.removeWorkOrdersCache(id);
+    await this.cache.delete(cacheKeys);
 
     return updated;
   }
@@ -77,10 +80,10 @@ export class UpdateCustomerUseCase implements IUpdateCustomerUseCase {
     }
   }
 
-  private async removeWorkOrdersCache(customerId: string): Promise<void> {
+  private async findWorkOrderCacheKeys(customerId: string): Promise<string[]> {
     const workOrders = await this.workOrderRepository.findByCustomerId(customerId);
 
-    await this.cache.delete(workOrders.map((workOrder) => workOrderCacheKey(workOrder.id)));
+    return workOrders.map((workOrder) => workOrderCacheKey(workOrder.id));
   }
 
   /**

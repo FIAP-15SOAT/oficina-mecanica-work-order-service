@@ -40,9 +40,12 @@ export class UpdateVehicleUseCase implements IUpdateVehicleUseCase {
 
     existing.update(input);
 
+    // Read before the write: a failed lookup must fail the request before anything is stored.
+    const cacheKeys = await this.findWorkOrderCacheKeys(id);
+
     const updated = await this.vehicleRepository.update(existing);
 
-    await this.removeWorkOrdersCache(id);
+    await this.cache.delete(cacheKeys);
 
     return updated;
   }
@@ -64,9 +67,9 @@ export class UpdateVehicleUseCase implements IUpdateVehicleUseCase {
     }
   }
 
-  private async removeWorkOrdersCache(vehicleId: string): Promise<void> {
+  private async findWorkOrderCacheKeys(vehicleId: string): Promise<string[]> {
     const workOrders = await this.workOrderRepository.findByVehicleId(vehicleId);
 
-    await this.cache.delete(workOrders.map((workOrder) => workOrderCacheKey(workOrder.id)));
+    return workOrders.map((workOrder) => workOrderCacheKey(workOrder.id));
   }
 }

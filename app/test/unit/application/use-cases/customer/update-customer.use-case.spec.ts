@@ -317,4 +317,14 @@ describe('UpdateCustomerUseCase', () => {
 
     expect(cache.delete).not.toHaveBeenCalled();
   });
+
+  it('should not write the customer when the work order lookup fails', async () => {
+    customerRepository.findById.mockResolvedValue(createMockCustomer({ id: 'cust-1' }));
+
+    workOrderRepository.findByCustomerId.mockRejectedValue(new Error('lookup failed'));
+
+    await expect(useCase.execute('cust-1', validInput)).rejects.toThrow('lookup failed');
+
+    expect(customerRepository.update).not.toHaveBeenCalled();
+  });
 });
