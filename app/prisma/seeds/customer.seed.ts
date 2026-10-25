@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 import { PrismaClient, CustomerType } from '../generated/client';
+import { SEED_IDS } from './seed-ids';
 
 interface CustomerSeed {
   name: string;
@@ -48,6 +49,7 @@ export async function seedCustomers(prisma: PrismaClient): Promise<Record<string
         phone: customer.phone,
       },
       create: {
+        id: SEED_IDS.customers[customer.document],
         name: customer.name,
         document: customer.document,
         type: customer.type,

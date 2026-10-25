@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 import { PrismaClient } from '../generated/client';
+import { SEED_IDS } from './seed-ids';
 
 interface VehicleSeed {
   customerId: string;
@@ -70,6 +71,7 @@ export async function seedVehicles(
         mileage: vehicle.mileage,
       },
       create: {
+        id: SEED_IDS.vehicles[vehicle.plate],
         plate: vehicle.plate,
         customerId: vehicle.customerId,
         brand: vehicle.brand,

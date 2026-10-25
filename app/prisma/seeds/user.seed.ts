@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 import { PrismaClient, UserRole } from '../generated/client';
+import { SEED_IDS } from './seed-ids';
 import * as bcrypt from 'bcrypt';
 
 const SALT_ROUNDS = 12;
@@ -61,6 +62,7 @@ export async function seedUsers(prisma: PrismaClient): Promise<void> {
         cpf: user.cpf ?? null,
       },
       create: {
+        id: SEED_IDS.users[user.email],
         name: user.name,
         email: user.email,
         passwordHash,
