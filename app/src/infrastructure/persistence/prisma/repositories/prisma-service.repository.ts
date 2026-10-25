@@ -135,10 +135,10 @@ export class PrismaServiceRepository implements IServiceRepository {
       FROM services s
       LEFT JOIN work_order_services wos
         ON wos.service_id = s.id
-      WHERE s.id = ${serviceId}
         AND wos.status = ${WorkOrderServiceStatus.COMPLETED}::"WorkOrderServiceStatus"
         AND wos.started_at IS NOT NULL
         AND wos.finished_at IS NOT NULL
+      WHERE s.id = ${serviceId}
       GROUP BY s.id, s.name
     `;
 
