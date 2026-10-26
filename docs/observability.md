@@ -1,6 +1,6 @@
 # 🔭 Observabilidade da API
 
-Arquitetura de logs, correlação, traces e métricas da aplicação. A topologia de coleta, os dashboards e os alertas da solução estão descritos em [Infraestrutura · Visão Geral](infra/overview.md#camada-de-coleta-controlada-pelo-cd).
+Arquitetura de logs, correlação, traces e métricas da aplicação. A topologia de coleta, os dashboards e os alertas da solução estão descritos em [Infraestrutura · Visão Geral](infra/overview.md#camada-de-coleta-de-plataforma-namespace-platform-e-configuração-do-cd).
 
 ## Índice
 
@@ -306,4 +306,4 @@ A aplicação **não cria** métrica própria de latência, contagem por rota, C
 - [ADR 0002 — Logging estruturado](adr/0002-logging-estruturado.md)
 - [ADR 0005 — OpenTelemetry](adr/0005-opentelemetry.md)
 - [Kubernetes — camada de coleta](infra/kubernetes.md#camada-de-coleta)
-- [Infraestrutura · Visão Geral](infra/overview.md#camada-de-coleta-controlada-pelo-cd)
+- [Infraestrutura · Visão Geral](infra/overview.md#camada-de-coleta-de-plataforma-namespace-platform-e-configuração-do-cd)

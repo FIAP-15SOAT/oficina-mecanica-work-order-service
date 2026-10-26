@@ -468,7 +468,7 @@ Em produção, `prepare-deploy` do CD é a ponte entre o Secret gerenciado pelo 
 `DATABASE_URL` do Prisma. Ele descobre o ARN/endpoint, lê `AWSCURRENT` e materializa
 `database-credentials` com Node.js inline e stdin. O job `db-migrate` seguinte
 executa somente migration/seed; `app-deploy` aplica a imagem e aguarda o rollout; `api-secret` permanece separado,
-somente com material JWT. Nenhum Pod lê AWS e não há ESO ou Secrets Store CSI.
+somente com material JWT. Nenhum Pod lê segredo da AWS e não há ESO ou Secrets Store CSI.
 
 Veja o [ADR 0017](adr/0017-materializacao-da-credencial-do-banco-no-cd.md) e o
 [fluxo detalhado do CD](infra/ci-cd.md#2-workflow-de-cd-cdyml).
