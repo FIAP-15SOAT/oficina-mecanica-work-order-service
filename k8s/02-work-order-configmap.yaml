@@ -1,10 +1,10 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: api-config
-  namespace: oficina
+  name: work-order-config
+  namespace: work-order
   labels:
-    app.kubernetes.io/name: oficina-api
+    app.kubernetes.io/name: work-order-service
     app.kubernetes.io/part-of: oficina-mecanica
 data:
   NODE_ENV: production
@@ -12,7 +12,7 @@ data:
   JWT_EXPIRATION: "15m"
   JWT_REFRESH_EXPIRATION: "7d"
   BCRYPT_SALT_ROUNDS: "12"
-  MAIL_HOST: "mailhog"
+  MAIL_HOST: "mailhog.platform.svc.cluster.local"
   MAIL_PORT: "1025"
   TZ: "America/Sao_Paulo"
   LOG_LEVEL: "info"
@@ -21,6 +21,11 @@ data:
   TRUSTED_PROXY_CIDRS: ""
   CUSTOMER_JWT_ISSUER: "oficina-customer-auth"
   CUSTOMER_JWT_AUDIENCE: "oficina-api"
+  AWS_REGION: "us-east-1"
+  WORK_ORDER_QUEUE_NAME: "work-order.fifo"
+  # O SNS não resolve ARN por nome: o CD renderiza com a conta de `aws sts get-caller-identity`.
+  MESSAGING_TOPIC_ARN: "${MESSAGING_TOPIC_ARN}"
+  CACHE_TTL_SECONDS: "43200"
   OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT}"
   OTEL_LOGS_EXPORTER: "none"
   OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: "delta"

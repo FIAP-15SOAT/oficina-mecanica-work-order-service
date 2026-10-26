@@ -1,18 +1,18 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: oficina-api-hpa
-  namespace: oficina
+  name: work-order-service-hpa
+  namespace: work-order
   labels:
-    app.kubernetes.io/name: oficina-api
+    app.kubernetes.io/name: work-order-service
     app.kubernetes.io/part-of: oficina-mecanica
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: oficina-api
+    name: work-order-service
   minReplicas: 1
-  maxReplicas: 5
+  maxReplicas: 2
   metrics:
     - type: Resource
       resource:

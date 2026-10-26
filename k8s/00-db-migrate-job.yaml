@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: JOB_NAME_PLACEHOLDER
-  namespace: oficina
+  namespace: work-order
   labels:
     app.kubernetes.io/name: db-migrate-job
     app.kubernetes.io/part-of: oficina-mecanica
@@ -12,7 +12,7 @@ spec:
   template:
     metadata:
       # Unified Service Tagging do Datadog, pela mesma razão de
-      # `03-api-deployment.yaml`: o log de contêiner não passa por OTLP, então
+      # `03-work-order-deployment.yaml`: o log de contêiner não passa por OTLP, então
       # sem estas labels o agente cai no nome da imagem e reporta este Job como
       # `ecr-oficina-mecanica-app-repo` — um serviço fantasma que é, na verdade,
       # a mesma imagem da API.
@@ -23,7 +23,7 @@ spec:
       # deploy, que é justamente o que as labels do Deployment foram
       # introduzidas para evitar.
       #
-      # `env` é valor ESPELHADO de `NODE_ENV` em `02-api-configmap.yaml`, como
+      # `env` é valor ESPELHADO de `NODE_ENV` em `02-work-order-configmap.yaml`, como
       # no Deployment. Mudou lá, muda aqui (não há verificação automática).
       labels:
         app.kubernetes.io/name: db-migrate-job

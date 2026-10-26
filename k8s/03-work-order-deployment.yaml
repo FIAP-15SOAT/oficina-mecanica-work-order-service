@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: work-order-service
+  namespace: work-order
+  labels:
+    app.kubernetes.io/name: work-order-service
+    app.kubernetes.io/part-of: oficina-mecanica
+spec:
+  # Sem `replicas`: o HPA é o dono da contagem, e um valor aqui a reverteria a cada apply.
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: work-order-service
+  template:
+    metadata:
+      # Unified Service Tagging do Datadog. É o unico jeito de o coletor
+      # atribuir `service` e `env` aos logs de container: o log nao passa por
+      # OTLP (OTEL_LOGS_EXPORTER=none em 02-work-order-configmap.yaml), então o agente
+      # cai no nome da imagem, enquanto o APM, que le o resource OTel, reporta 
+      # `oficina-mecanica-work-order-service`.
+      # Dois nomes para a mesma aplicação quebram a aba Logs da pagina do
+      # serviço e qualquer metrica derivada de log.
+      #
+      # São valores ESPELHADOS, não derivados: label do Kubernetes não
+      # referencia ConfigMap. `service` tem de seguir igual a OTEL_SERVICE_NAME
+      # e `env` igual a NODE_ENV, os dois em 02-work-order-configmap.yaml, de onde o
+      # resource OTel tira service.name e deployment.environment.name. Mudou
+      # la, muda aqui (não há verificacao automatica.)
+      # `version` é o SHA da imagem, renderizado pelo CD.
+      labels:
+        app.kubernetes.io/name: work-order-service
+        app.kubernetes.io/part-of: oficina-mecanica
+        tags.datadoghq.com/service: oficina-mecanica-work-order-service
+        tags.datadoghq.com/env: production
+        tags.datadoghq.com/version: VERSION_PLACEHOLDER
+    spec:
+      # > janela de drain (10 s) + fechamento do servidor + $disconnect() +
+      # margem. Estoura-lo e SIGKILL; mantido baixo de proposito, porque ele
+      # alonga node drain e eviccao. Nao consome o rollout gate do CD: pods com
+      # DeletionTimestamp saem da contagem de ativos do ReplicaSet.
+      terminationGracePeriodSeconds: 40
+      containers:
+        - name: api
+          image: IMAGE_URI_PLACEHOLDER
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3000
+              name: http
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          envFrom:
+            - configMapRef:
+                name: work-order-config
+            - secretRef:
+                name: api-secret
+            - secretRef:
+                name: database-credentials
+            - secretRef:
+                name: cache-credentials
+            - secretRef:
+                name: jwt-public-keys
+          startupProbe:
+            httpGet:
+              path: /api/health/live
+              port: 3000
+            # 12 x 5 s = 60 s de orcamento, so para o boot da aplicacao: a
+            # conexao do Prisma e preguicosa, entao nada de banco entra aqui.
+            # Precisa continuar menor que o --timeout=180s do rollout gate do CD.
+            initialDelaySeconds: 0
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+            successThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: /api/health/live
+              port: 3000
+            # 3 x 20 s = 60 s de tolerancia antes de reiniciar: apertar esse
+            # produto converte soluco transitorio em reinicio. O
+            # timeout de 5 s e quanto bloqueio do event loop se tolera sob
+            # limits.cpu 500m, com o destino de log sincrono (ADR 0002).
+            initialDelaySeconds: 0
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          readinessProbe:
+            httpGet:
+              path: /api/health/ready
+              port: 3000
+            # timeoutSeconds > prazo proprio da verificacao (3,5 s) + margem de
+            # rede. O prazo proprio, por sua vez, e maior que o
+            # connectionTimeoutMillis do pool (3 s): um deadline menor mascararia
+            # saturacao de pool como 'timeout' e apagaria a categoria 'pool'.
+            # failureThreshold erra para o lado de demorar a retirar: como o RDS
+            # e compartilhado, um valor baixo tiraria todas as replicas de uma vez
+            # numa oscilacao transitoria.
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
