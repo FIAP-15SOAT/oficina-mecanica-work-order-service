@@ -210,7 +210,7 @@ Toda a cadeia de redação existe apenas no caminho de log; um atributo de span 
 
 ### Consumo de mensagens
 
-O span de consumo é a **única instrumentação manual** da aplicação, e só existe porque a instrumentação da AWS cria apenas o span do *receive*: sem ele, o processamento da mensagem não teria span próprio nem se ligaria ao produtor. O `SqsConsumerService` (infraestrutura) abre um span `CONSUMER` por mensagem:
+O span de consumo é a **única instrumentação manual** da aplicação, e só existe porque a instrumentação da AWS criaria apenas o span do *receive*, que roda suprimido: sem ele, o processamento da mensagem não teria span próprio nem se ligaria ao produtor. O `SqsConsumerService` (infraestrutura) abre um span `CONSUMER` por mensagem:
 
 | Atributo | Valor |
 | --- | --- |
@@ -222,6 +222,8 @@ O span de consumo é a **única instrumentação manual** da aplicação, e só 
 
 O pai do span vem do contexto W3C nos atributos da mensagem, que a instrumentação do SNS injeta no `Publish` a partir do contexto que o relay restaura da coluna `trace_context` do outbox. Assim, o trace segue a requisição que gravou a mensagem até o handler de outro serviço. Falha marca o span com `ERROR` e registra a exceção. A regra continua valendo para o resto do código: nenhum `startSpan` em código de negócio e nenhuma porta `ITracer`.
 
+O polling do consumidor roda com o tracing suprimido (`suppressTracing` em volta do `start()` do `sqs-consumer`): sem isso, cada long poll vazio viraria um trace raiz `ReceiveMessage` a cada 20 s por réplica. Receive e delete não geram span; o span `CONSUMER` não é afetado, porque o pai dele vem do contexto extraído da mensagem. Falha de receive aparece só no log.
+
 ### Mensageria, cache e banco nos spans
 
 | Instrumentação | Configuração | Por quê |
@@ -230,7 +232,7 @@ O pai do span vem do contexto W3C nos atributos da mensagem, que a instrumentaç
 | `ioredis` | `dbStatementSerializer` que devolve só o nome do comando | Os argumentos levam o detalhe da OS em cache, com documento, e-mail e telefone do cliente |
 | `pg` | `requireParentSpan: true` | Sem span pai, toda consulta fora de requisição viraria um trace raiz: o relay do outbox consulta o banco a cada 500 ms por réplica. Rotas e handlers sempre têm span pai |
 
-As chamadas ao Valkey, ao SNS e ao SQS e as chamadas REST internas aparecem como spans `CLIENT`. As chamadas internas saem pelo `axios`, que roda sobre `node:http`: a instrumentação `http` injeta o `traceparent` e cria o span sem código nosso.
+As chamadas ao Valkey e ao SNS, o `GetQueueUrl` do SQS na subida e as chamadas REST internas aparecem como spans `CLIENT`. As chamadas internas saem pelo `axios`, que roda sobre `node:http`: a instrumentação `http` injeta o `traceparent` e cria o span sem código nosso.
 
 ### Campos e eventos de mensageria e cache
 

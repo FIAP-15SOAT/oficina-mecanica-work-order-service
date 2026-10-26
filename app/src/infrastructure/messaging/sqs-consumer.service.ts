@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  context,
   Context,
   Counter,
   metrics,
@@ -16,6 +17,7 @@ import {
   SpanStatusCode,
   trace,
 } from '@opentelemetry/api';
+import { suppressTracing } from '@opentelemetry/core';
 import { GetQueueUrlCommand, Message, SQSClient } from '@aws-sdk/client-sqs';
 import { plainToInstance } from 'class-transformer';
 import { validate, ValidatorOptions } from 'class-validator';
@@ -64,7 +66,7 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
   async onApplicationBootstrap(): Promise<void> {
     const { QueueUrl } = await this.sqs.send(new GetQueueUrlCommand({ QueueName: this.queueName }));
 
-    this.consumer = Consumer.create({
+    const consumer = Consumer.create({
       queueUrl: QueueUrl as string,
       sqs: this.sqs,
       batchSize: 1,
@@ -81,7 +83,7 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
 
     // Receive and delete failures; the requests the shutdown abort cancels are expected, not errors.
     // Only a failed receive comes without the message.
-    this.consumer.on('error', (error, message) => {
+    consumer.on('error', (error, message) => {
       if (!message) {
         this.receiveFailed = true;
       }
@@ -90,7 +92,10 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
         this.logger.error('sqs consumer error', error);
       }
     });
-    this.consumer.start();
+    // Each empty long poll would be a root trace every 20 s per replica; the CONSUMER span below
+    // starts from the message's own context, so it escapes the suppression.
+    context.with(suppressTracing(context.active()), () => consumer.start());
+    this.consumer = consumer;
   }
 
   beforeApplicationShutdown(): Promise<void> {
