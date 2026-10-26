@@ -30,6 +30,8 @@ Toda rota exige o header `Authorization: Bearer <token>` (access token), salvo a
 
 > `GET /me` (ver seção **Minha Conta** abaixo) aceita tanto o token interno (`jwt`) quanto o externo (`customer-jwt`) e devolve a identidade do sujeito autenticado independentemente do fluxo.
 
+> O access token de funcionário é um JWT **RS256** com `kid` no cabeçalho e as claims `sub`, `email`, `name`, `role`, `typ = access`, `iss = oficina-identity`, `aud = oficina-services`, `iat` e `exp`, válido por **10 minutos**. O refresh token é RS256 com chave própria, `typ = refresh` e `aud = oficina-identity`, e vale **7 dias**. Uma rota de funcionário responde **401** a um token HS256 ou sem assinatura, sem `kid` ou com outro `kid`, assinado por outra chave, com `iss` ou `aud` diferentes (como o token de cliente), com `typ` diferente de `access` (como o refresh), expirado ou sem `exp`, ou de um usuário desativado ou que trocou a senha depois da emissão.
+
 > `POST /auth/refresh` responde **401** com a mensagem única `Refresh token inválido ou expirado` para todas as causas de falha — token inválido ou expirado, usuário inexistente e usuário desativado. A resposta é deliberadamente idêntica nos três casos para não revelar se o usuário existe; a causa fica registrada apenas no log (ver [Segurança](security.md#proteção-de-dados-nos-logs)).
 
 > `POST /auth/password-reset-confirmations` responde **401** com a mensagem única `Código de redefinição inválido ou expirado` para todas as causas de falha — usuário inexistente, nenhum código emitido, código expirado (10 minutos), código esgotado (5 tentativas) ou código incorreto —, pelo mesmo motivo de não revelar a causa exata.

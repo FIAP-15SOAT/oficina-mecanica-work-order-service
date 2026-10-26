@@ -104,6 +104,8 @@ app/src/
 ├── infrastructure/                  # Implementações concretas (framework e serviços externos)
 │   ├── config/                      # app-bootstrap (composição da borda HTTP, compartilhada
 │   │                                #   entre main.ts e o helper de E2E) + swagger.config
+│   ├── utils/                       # read-pem-key (chave PEM da configuração, usada pelas
+│   │                                #   duas strategies JWT e pelo JwtTokenService)
 │   ├── health/                      # Saúde operacional, agnóstica de transporte:
 │   │   │                            # health.constants (módulo folha: segmentos de rota e o
 │   │   │                            #   conjunto fechado de caminhos),
@@ -136,7 +138,7 @@ app/src/
 │   │   │                            # JwtAuthGuard, CustomerJwtAuthGuard, AnyAuthGuard
 │   │   │                            # (aceita interno OU externo), RolesGuard
 │   │   ├── decorators/              # @CurrentUser, @Roles, @Public, @CustomerArea
-│   │   ├── strategies/              # JwtStrategy (HS256, interno),
+│   │   ├── strategies/              # JwtStrategy (RS256, interno),
 │   │   │                            # CustomerJwtStrategy (RS256, externo) — Passport,
 │   │   │                            # nunca um verificador compartilhado
 │   │   ├── filters/                 # Exception Filters: Domain, Application,
@@ -279,16 +281,16 @@ Três conceitos que o modelo mantém deliberadamente separados:
 - **`Customer`** — a parte comercial (pessoa física ou jurídica dona do veículo/OS). Nunca tem credencial própria; uma empresa (`CustomerType.COMPANY`) nunca loga diretamente.
 - **`UserCustomer`** — o vínculo (many-to-many) que autoriza um `User` a agir em nome de um `Customer`. Não existe um campo `accessType`: a semântica (acesso à própria pessoa física vs. representação de uma empresa) deriva de `Customer.type`.
 
-Dois fluxos de autenticação totalmente isolados, cada um com sua própria estratégia Passport, nunca um verificador compartilhado:
+Dois fluxos de autenticação totalmente isolados, cada um com sua própria estratégia Passport, chave pública, emissor e audiência, nunca um verificador compartilhado. Um serviço que valide o token de funcionário precisa só de `STAFF_JWT_PUBLIC_KEY` e `STAFF_JWT_KEY_ID`, sem segredo compartilhado; aqui, a `JwtStrategy` ainda relê o usuário no banco a cada requisição:
 
 | | Interno | Externo (Cliente da Oficina) |
 |---|---|---|
 | Estratégia Passport | `jwt` (`JwtStrategy`) | `customer-jwt` (`CustomerJwtStrategy`) |
-| Algoritmo | HS256 | RS256 |
-| Chave | `JWT_SECRET` (simétrica) | `CUSTOMER_JWT_PUBLIC_KEY` (só a pública — a privada vive na função serverless externa) |
-| Emissor do token | `POST /api/auth/login` (interno) | Função serverless externa, autenticando por CPF + senha |
+| Algoritmo | RS256 (`algorithms: ['RS256']`) | RS256 (`algorithms: ['RS256']`) |
+| Chave | `STAFF_JWT_PUBLIC_KEY` para validar, `kid` conferido contra `STAFF_JWT_KEY_ID`; esta API também é a emissora e guarda as privadas (`STAFF_JWT_PRIVATE_KEY`, `STAFF_JWT_REFRESH_PRIVATE_KEY`) | `CUSTOMER_JWT_PUBLIC_KEY` (só a pública — a privada vive na função serverless externa) |
+| Emissor do token | `POST /api/auth/login` (interno), com `iss = oficina-identity` e `aud = oficina-services` | Função serverless externa, autenticando por CPF + senha |
 | Guard HTTP (escolhido pelo `AuthenticationGuard`) | `JwtAuthGuard` (rota sem marcação) | `CustomerJwtAuthGuard` (`@CustomerArea()`); `AnyAuthGuard` aceita os dois em `GET /api/me` e `PATCH /api/me/password` (`@CustomerArea('any')`) |
-| Carrega `role`/`customerId` no payload? | `role`, sim | **Não** — só `sub` (o `userId`) |
+| Carrega `role`/`customerId` no payload? | `role`, sim (com `sub`, `email`, `name` e `typ = access`) | **Não** — só `sub` (o `userId`) |
 
 Diagrama de sequência completo desse fluxo (função serverless externa + `AnyAuthGuard` + `CustomerJwtStrategy`): ver [`docs/sequence-diagrams.md`](sequence-diagrams.md#autenticação-externa-do-cliente-da-oficina-cpf).
 
@@ -467,8 +469,8 @@ A arquitetura detalhada de logging, redação, correlação, traces, métricas d
 Em produção, `prepare-deploy` do CD é a ponte entre o Secret gerenciado pelo RDS e o contrato
 `DATABASE_URL` do Prisma. Ele descobre o ARN/endpoint, lê `AWSCURRENT` e materializa
 `database-credentials` com Node.js inline e stdin. O job `db-migrate` seguinte
-executa somente migration/seed; `app-deploy` aplica a imagem e aguarda o rollout; `api-secret` permanece separado,
-somente com material JWT. Nenhum Pod lê segredo da AWS e não há ESO ou Secrets Store CSI.
+executa somente migration/seed; `app-deploy` aplica a imagem e aguarda o rollout; `jwt-private-keys` permanece separado,
+somente com as chaves privadas do token de funcionário. Nenhum Pod lê segredo da AWS e não há ESO ou Secrets Store CSI.
 
 Veja o [ADR 0017](adr/0017-materializacao-da-credencial-do-banco-no-cd.md) e o
 [fluxo detalhado do CD](infra/ci-cd.md#2-workflow-de-cd-cdyml).
@@ -489,7 +491,7 @@ Decisões arquiteturais relevantes são registradas em [`docs/adr/`](./adr) no f
 - [ADR 0010 — Concorrência otimista via coluna `version`](./adr/0010-concorrencia-otimista-via-version.md)
 - [ADR 0011 — Unit of Work para transações multi-repositório](./adr/0011-unit-of-work-transacoes-multi-repositorio.md)
 - [ADR 0012 — Hierarquia de exceções por camada, com Exception Filters dedicados](./adr/0012-hierarquia-de-excecoes-por-camada.md)
-- [ADR 0013 — Autenticação interna via JWT stateless (access + refresh)](./adr/0013-autenticacao-interna-jwt-stateless.md)
+- [ADR 0013 — Autenticação interna via JWT stateless (access + refresh)](./adr/0013-autenticacao-interna-jwt-stateless.md) *(substituído pelo 0022)*
 - [ADR 0014 — Pipelines de CI, CD, SAST e DAST separados](./adr/0014-pipelines-ci-cd-sast-dast-separados.md)
 - [ADR 0015 — Testes E2E contra PostgreSQL real via Testcontainers, não mocks](./adr/0015-testcontainers-e2e-postgresql-real.md)
 - [ADR 0016 — Sanitização e validação de entrada em duas camadas](./adr/0016-sanitizacao-e-validacao-em-duas-camadas.md)
@@ -498,6 +500,7 @@ Decisões arquiteturais relevantes são registradas em [`docs/adr/`](./adr) no f
 - [ADR 0019 — Cache do dono no ElastiCache](./adr/0019-cache-do-dono-no-elasticache.md)
 - [ADR 0020 — Chamadas internas pela rede do cluster e rotas públicas negadas por padrão](./adr/0020-chamadas-internas-e-rotas-negadas-por-padrao.md)
 - [ADR 0021 — Span de consumo de mensagens](./adr/0021-span-de-consumo-de-mensagens.md)
+- [ADR 0022 — Token de funcionário em RS256 com chave pública por configuração](./adr/0022-token-de-funcionario-em-rs256.md)
 
 ## Modelo C4
 

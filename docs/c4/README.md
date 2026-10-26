@@ -71,7 +71,7 @@ Dentro do **Sistema da Oficina Mecânica** estão os sete blocos implantáveis o
 | **Servidor SMTP** | MailHog (externo) | Recebe e entrega os e-mails de orçamento (sink SMTP de desenvolvimento) |
 | **Datadog** | Serviço externo | Apresenta dashboards, alertas, logs, métricas e traces |
 
-Os protocolos nas setas: os atores entram por **HTTPS** no API Gateway; a autenticação de cliente usa integração **AWS_PROXY** com a Lambda; a API segue por **VPC Link → NLB interno → NodePort**; API e Lambda acessam o RDS por **SQL/TLS**; a API acessa o ElastiCache por **RESP sobre TLS** e o SNS e o SQS por **HTTPS** (AWS SDK); a API notifica por **SMTP** e emite telemetria por `stdout` e **OTLP**. A estratégia Passport externa (`customer-jwt`, RS256) permanece separada da usada pelos funcionários (`jwt`, HS256).
+Os protocolos nas setas: os atores entram por **HTTPS** no API Gateway; a autenticação de cliente usa integração **AWS_PROXY** com a Lambda; a API segue por **VPC Link → NLB interno → NodePort**; API e Lambda acessam o RDS por **SQL/TLS**; a API acessa o ElastiCache por **RESP sobre TLS** e o SNS e o SQS por **HTTPS** (AWS SDK); a API notifica por **SMTP** e emite telemetria por `stdout` e **OTLP**. A estratégia Passport externa (`customer-jwt`, RS256) permanece separada da usada pelos funcionários (`jwt`, RS256 com outra chave, emissor e audiência).
 
 ## Nível 3 — Componente da API REST
 
@@ -103,7 +103,7 @@ As dependências de quase todos os módulos em relação a **Guards / Segurança
 
 | Componente | Tecnologia | Responsabilidade |
 |---|---|---|
-| **Guards / Segurança** | NestJS Guards | `AuthenticationGuard` global que nega por padrão (token de funcionário, salvo `@Public()` ou `@CustomerArea()`), `RolesGuard` (RBAC interno) e as estratégias separadas `jwt` (HS256) e `customer-jwt` (RS256) |
+| **Guards / Segurança** | NestJS Guards | `AuthenticationGuard` global que nega por padrão (token de funcionário, salvo `@Public()` ou `@CustomerArea()`), `RolesGuard` (RBAC interno) e as estratégias separadas `jwt` (RS256, funcionário) e `customer-jwt` (RS256) |
 | **Repositories** | Prisma | Acesso a dados centralizado e global; todos os módulos de negócio persistem através dele, com o outbox gravado no mesmo Unit of Work |
 | **Cache** | NestJS Module · ioredis | Cache-aside do detalhe da OS no Valkey; invalidado depois do commit pelas escritas em OS, orçamentos, clientes e veículos |
 | **Mensageria** | NestJS Module · AWS SDK | Relay do outbox para o SNS FIFO e consumidor da fila SQS FIFO, com o span `CONSUMER` |

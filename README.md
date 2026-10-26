@@ -25,7 +25,7 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 - **Orçamentos** com aprovação/rejeição pelo **Cliente da Oficina autenticado** (ver [Autenticação](#-autenticação))
 - **Estoque** com reserva automática na aprovação e baixa no início do serviço
 - **Autorização por papéis (RBAC)**: `ADMIN`, `MECHANIC`, `ATTENDANT`
-- **Dois fluxos de autenticação JWT isolados**: interno (HS256, access + refresh, bcrypt) e externo por CPF + senha (RS256, emitido por uma função serverless dedicada)
+- **Dois fluxos de autenticação JWT isolados**: interno (RS256, access + refresh com chaves separadas, bcrypt) e externo por CPF + senha (RS256, emitido por uma função serverless dedicada)
 - **Concorrência otimista** (lock por `version`) em agregados sensíveis
 
 <details>
@@ -98,7 +98,7 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 - **Mensageria**: Amazon SNS FIFO + SQS FIFO (`@aws-sdk/client-sns`, `@aws-sdk/client-sqs`, `sqs-consumer`), com outbox transacional no PostgreSQL; LocalStack 4.14 em desenvolvimento
 - **Cache**: Valkey 9.1 (Amazon ElastiCache no cluster) via `ioredis`, cache-aside no detalhe da OS
 - **Chamadas internas**: REST entre serviços pela rede do cluster, com `@nestjs/axios`
-- **Autenticação**: dois fluxos JWT isolados via `passport-jwt` — interno (HS256, access + refresh token, bcrypt) e externo por CPF + senha (RS256, emitido por uma função serverless dedicada) — ver [Autenticação](#-autenticação)
+- **Autenticação**: dois fluxos JWT isolados via `passport-jwt` — interno (RS256, access + refresh token com chaves separadas, bcrypt) e externo por CPF + senha (RS256, emitido por uma função serverless dedicada) — ver [Autenticação](#-autenticação)
 - **E-mail**: Nodemailer + `@nestjs-modules/mailer` (SMTP via MailHog em desenvolvimento)
 - **Segurança HTTP**: Helmet, CORS configurável via `ALLOWED_ORIGINS`, `SanitizeStringsPipe` global, `ValidationPipe` global (`whitelist`, `forbidNonWhitelisted`, `transform`)
 - **Observabilidade**: logs estruturados em JSON no stdout com `pino` + `nestjs-pino` (nomenclatura OpenTelemetry, correlação por `request.id`, redação de dados sensíveis) — ver [ADR 0002](docs/adr/0002-logging-estruturado.md)
@@ -126,8 +126,13 @@ Esse modo sobe todos os serviços — PostgreSQL, MailHog, Valkey, LocalStack (S
 git clone https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service.git
 cd oficina-mecanica-work-order-service/app
 
-# (Opcional) Copiar e ajustar variáveis de ambiente
+# Criar o .env e gerar as chaves RS256 de teste do token de funcionário (nenhuma é versionada)
 cp .env.example .env
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out staff.pem
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out staff-refresh.pem
+openssl pkey -in staff.pem -pubout -out staff.pub.pem
+node -e "const pem = (f) => JSON.stringify(require('node:fs').readFileSync(f, 'utf8')); console.log(['STAFF_JWT_PRIVATE_KEY=' + pem('staff.pem'), 'STAFF_JWT_REFRESH_PRIVATE_KEY=' + pem('staff-refresh.pem'), 'STAFF_JWT_PUBLIC_KEY=' + pem('staff.pub.pem')].join('\n'))" >> .env
+rm staff.pem staff-refresh.pem staff.pub.pem
 
 # Subir todos os serviços em background e esperar que fiquem saudáveis
 docker compose up -d --build --wait
@@ -156,7 +161,7 @@ docker compose down
 
 > O `Dockerfile` é multi-stage (`node:24-alpine` builder + runtime), executa `prisma generate` no build e tem `CMD ["node", "--require", "./dist/src/otel.js", "dist/src/main"]` — **só a aplicação**. O `--require` carrega o preload do OpenTelemetry **antes** de `express` e `pg` serem importados, que é a única ordem em que a instrumentação consegue aplicar o patch; sem `OTEL_EXPORTER_OTLP_ENDPOINT` ele retorna cedo e não carrega nada (ver [ADR 0005](docs/adr/0005-opentelemetry.md)). Em produção, o CD obtém esse valor de `vars.OTEL_EXPORTER_OTLP_ENDPOINT`, renderiza e aplica o ConfigMap; o `app-deploy` aplica o Deployment com a imagem do commit e aguarda o rollout corrente, sem executar `rollout restart`. Valor vazio mantém o SDK desligado. A migração e o seed rodam num passo próprio: o serviço `migrate` do Compose localmente, e o Job `k8s/00-db-migrate-job.yaml` no CD.
 
-> Em produção, a credencial do PostgreSQL não vem do GitHub. O job `prepare-deploy` do CD usa `vars.RDS_INSTANCE_IDENTIFIER` para descobrir o Secret gerenciado pelo RDS, lê `AWSCURRENT` e materializa `DATABASE_URL` com encoding/TLS em `database-credentials`, usando Node.js inline e stdin. Também descobre o ElastiCache por `vars.CACHE_REPLICATION_GROUP_ID` e materializa `CACHE_URL` (`rediss://`) em `cache-credentials`. Depois, `db-migrate` executa migration/seed e `app-deploy` aplica a imagem no namespace `work-order`, aguarda o rollout e faz o smoke `GET /health/work-order` pelo API Gateway, com `kubectl rollout undo` na falha. Job e Deployment consomem o mesmo Secret do banco; `api-secret` contém somente os segredos JWT HS256 e `jwt-public-keys` a chave pública. O escopo é deploy greenfield, com rotação desabilitada e sem annotation/output de versão da credencial. Veja o [ADR 0017](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md).
+> Em produção, a credencial do PostgreSQL não vem do GitHub. O job `prepare-deploy` do CD usa `vars.RDS_INSTANCE_IDENTIFIER` para descobrir o Secret gerenciado pelo RDS, lê `AWSCURRENT` e materializa `DATABASE_URL` com encoding/TLS em `database-credentials`, usando Node.js inline e stdin. Também descobre o ElastiCache por `vars.CACHE_REPLICATION_GROUP_ID` e materializa `CACHE_URL` (`rediss://`) em `cache-credentials`. Depois, `db-migrate` executa migration/seed e `app-deploy` aplica a imagem no namespace `work-order`, aguarda o rollout e faz o smoke `GET /health/work-order` pelo API Gateway, com `kubectl rollout undo` na falha. Job e Deployment consomem o mesmo Secret do banco; `jwt-private-keys` contém somente as chaves privadas do token de funcionário e `jwt-public-keys` as chaves públicas e o `kid`. O escopo é deploy greenfield, com rotação desabilitada e sem annotation/output de versão da credencial. Veja o [ADR 0017](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md).
 
 > **Para testar:** faça login em `POST /api/auth/login` com um admin do seed (veja todos os usuários em [Como executar localmente › Seed](docs/local-setup.md#seed)). Para explorar os endpoints, use o **Swagger** em `/api/docs` ou importe a **collection do Postman** (`collections/oficina-collection.json` + `collections/oficina-environment.json`) — passo a passo em [Testes › Postman / Newman](docs/testing.md#postman--newman).
 
@@ -193,16 +198,16 @@ Execute todos os comandos a partir de `app/` (`cd app`) — não há `package.js
 
 ## 🔐 Autenticação
 
-Dois fluxos de autenticação **totalmente isolados** — nunca um único verificador aceitando os dois algoritmos (isso eliminaria, por construção, a classe de ataque de confusão de algoritmo):
+Dois fluxos de autenticação **totalmente isolados**: os dois são RS256, mas cada um tem sua chave pública, seu emissor e sua audiência, e cada estratégia fixa `algorithms: ['RS256']`. Um token de um fluxo nunca passa no verificador do outro, e um token HS256 ou sem assinatura nunca passa em nenhum:
 
 | | Interno (funcionários) | Externo (Cliente da Oficina) |
 |---|---|---|
 | Quem | `ADMIN`, `MECHANIC`, `ATTENDANT` | Pessoa física dona do veículo, ou representante autorizado de uma empresa cliente |
 | Como autentica | `POST /api/auth/login` (e-mail + senha) nesta própria API | CPF + senha, verificados por uma **função serverless dedicada** que consulta o banco diretamente — nunca um proxy do login interno |
-| Algoritmo / chave | JWT **HS256**, `JWT_SECRET` (simétrica) | JWT **RS256** assimétrico — esta API só guarda a chave **pública** (`CUSTOMER_JWT_PUBLIC_KEY`); a privada vive na função serverless |
+| Algoritmo / chave | JWT **RS256** — esta API assina com `STAFF_JWT_PRIVATE_KEY` e valida com `STAFF_JWT_PUBLIC_KEY`; o refresh usa a chave própria `STAFF_JWT_REFRESH_PRIVATE_KEY` | JWT **RS256** assimétrico — esta API só guarda a chave **pública** (`CUSTOMER_JWT_PUBLIC_KEY`); a privada vive na função serverless |
 | Estratégia Passport | `jwt` (`JwtStrategy`) | `customer-jwt` (`CustomerJwtStrategy`) |
 | Guard HTTP | `JwtAuthGuard`, o padrão do guard global (+ `RolesGuard` por papel) | `CustomerJwtAuthGuard` por `@CustomerArea()` (`AnyAuthGuard`, por `@CustomerArea('any')`, aceita os dois em `GET /api/me` e `PATCH /api/me/password`) |
-| O que o token carrega | `sub` (userId) + `role` | Só `sub` (userId) — **nunca** `customerId`. Autorização é resolvida por vínculo (`UserCustomer`) a cada requisição, então revogar acesso ou desativar o cliente vale imediatamente, sem lista de revogação de token |
+| O que o token carrega | Access: cabeçalho com `kid` (`STAFF_JWT_KEY_ID`) e claims `sub` (userId), `email`, `name`, `role`, `typ = access`, `iss = oficina-identity`, `aud = oficina-services`, válido por 10 min. Refresh: `typ = refresh`, `aud = oficina-identity`, 7 dias, nunca aceito como access. A cada requisição o usuário é relido no banco (ativo, com papel, sem troca de senha depois do `iat`) | Só `sub` (userId) — **nunca** `customerId`. Autorização é resolvida por vínculo (`UserCustomer`) a cada requisição, então revogar acesso ou desativar o cliente vale imediatamente, sem lista de revogação de token |
 | Superfície de rotas | Todas as rotas internas por perfil (ver matriz abaixo) | `/api/me/*` |
 
 A função serverless de autenticação externa **não está neste repositório** — vive em [`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth). Ver [ADR 0004](docs/adr/0004-autenticacao-de-clientes.md) para o raciocínio completo por trás dessas decisões, e [docs/local-setup.md](docs/local-setup.md#variáveis-de-ambiente) para rodar os dois repositórios juntos localmente.
@@ -350,7 +355,7 @@ A solução é composta por **sete repositórios especializados**, com responsab
 | 🌍 [Infra · Terraform](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base) | Infraestrutura AWS e Kubernetes (IaC nos repositórios dedicados) |
 | ☸️ [Infra · Kubernetes](docs/infra/kubernetes.md) | Manifests de aplicação (`k8s/`), probes, HPA e deploy |
 | 🔄 [Infra · CI/CD](docs/infra/ci-cd.md) | Workflows de CI, CD, SAST e DAST |
-| 📐 [ADRs](docs/adr) | Decisões arquiteturais — [0001 PostgreSQL](docs/adr/0001-uso-do-postgresql-como-banco-de-dados.md), [0002 Logging estruturado](docs/adr/0002-logging-estruturado.md), [0003 Health checks](docs/adr/0003-health-checks.md), [0004 Autenticação de clientes](docs/adr/0004-autenticacao-de-clientes.md), [0005 OpenTelemetry](docs/adr/0005-opentelemetry.md), [0006 Escolha de nuvem](docs/adr/0006-escolha-de-nuvem-aws.md), [0007 Padrão de comunicação](docs/adr/0007-padrao-de-comunicacao-rest-monolito.md), [0008 Autoscaling (HPA)](docs/adr/0008-autoscaling-via-hpa.md), [0009 Clean Architecture/DDD](docs/adr/0009-clean-architecture-ddd-em-camadas.md), [0010 Concorrência otimista](docs/adr/0010-concorrencia-otimista-via-version.md), [0011 Unit of Work](docs/adr/0011-unit-of-work-transacoes-multi-repositorio.md), [0012 Exceções por camada](docs/adr/0012-hierarquia-de-excecoes-por-camada.md), [0013 Autenticação interna JWT](docs/adr/0013-autenticacao-interna-jwt-stateless.md), [0014 Pipelines CI/CD/SAST/DAST](docs/adr/0014-pipelines-ci-cd-sast-dast-separados.md), [0015 Testcontainers no E2E](docs/adr/0015-testcontainers-e2e-postgresql-real.md), [0016 Sanitização e validação em duas camadas](docs/adr/0016-sanitizacao-e-validacao-em-duas-camadas.md), [0017 Credencial do banco no CD](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md), [0018 Mensageria com outbox](docs/adr/0018-mensageria-sns-sqs-fifo-com-outbox.md), [0019 Cache do dono](docs/adr/0019-cache-do-dono-no-elasticache.md), [0020 Chamadas internas e rotas negadas por padrão](docs/adr/0020-chamadas-internas-e-rotas-negadas-por-padrao.md), [0021 Span de consumo de mensagens](docs/adr/0021-span-de-consumo-de-mensagens.md) |
+| 📐 [ADRs](docs/adr) | Decisões arquiteturais — [0001 PostgreSQL](docs/adr/0001-uso-do-postgresql-como-banco-de-dados.md), [0002 Logging estruturado](docs/adr/0002-logging-estruturado.md), [0003 Health checks](docs/adr/0003-health-checks.md), [0004 Autenticação de clientes](docs/adr/0004-autenticacao-de-clientes.md), [0005 OpenTelemetry](docs/adr/0005-opentelemetry.md), [0006 Escolha de nuvem](docs/adr/0006-escolha-de-nuvem-aws.md), [0007 Padrão de comunicação](docs/adr/0007-padrao-de-comunicacao-rest-monolito.md), [0008 Autoscaling (HPA)](docs/adr/0008-autoscaling-via-hpa.md), [0009 Clean Architecture/DDD](docs/adr/0009-clean-architecture-ddd-em-camadas.md), [0010 Concorrência otimista](docs/adr/0010-concorrencia-otimista-via-version.md), [0011 Unit of Work](docs/adr/0011-unit-of-work-transacoes-multi-repositorio.md), [0012 Exceções por camada](docs/adr/0012-hierarquia-de-excecoes-por-camada.md), [0013 Autenticação interna JWT](docs/adr/0013-autenticacao-interna-jwt-stateless.md) *(substituída pela 0022)*, [0014 Pipelines CI/CD/SAST/DAST](docs/adr/0014-pipelines-ci-cd-sast-dast-separados.md), [0015 Testcontainers no E2E](docs/adr/0015-testcontainers-e2e-postgresql-real.md), [0016 Sanitização e validação em duas camadas](docs/adr/0016-sanitizacao-e-validacao-em-duas-camadas.md), [0017 Credencial do banco no CD](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md), [0018 Mensageria com outbox](docs/adr/0018-mensageria-sns-sqs-fifo-com-outbox.md), [0019 Cache do dono](docs/adr/0019-cache-do-dono-no-elasticache.md), [0020 Chamadas internas e rotas negadas por padrão](docs/adr/0020-chamadas-internas-e-rotas-negadas-por-padrao.md), [0021 Span de consumo de mensagens](docs/adr/0021-span-de-consumo-de-mensagens.md), [0022 Token de funcionário em RS256](docs/adr/0022-token-de-funcionario-em-rs256.md) |
 | 🧩 [Modelo C4](docs/c4) | Diagramas de Contexto, Container e Componente |
 | 🎨 [Modelagem de Domínio (Miro)](https://miro.com/app/board/uXjVGvVPEOw=/?share_link_id=9196435429) | Domain Storytelling, Event Storming e Dicionário de Linguagem Ubíqua |
 

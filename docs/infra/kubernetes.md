@@ -41,8 +41,8 @@ Os recursos em Kubernetes foram divididos por responsabilidade:
 | DB migration Job (`00-db-migrate-job.yaml`) | Workflow de CD | Render + `kubectl apply` (job `db-migrate`) em `.github/workflows/cd.yml` |
 | Database Secret (`database-credentials`) | Workflow de CD | Declarado em `01-secrets.yaml`; job `prepare-deploy`: descoberta RDS + `GetSecretValue`, e o trecho Node.js preenche o documento e o aplica por stdin; nenhum valor é versionado |
 | Cache Secret (`cache-credentials`) | Workflow de CD | Declarado em `01-secrets.yaml`; job `prepare-deploy`: descoberta do replication group + `GetSecretValue` do auth token, `envsubst` do documento e aplicação por stdin; nenhum valor é versionado |
-| Application Secret (`api-secret`) | Workflow de CD | Declarado em `01-secrets.yaml`; outro step de `prepare-deploy` preenche os segredos JWT HS256 em base64 e aplica por stdin |
-| Chaves públicas JWT (`jwt-public-keys`) | Workflow de CD | Declarado em `01-secrets.yaml`; mesmo step, com `CUSTOMER_JWT_PUBLIC_KEY` em base64 |
+| Chaves privadas do token de funcionário (`jwt-private-keys`) | Workflow de CD | Declarado em `01-secrets.yaml`; outro step de `prepare-deploy` preenche `STAFF_JWT_PRIVATE_KEY` e `STAFF_JWT_REFRESH_PRIVATE_KEY` (secrets do environment `production`) em base64 mascarado e aplica por stdin |
+| Chaves públicas JWT (`jwt-public-keys`) | Workflow de CD | Declarado em `01-secrets.yaml`; mesmo step, com `CUSTOMER_JWT_PUBLIC_KEY` (secret do repositório), `STAFF_JWT_PUBLIC_KEY` e `STAFF_JWT_KEY_ID` (variables da organização) em base64 |
 | ConfigMap (`02-work-order-configmap.yaml`) | Workflow de CD | Job `prepare-deploy`: render de `OTEL_EXPORTER_OTLP_ENDPOINT` (GitHub Actions Variable) e `MESSAGING_TOPIC_ARN` (conta da sessão AWS) via `envsubst` + `kubectl apply` |
 | Deployment (`03-work-order-deployment.yaml`) | Workflow de CD | Render da imagem e da label `version` + `kubectl apply` em `.github/workflows/cd.yml` |
 | Service (`04-work-order-service.yaml`) | Workflow de CD | `kubectl apply` em `.github/workflows/cd.yml` |
@@ -58,13 +58,13 @@ Os recursos em Kubernetes foram divididos por responsabilidade:
 
 **Wiring de configuração.** A configuração da API é injetada por `envFrom` a partir de cinco fontes, separadas por ownership e sensibilidade, sem chave repetida entre elas:
 
-- `work-order-config` (`ConfigMap`, **não sensível**): `NODE_ENV`, `PORT`, `JWT_EXPIRATION`, `JWT_REFRESH_EXPIRATION`, `BCRYPT_SALT_ROUNDS`, `MAIL_HOST` (`mailhog.platform.svc.cluster.local`), `MAIL_PORT`, `TZ`, `LOG_LEVEL`, `OTEL_SERVICE_NAME`, `OTEL_SERVICE_NAMESPACE`, `TRUSTED_PROXY_CIDRS`, `CUSTOMER_JWT_ISSUER`, `CUSTOMER_JWT_AUDIENCE`, `AWS_REGION`, `WORK_ORDER_QUEUE_NAME` (`work-order.fifo`), `MESSAGING_TOPIC_ARN`, `CACHE_TTL_SECONDS` (`43200`), `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_LOGS_EXPORTER` e `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE`.
+- `work-order-config` (`ConfigMap`, **não sensível**): `NODE_ENV`, `PORT`, `STAFF_JWT_ISSUER`, `STAFF_JWT_AUDIENCE`, `STAFF_JWT_EXPIRATION`, `STAFF_JWT_REFRESH_EXPIRATION`, `BCRYPT_SALT_ROUNDS`, `MAIL_HOST` (`mailhog.platform.svc.cluster.local`), `MAIL_PORT`, `TZ`, `LOG_LEVEL`, `OTEL_SERVICE_NAME`, `OTEL_SERVICE_NAMESPACE`, `TRUSTED_PROXY_CIDRS`, `CUSTOMER_JWT_ISSUER`, `CUSTOMER_JWT_AUDIENCE`, `AWS_REGION`, `WORK_ORDER_QUEUE_NAME` (`work-order.fifo`), `MESSAGING_TOPIC_ARN`, `CACHE_TTL_SECONDS` (`43200`), `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_LOGS_EXPORTER` e `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE`.
 - `database-credentials` (`Secret`, **sensível**): somente `DATABASE_URL`, materializada pelo CD a partir de RDS/Secrets Manager.
 - `cache-credentials` (`Secret`, **sensível**): somente `CACHE_URL` (`rediss://` com o auth token), materializada pelo CD a partir do ElastiCache/Secrets Manager.
-- `api-secret` (`Secret` da aplicação): `JWT_SECRET` e `JWT_REFRESH_SECRET`.
-- `jwt-public-keys` (`Secret`): `CUSTOMER_JWT_PUBLIC_KEY`.
+- `jwt-private-keys` (`Secret`): `STAFF_JWT_PRIVATE_KEY` e `STAFF_JWT_REFRESH_PRIVATE_KEY`, as chaves privadas RS256 do access e do refresh de funcionário.
+- `jwt-public-keys` (`Secret`): `CUSTOMER_JWT_PUBLIC_KEY`, `STAFF_JWT_PUBLIC_KEY` e `STAFF_JWT_KEY_ID`.
 
-`CUSTOMER_JWT_ISSUER`/`CUSTOMER_JWT_AUDIENCE` são valores fixos e não secretos (identificadores de emissor/audiência do token externo), por isso vivem no ConfigMap; `CUSTOMER_JWT_PUBLIC_KEY` fica num Secret próprio, separado dos segredos HS256, embora uma chave pública não exija sigilo.
+`CUSTOMER_JWT_ISSUER`/`CUSTOMER_JWT_AUDIENCE` são valores fixos e não secretos (identificadores de emissor/audiência do token externo), por isso vivem no ConfigMap; `CUSTOMER_JWT_PUBLIC_KEY`, `STAFF_JWT_PUBLIC_KEY` e `STAFF_JWT_KEY_ID` ficam num Secret próprio, separado das chaves privadas, embora uma chave pública não exija sigilo.
 
 Nenhum Secret carrega credencial AWS: SNS e SQS são chamados com o papel do nó (`LabRole`), resolvido pelo SDK.
 
@@ -171,7 +171,7 @@ O ambiente local não carrega esses parâmetros: `docker-compose` e Testcontaine
 Arquivos em `k8s/`:
 
 - `00-db-migrate-job.yaml`: Job **one-shot** de migração/seed do banco (`prisma migrate deploy` + `db seed`), com placeholders de nome (`JOB_NAME_PLACEHOLDER`) e imagem (`IMAGE_URI_PLACEHOLDER`); renderizado e aplicado pelo job `db-migrate` do CD antes do rollout — não é um recurso de estado da aplicação, por isso o prefixo `00-`. Detalhes em [Job de migração do banco](#job-de-migração-do-banco)
-- `01-secrets.yaml`: os quatro Secrets do serviço (`api-secret`, `jwt-public-keys`, `database-credentials` e `cache-credentials`), com nome, namespace, labels e chaves. Os valores são placeholders base64 (`${<CHAVE>_B64}`): cada passo do CD seleciona o seu documento com `yq`, preenche e aplica por stdin, e nenhum valor é versionado
+- `01-secrets.yaml`: os quatro Secrets do serviço (`jwt-private-keys`, `jwt-public-keys`, `database-credentials` e `cache-credentials`), com nome, namespace, labels e chaves. Os valores são placeholders base64 (`${<CHAVE>_B64}`): cada passo do CD seleciona o seu documento com `yq`, preenche e aplica por stdin, e nenhum valor é versionado
 - `02-work-order-configmap.yaml`: ConfigMap `work-order-config` com as variáveis não sensíveis listadas em [wiring de configuração](#convenções-labels-e-wiring-de-configuração); os placeholders `OTEL_EXPORTER_OTLP_ENDPOINT` (variável homônima do GitHub Actions) e `MESSAGING_TOPIC_ARN` (`arn:aws:sns:<região>:<conta>:oficina-events.fifo`, com a conta de `aws sts get-caller-identity`, porque o SNS não resolve ARN por nome) são renderizados pelo CD
 - `03-work-order-deployment.yaml`: Deployment `work-order-service` com placeholders de imagem e de `version`, `imagePullPolicy: Always`, `envFrom` dos Secrets e do ConfigMap e probes de saúde. **Não declara `replicas`**: o HPA é o dono da contagem, e um valor no manifesto a reverteria a cada apply
 - `04-work-order-service.yaml`: Service **`NodePort`** `work-order-service` (`3000` → `30080` nos nós). `NodePort` é um superconjunto de `ClusterIP`: o Service continua recebendo um ClusterIP e o DNS interno segue igual. A porta dos nós é o destino do target group do NLB interno provisionado em `oficina-mecanica-infra-k8s`, que por sua vez é o backend da integração privada do [API Gateway](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway). O valor precisa casar com o `node_port` de `work-order` em `local.services` (`terraform/locals.tf`) naquele repositório
@@ -334,14 +334,15 @@ As rotas de saúde ficam **dentro** da fronteira de cobertura do access log — 
 > O caminho canônico de deploy manual é `workflow_dispatch` (com `image_tag` para reimplantar uma imagem já publicada, sem build nem migração), pois ele descobre e materializa as credenciais sem expô-las. Os comandos abaixo pressupõem que `database-credentials`, `cache-credentials` e `jwt-public-keys` já foram criados pelo CD no namespace e não leem seus valores.
 
 ```bash
-# Renderiza os segredos JWT HS256 (base64 numa linha só, como o CD)
+# Aplica as chaves privadas do token de funcionário por stdin (base64 numa linha só, como o CD),
+# lidas de arquivos fora do repositório; nada é gravado em disco
 
-export JWT_SECRET_B64="$(printf '%s' '<JWT_SECRET>' | base64 -w0)"
-export JWT_REFRESH_SECRET_B64="$(printf '%s' '<JWT_REFRESH_SECRET>' | base64 -w0)"
+export STAFF_JWT_PRIVATE_KEY_B64="$(base64 -w0 < <caminho>/staff.key)"
+export STAFF_JWT_REFRESH_PRIVATE_KEY_B64="$(base64 -w0 < <caminho>/refresh.key)"
 
-yq 'select(.metadata.name == "api-secret")' k8s/01-secrets.yaml \
-| envsubst '${JWT_SECRET_B64} ${JWT_REFRESH_SECRET_B64}' \
-> k8s/01-api-secret.rendered.yaml
+yq 'select(.metadata.name == "jwt-private-keys")' k8s/01-secrets.yaml \
+| envsubst '${STAFF_JWT_PRIVATE_KEY_B64} ${STAFF_JWT_REFRESH_PRIVATE_KEY_B64}' \
+| kubectl apply -f -
 
 # Renderiza o ConfigMap: endpoint OTLP (vazio desliga o SDK) e ARN do tópico com a conta da sessão
 
@@ -361,7 +362,6 @@ sed -e "s|IMAGE_URI_PLACEHOLDER|<IMAGE_URI>|g" -e "s|VERSION_PLACEHOLDER|<IMAGE_
 
 kubectl get secret database-credentials cache-credentials jwt-public-keys -n work-order \
   -o go-template='{{range .items}}{{.metadata.name}} {{range $key, $_ := .data}}{{$key}}{{end}}{{"\n"}}{{end}}'
-kubectl apply -f k8s/01-api-secret.rendered.yaml
 kubectl apply -f k8s/02-work-order-configmap.rendered.yaml
 kubectl apply -f k8s/03-work-order-deployment.rendered.yaml
 kubectl apply -f k8s/04-work-order-service.yaml

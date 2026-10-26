@@ -6,6 +6,7 @@ Mitigações aplicadas no código e índice de relatórios de segurança.
 
 - [Relatórios](#relatórios)
 - [Mitigações aplicadas no código](#mitigações-aplicadas-no-código)
+- [Chaves do token de funcionário](#chaves-do-token-de-funcionário)
 - [Endpoints de saúde públicos e não autenticados](#endpoints-de-saúde-públicos-e-não-autenticados)
 - [Riscos residuais aceitos](#riscos-residuais-aceitos)
 - [Proteção de dados nos logs](#proteção-de-dados-nos-logs)
@@ -25,8 +26,8 @@ Relatórios de segurança da aplicação ficam versionados em [`reports/`](../re
 - `SanitizeStringsPipe` global (sanitização de inputs em DTOs antes do `ValidationPipe`)
 - `ValidationPipe` global com `whitelist: true`, `forbidNonWhitelisted: true` e `transform: true`
 - Senhas com bcrypt (`BCRYPT_SALT_ROUNDS`) e regra de força aplicada tanto no DTO quanto no domínio (`User.validatePasswordStrength`)
-- JWT com access + refresh token e segredos separados (`JWT_SECRET` / `JWT_REFRESH_SECRET`)
-- **Dois verificadores JWT totalmente isolados, nunca um único aceitando os dois algoritmos.** A estratégia interna (`jwt`, HS256, `JWT_SECRET`) autentica funcionários (`ADMIN`/`MECHANIC`/`ATTENDANT`); a estratégia externa (`customer-jwt`, RS256, `CUSTOMER_JWT_PUBLIC_KEY`) autentica o Cliente da Oficina, com token emitido por uma função serverless fora desta aplicação — a API guarda apenas a chave **pública** de verificação, nunca a privada. Um único verificador que aceitasse os dois algoritmos eliminaria por construção a defesa contra confusão de algoritmo (ex.: um atacante forjar um HS256 usando a chave pública RS256 como segredo); mantê-los como duas estratégias Passport distintas torna essa classe de ataque estruturalmente impossível, não apenas mitigada por validação. O token externo não carrega `customerId` nem `role` — apenas `sub` (o `userId`) — e cada rota `/api/me/*` resolve a autorização por vínculo (`UserCustomer`) a cada requisição, o que faz uma revogação de acesso valer imediatamente sem lista de revogação de token. Ver [ADR 0004](./adr/0004-autenticacao-de-clientes.md).
+- Token de funcionário em **RS256**, com access e refresh assinados por chaves privadas **separadas** (`STAFF_JWT_PRIVATE_KEY` / `STAFF_JWT_REFRESH_PRIVATE_KEY`). O access tem `kid` no cabeçalho e as claims `sub`, `email`, `name`, `role`, `typ = access`, `iss = oficina-identity` e `aud = oficina-services`, e vale 10 minutos (`STAFF_JWT_EXPIRATION`). O refresh tem `typ = refresh` e `aud = oficina-identity`, vale 7 dias e não tem `kid`. Nenhum segredo de assinatura é compartilhado: quem só valida recebe a chave pública (`STAFF_JWT_PUBLIC_KEY`) e o `kid` (`STAFF_JWT_KEY_ID`).
+- **Dois verificadores JWT totalmente isolados.** A estratégia interna (`jwt`) autentica funcionários (`ADMIN`/`MECHANIC`/`ATTENDANT`) com `STAFF_JWT_PUBLIC_KEY`, emissor `oficina-identity` (`STAFF_JWT_ISSUER`) e audiência `oficina-services` (`STAFF_JWT_AUDIENCE`); a externa (`customer-jwt`) autentica o Cliente da Oficina com `CUSTOMER_JWT_PUBLIC_KEY`, emissor e audiência próprios, com token emitido por uma função serverless fora desta aplicação. As duas fixam `algorithms: ['RS256']`, então um token HS256 (inclusive um forjado com a chave pública como segredo) ou sem assinatura é recusado antes de qualquer outra checagem. A interna ainda recusa `kid` diferente do configurado e `typ` diferente de `access`: um refresh enviado como access falha na audiência e no `typ`, e um access enviado a `POST /api/auth/refresh` falha na chave, na audiência e no `typ`. O token externo não carrega `customerId` nem `role` — apenas `sub` (o `userId`) — e cada rota `/api/me/*` resolve a autorização por vínculo (`UserCustomer`) a cada requisição, o que faz uma revogação de acesso valer imediatamente sem lista de revogação de token. Ver [ADR 0004](./adr/0004-autenticacao-de-clientes.md) e [ADR 0022](./adr/0022-token-de-funcionario-em-rs256.md).
 - Concorrência otimista em agregados sensíveis (`WorkOrder`, `Quote`, `PartSupply`) para evitar lost updates
 - Filtros de exceção que nunca expõem stack traces ou detalhes do banco para o cliente
 - Registro de exceção decidido pelo **status resolvido**, não pelo tipo: um `401` não gera linha de erro nem stack trace, e portanto um scanner não vira tempestade de alertas
@@ -40,10 +41,43 @@ Relatórios de segurança da aplicação ficam versionados em [`reports/`](../re
 - A master password pertence ao RDS/Secrets Manager e não é armazenada em GitHub Secret, Variable ou Terraform State corrente.
 - `prepare-deploy` do CD lê `AWSCURRENT`, mascara senha, senha percent-encoded, URL e URL em base64 e aplica por stdin um manifesto do Secret `database-credentials`; nenhuma representação sensível segue para argumento de processo, output, artifact ou arquivo renderizado. Máscaras protegem logs, não command lines; base64 não é criptografia.
 - `cache-credentials` recebe `CACHE_URL` (`rediss://` com o auth token do ElastiCache) pelo mesmo transporte: token lido do Secrets Manager, URL mascarada e aplicada por stdin.
-- `api-secret` contém somente `JWT_SECRET` e `JWT_REFRESH_SECRET`, e `jwt-public-keys` somente `CUSTOMER_JWT_PUBLIC_KEY`, evitando misturar lifecycles.
+- `jwt-private-keys` contém somente as chaves privadas `STAFF_JWT_PRIVATE_KEY` e `STAFF_JWT_REFRESH_PRIVATE_KEY`, e `jwt-public-keys` só material público (`CUSTOMER_JWT_PUBLIC_KEY`, `STAFF_JWT_PUBLIC_KEY` e `STAFF_JWT_KEY_ID`), evitando misturar lifecycles. As privadas vêm de secrets do repositório; a pública de funcionário e o `kid`, de variables da organização, que os outros serviços também leem. O `prepare-deploy` codifica os valores em base64, mascara o base64 das privadas e aplica por stdin.
+
 - O Deployment recebe `DATABASE_URL` e `CACHE_URL` pelos Secrets e o Job só `DATABASE_URL`. SNS e SQS são chamados com o papel do nó. Não há credencial AWS, IRSA, Pod Identity, ESO, CSI/ASCP ou chamada ao Secrets Manager nesses workloads.
 
 O desenho e as alternativas estão no [ADR 0017](./adr/0017-materializacao-da-credencial-do-banco-no-cd.md).
+
+## Chaves do token de funcionário
+
+| Chave | Onde fica | Quem usa |
+|---|---|---|
+| `STAFF_JWT_PRIVATE_KEY` (PKCS#8) | Secret do environment `production` → Secret k8s `jwt-private-keys` | Emissor (assina o access) |
+| `STAFF_JWT_REFRESH_PRIVATE_KEY` (PKCS#8) | Secret do environment `production` → Secret k8s `jwt-private-keys` | Emissor (assina e verifica o refresh; a pública é derivada da privada) |
+| `STAFF_JWT_PUBLIC_KEY` (SPKI) | Variable da organização `FIAP-15SOAT` → Secret k8s `jwt-public-keys` | Todo serviço que valida o token de funcionário |
+| `STAFF_JWT_KEY_ID` | Variable da organização → Secret k8s `jwt-public-keys` | Emissor (cabeçalho `kid`) e validadores (conferem o `kid`) |
+
+**Gerar ou trocar o par.** Gere os pares fora do repositório (`*.pem` está no `.gitignore`) e atualize os secrets e as variables juntos, com um `kid` novo:
+
+```bash
+tmp="$(mktemp -d)"
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$tmp/staff.key"
+openssl pkey -in "$tmp/staff.key" -pubout -out "$tmp/staff.pub"
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$tmp/refresh.key"
+gh secret set STAFF_JWT_PRIVATE_KEY --env production -R FIAP-15SOAT/oficina-mecanica-work-order-service < "$tmp/staff.key"
+gh secret set STAFF_JWT_REFRESH_PRIVATE_KEY --env production -R FIAP-15SOAT/oficina-mecanica-work-order-service < "$tmp/refresh.key"
+gh variable set STAFF_JWT_PUBLIC_KEY --org FIAP-15SOAT --visibility all < "$tmp/staff.pub"
+gh variable set STAFF_JWT_KEY_ID --org FIAP-15SOAT --visibility all --body "staff-$(date +%Y-%m-%d)"
+rm -rf "$tmp"
+```
+
+Atualizar um Secret não reinicia os pods: depois de rodar o CD, reinicie o Deployment para que todas as réplicas assinem e validem com o par novo ao mesmo tempo. Sem isso, um pod criado pelo HPA usaria o par novo enquanto os antigos seguem com o anterior, e tokens de um seriam recusados pelo outro.
+
+```bash
+kubectl rollout restart deployment/work-order-service -n work-order
+kubectl rollout status deployment/work-order-service -n work-order --timeout=180s
+```
+
+Há uma chave ativa por emissor, sem JWKS: depois da troca, os tokens antigos deixam de valer e basta um login novo.
 
 ## Riscos residuais aceitos
 
