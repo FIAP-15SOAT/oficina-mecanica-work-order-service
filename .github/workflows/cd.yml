@@ -5,6 +5,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Tag de uma imagem já publicada no ECR (rollback manual, sem build)
+        required: false
+        type: string
 
 concurrency:
   group: production
@@ -42,16 +47,30 @@ jobs:
         id: login_ecr
         uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
 
+      # Com `image_tag`, o deploy reaproveita uma imagem já publicada e o build é pulado.
       - name: Set image metadata
         id: image_meta
         env:
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
-          COMMIT_SHA: ${{ github.sha }}
+          IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
         run: |
-          IMAGE_URI="${{ steps.login_ecr.outputs.registry }}/${ECR_REPOSITORY}:${COMMIT_SHA}"
+          IMAGE_URI="${{ steps.login_ecr.outputs.registry }}/${ECR_REPOSITORY}:${IMAGE_TAG}"
           echo "image_uri=${IMAGE_URI}" >> "$GITHUB_OUTPUT"
 
+      - name: Check requested image exists
+        if: inputs.image_tag != ''
+        env:
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          if ! aws ecr describe-images --repository-name "${ECR_REPOSITORY}" \
+            --image-ids imageTag="${IMAGE_TAG}" --no-cli-pager > /dev/null; then
+            echo "::error::A imagem ${ECR_REPOSITORY}:${IMAGE_TAG} não existe no ECR."
+            exit 1
+          fi
+
       - name: Build and Push Image
+        if: inputs.image_tag == ''
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ./app
@@ -66,7 +85,8 @@ jobs:
   prepare-deploy:
     name: Prepare Deployment Configuration
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Two 10-minute waits (RDS, then cache) fit; 15 did not.
+    timeout-minutes: 25
     environment: production
     needs:
       - build-push-image
@@ -77,6 +97,19 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # The manifests fix namespace and name; the variables drive the migration Job wait, rollout and undo.
+      - name: Check deploy variables match the manifests
+        env:
+          K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE }}
+          K8S_DEPLOYMENT_NAME: ${{ vars.K8S_DEPLOYMENT_NAME }}
+        run: |
+          set -euo pipefail
+          if [[ "$(yq -N '.metadata.namespace' k8s/0*.yaml | sort -u)" != "${K8S_NAMESPACE}" ||
+                "$(yq '.metadata.name' k8s/03-work-order-deployment.yaml)" != "${K8S_DEPLOYMENT_NAME}" ]]; then
+            echo "::error::K8S_NAMESPACE precisa casar com o namespace de todos os manifests de k8s/, e K8S_DEPLOYMENT_NAME com o nome do Deployment."
+            exit 1
+          fi
 
       # Falha rápido e com causa explícita, antes de gastar uma autenticação AWS e
       # um kubectl apply: sem este secret, o Secret do cluster sobe com um valor
@@ -108,11 +141,9 @@ jobs:
 
       - name: Discover and materialize database credentials
         env:
-          K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE }}
           RDS_INSTANCE_IDENTIFIER: ${{ vars.RDS_INSTANCE_IDENTIFIER }}
         run: |
           set -euo pipefail
-          : "${K8S_NAMESPACE:?K8S_NAMESPACE repository variable is required}"
           : "${RDS_INSTANCE_IDENTIFIER:?RDS_INSTANCE_IDENTIFIER repository variable is required}"
 
           READY=false
@@ -137,7 +168,8 @@ jobs:
           SECRET_STRING="$(aws secretsmanager get-secret-value \
             --secret-id "${SECRET_ARN}" --version-stage AWSCURRENT \
             --query SecretString --output text --no-cli-pager)"
-          RDS_METADATA="${RDS_METADATA}" SECRET_STRING="${SECRET_STRING}" node <<'NODE'
+          SECRET_MANIFEST="$(yq -o json 'select(.metadata.name == "database-credentials")' k8s/01-secrets.yaml)"
+          RDS_METADATA="${RDS_METADATA}" SECRET_STRING="${SECRET_STRING}" SECRET_MANIFEST="${SECRET_MANIFEST}" node <<'NODE'
           const { spawnSync } = require('node:child_process');
           let phase = 'parsing AWS responses';
           try {
@@ -157,9 +189,9 @@ jobs:
               console.log(`::add-mask::${value.replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')}`);
             }
             phase = 'applying database-credentials to Kubernetes';
-            const manifest = { apiVersion: 'v1', kind: 'Secret', type: 'Opaque',
-              metadata: { name: 'database-credentials', namespace: process.env.K8S_NAMESPACE },
-              data: { DATABASE_URL: data } };
+            const manifest = JSON.parse(process.env.SECRET_MANIFEST);
+            if (!manifest.data || !('DATABASE_URL' in manifest.data)) throw new Error();
+            manifest.data.DATABASE_URL = data;
             const applied = spawnSync('kubectl', ['apply', '-f', '-'], { input: JSON.stringify(manifest), encoding: 'utf8' });
             if (applied.status !== 0) throw new Error();
             console.log('Database credentials were materialized from RDS metadata and AWSCURRENT.');
@@ -169,31 +201,73 @@ jobs:
           }
           NODE
 
+      - name: Discover and materialize cache credentials
+        env:
+          CACHE_REPLICATION_GROUP_ID: ${{ vars.CACHE_REPLICATION_GROUP_ID }}
+        run: |
+          set -euo pipefail
+          : "${CACHE_REPLICATION_GROUP_ID:?CACHE_REPLICATION_GROUP_ID repository variable is required}"
+
+          # Exits 255 after 40 checks of 15 s; a missing replication group fails with the AWS error.
+          aws elasticache wait replication-group-available --replication-group-id "${CACHE_REPLICATION_GROUP_ID}"
+          ENDPOINT="$(aws elasticache describe-replication-groups \
+            --replication-group-id "${CACHE_REPLICATION_GROUP_ID}" \
+            --query 'ReplicationGroups[0].NodeGroups[0].PrimaryEndpoint.[Address,Port]' \
+            --output text --no-cli-pager)"
+          read -r HOST PORT <<< "${ENDPOINT}"
+          if [[ -z "${HOST}" || "${HOST}" == "None" || ! "${PORT}" =~ ^[0-9]+$ ]]; then
+            echo "::error::Cache ${CACHE_REPLICATION_GROUP_ID} sem endpoint primário."
+            exit 1
+          fi
+
+          TOKEN="$(aws secretsmanager get-secret-value \
+            --secret-id "${CACHE_REPLICATION_GROUP_ID}-auth-token" \
+            --query SecretString --output text --no-cli-pager)"
+          echo "::add-mask::${TOKEN}"
+          # Terraform generates the token without punctuation, so the URL needs no encoding.
+          if [[ ! "${TOKEN}" =~ ^[A-Za-z0-9]+$ ]]; then
+            echo "::error::O token do cache não é alfanumérico; a URL precisaria de percent-encoding."
+            exit 1
+          fi
+
+          # The URL travels only through pipes and the environment: never an argument, a file or the log.
+          CACHE_URL_B64="$(printf 'rediss://:%s@%s:%s' "${TOKEN}" "${HOST}" "${PORT}" | base64 -w0)"
+          echo "::add-mask::${CACHE_URL_B64}"
+          export CACHE_URL_B64
+          # shellcheck disable=SC2016 # envsubst receives the variable names literally
+          yq 'select(.metadata.name == "cache-credentials")' k8s/01-secrets.yaml \
+            | envsubst '${CACHE_URL_B64}' \
+            | kubectl apply -f -
+
       - name: Render and apply application secrets and ConfigMap
         env:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
           CUSTOMER_JWT_PUBLIC_KEY: ${{ secrets.CUSTOMER_JWT_PUBLIC_KEY }}
           OTEL_EXPORTER_OTLP_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
-        # `kubectl create secret --from-literal` (não `envsubst` sobre o YAML) porque
-        # CUSTOMER_JWT_PUBLIC_KEY é uma chave PEM que pode conter quebras de linha reais —
-        # envsubst injetaria o valor cru dentro do stringData e quebraria o YAML renderizado
-        # (a segunda linha do PEM começa na coluna 0, sem `:`), derrubando o `kubectl apply`
-        # antes da migração e do rollout. --from-literal aceita o valor como está, com
-        # quebras de linha ou não, e o próprio kubectl faz o escape para o Secret.
+        # Base64 keeps the multiline PEM on one line, so envsubst cannot break the YAML.
         run: |
-          kubectl create secret generic api-secret \
-            --namespace "${{ vars.K8S_NAMESPACE }}" \
-            --from-literal=JWT_SECRET="${JWT_SECRET}" \
-            --from-literal=JWT_REFRESH_SECRET="${JWT_REFRESH_SECRET}" \
-            --from-literal=CUSTOMER_JWT_PUBLIC_KEY="${CUSTOMER_JWT_PUBLIC_KEY}" \
-            --dry-run=client -o yaml | kubectl apply -f -
+          set -euo pipefail
+          JWT_SECRET_B64="$(printf '%s' "${JWT_SECRET}" | base64 -w0)"
+          JWT_REFRESH_SECRET_B64="$(printf '%s' "${JWT_REFRESH_SECRET}" | base64 -w0)"
+          CUSTOMER_JWT_PUBLIC_KEY_B64="$(printf '%s' "${CUSTOMER_JWT_PUBLIC_KEY}" | base64 -w0)"
+          echo "::add-mask::${JWT_SECRET_B64}"
+          echo "::add-mask::${JWT_REFRESH_SECRET_B64}"
+          export JWT_SECRET_B64 JWT_REFRESH_SECRET_B64 CUSTOMER_JWT_PUBLIC_KEY_B64
+          # shellcheck disable=SC2016 # envsubst receives the variable names literally
+          yq 'select(.metadata.name == "api-secret" or .metadata.name == "jwt-public-keys")' k8s/01-secrets.yaml \
+            | envsubst '${JWT_SECRET_B64} ${JWT_REFRESH_SECRET_B64} ${CUSTOMER_JWT_PUBLIC_KEY_B64}' \
+            | kubectl apply -f -
 
-          envsubst '${OTEL_EXPORTER_OTLP_ENDPOINT}' \
-            < k8s/02-api-configmap.yaml \
-            > k8s/02-api-configmap.rendered.yaml
+          AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+          export MESSAGING_TOPIC_ARN="arn:aws:sns:${AWS_REGION}:${AWS_ACCOUNT_ID}:oficina-events.fifo"
 
-          kubectl apply -f k8s/02-api-configmap.rendered.yaml
+          # shellcheck disable=SC2016 # envsubst receives the variable names literally
+          envsubst '${OTEL_EXPORTER_OTLP_ENDPOINT} ${MESSAGING_TOPIC_ARN}' \
+            < k8s/02-work-order-configmap.yaml \
+            > k8s/02-work-order-configmap.rendered.yaml
+
+          kubectl apply -f k8s/02-work-order-configmap.rendered.yaml
 
   db-migrate:
     name: DB Migrate & Seed
@@ -202,9 +276,11 @@ jobs:
     needs:
       - build-push-image
       - prepare-deploy
+    # A rollback image would re-run its older seed over the newer schema.
     if: >-
       github.ref == 'refs/heads/main' &&
-      (vars.ENABLE_DEPLOY == 'true' || github.event_name == 'workflow_dispatch')
+      (vars.ENABLE_DEPLOY == 'true' || github.event_name == 'workflow_dispatch') &&
+      inputs.image_tag == ''
     permissions:
       contents: read
 
@@ -294,7 +370,9 @@ jobs:
       - build-push-image
       - prepare-deploy
       - db-migrate
+    # Runs after a skipped db-migrate (image_tag rollback), never after a failed or cancelled one.
     if: >-
+      !failure() && !cancelled() &&
       github.ref == 'refs/heads/main' &&
       (vars.ENABLE_DEPLOY == 'true' || github.event_name == 'workflow_dispatch')
     permissions:
@@ -315,38 +393,53 @@ jobs:
         run: aws eks update-kubeconfig --region "${{ env.AWS_REGION }}" --name "${{ vars.EKS_CLUSTER_NAME }}"
 
       - name: Render deployment manifest with immutable image
+        env:
+          IMAGE_URI: ${{ needs.build-push-image.outputs.image_uri }}
         run: |
-          sed -e "s|IMAGE_URI_PLACEHOLDER|${{ needs.build-push-image.outputs.image_uri }}|g" \
-            k8s/03-api-deployment.yaml > k8s/03-api-deployment.rendered.yaml
+          sed -e "s|IMAGE_URI_PLACEHOLDER|${IMAGE_URI}|g" \
+              -e "s|VERSION_PLACEHOLDER|${IMAGE_URI##*:}|g" \
+            k8s/03-work-order-deployment.yaml > k8s/03-work-order-deployment.rendered.yaml
 
+      # Deployment last: a Service/HPA failure (e.g. NodePort 30080 still held by another
+      # namespace) stops the job before a new revision exists, so there is nothing to undo.
       - name: Apply Kubernetes manifests
         run: |
-          kubectl apply -f k8s/03-mailhog-deployment.yaml
-          kubectl apply -f k8s/04-mailhog-service.yaml
-          kubectl apply -f k8s/03-api-deployment.rendered.yaml
-          kubectl apply -f k8s/04-api-service.yaml
+          set -euo pipefail
+          kubectl apply -f k8s/04-work-order-service.yaml
           kubectl apply -f k8s/05-api-hpa.yaml
-
-      - name: Apply telemetry collection layer
-        if: vars.ENABLE_TELEMETRY_COLLECTION == 'true'
-        env:
-          DD_API_KEY: ${{ secrets.DD_API_KEY }}
-        run: |
-          if [ -z "${DD_API_KEY}" ]; then
-            echo "::error::DD_API_KEY não está configurado nos secrets do repositório, mas ENABLE_TELEMETRY_COLLECTION está ligada."
-            exit 1
-          fi
-
-          envsubst '${DD_API_KEY}' \
-            < k8s/06-datadog-secret.yaml \
-            > k8s/06-datadog-secret.rendered.yaml
-
-          kubectl apply -f k8s/06-datadog-secret.rendered.yaml
-          kubectl apply -f k8s/07-datadog-agent.yaml
-          kubectl apply -f k8s/08-datadog-service.yaml
-
-          kubectl rollout status daemonset/datadog-agent \
-            --namespace=${{ vars.K8S_NAMESPACE }} --timeout=180s
+          kubectl apply -f k8s/03-work-order-deployment.rendered.yaml
 
       - name: Wait rollout
+        id: rollout
         run: kubectl rollout status deployment/${{ vars.K8S_DEPLOYMENT_NAME }} --namespace=${{ vars.K8S_NAMESPACE }} --timeout=180s
+
+      # Sem a API do gateway (subida do zero, antes do apply do api-gateway), o deploy vale pelo rollout.
+      - name: Smoke test through the gateway
+        id: smoke
+        run: |
+          set -euo pipefail
+          # A failed lookup is not a failed deploy: the rollout already passed, so no undo.
+          if ! API_ENDPOINT="$(aws apigatewayv2 get-apis \
+            --query "Items[?Name=='apigw-oficina-mecanica'].ApiEndpoint | [0]" \
+            --output text --no-cli-pager)"; then
+            echo "::warning::A consulta da API do gateway falhou; smoke pulado."
+            echo "Smoke pulado: a consulta get-apis falhou." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [[ -z "${API_ENDPOINT}" || "${API_ENDPOINT}" == "None" ]]; then
+            echo "::warning::API apigw-oficina-mecanica não encontrada; smoke pulado."
+            echo "Smoke pulado: a API apigw-oficina-mecanica do gateway não existe na conta." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          curl -fsS --connect-timeout 5 --max-time 10 --retry 5 --retry-delay 5 --retry-all-errors \
+            "${API_ENDPOINT}/health/work-order"
+
+      - name: Roll back on failed rollout or smoke
+        if: failure() && (steps.rollout.conclusion == 'failure' || steps.smoke.conclusion == 'failure')
+        run: |
+          kubectl rollout undo deployment/${{ vars.K8S_DEPLOYMENT_NAME }} --namespace=${{ vars.K8S_NAMESPACE }} \
+            || echo "::error::rollout undo falhou (sem revisão anterior?)."
+          kubectl rollout status deployment/${{ vars.K8S_DEPLOYMENT_NAME }} --namespace=${{ vars.K8S_NAMESPACE }} --timeout=180s \
+            || echo "::error::A revisão anterior não ficou disponível em 180 s."
+          echo "::error::Deploy desfeito: o rollout ou o smoke falhou."
+          exit 1

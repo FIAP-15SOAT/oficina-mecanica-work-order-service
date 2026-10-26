@@ -33,7 +33,7 @@ Nenhum `transport` é declarado em código e `pino-pretty` nunca é importado de
 
 **Não existe coletor de logs de aplicação neste repositório hoje** (`infra/aws-base/eks.tf` cobre apenas os logs do control-plane do EKS). Esta mudança faz a aplicação emitir logs corretos; a coleta, o parsing, a promoção de resource, a retenção e o custo pertencem a uma mudança operacional posterior. Dizer isso explicitamente evita a crença falsa de que fazer merge desta mudança coloca os logs em um lugar pesquisável.
 
-> **Correção (2026-09-12, ADR 0005).** O parágrafo acima registra o estado em que este ADR foi aceito. Hoje os manifests `k8s/06-*` a `k8s/08-*` versionam o Datadog Agent e seu endpoint OTLP; o CD aplica essa camada somente quando `ENABLE_TELEMETRY_COLLECTION == 'true'`. O Agent coleta stdout dos containers e recebe traces/métricas OTLP. A aplicação continua escrevendo JSON em stdout e não conhece credenciais nem APIs do fornecedor. Ver [ADR 0005 › Camada de coleta](0005-opentelemetry.md#camada-de-coleta-versionada-aqui-ativada-por-gate).
+> **Correção (2026-09-12, ADR 0005; revista em 2026-10-25).** O parágrafo acima registra o estado em que este ADR foi aceito. Hoje o Datadog Agent e seu endpoint OTLP rodam no namespace `platform`, aplicados pelo CD do `oficina-mecanica-infra-k8s`; este repositório não tem manifesto do Agent. O Agent coleta stdout dos containers e recebe traces/métricas OTLP. A aplicação continua escrevendo JSON em stdout e não conhece credenciais nem APIs do fornecedor. Ver [ADR 0005 › Camada de coleta](0005-opentelemetry.md#camada-de-coleta).
 
 ### O formato nunca varia por ambiente
 

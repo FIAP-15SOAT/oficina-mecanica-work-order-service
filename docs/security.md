@@ -39,8 +39,9 @@ Relatórios de segurança da aplicação ficam versionados em [`reports/`](../re
 
 - A master password pertence ao RDS/Secrets Manager e não é armazenada em GitHub Secret, Variable ou Terraform State corrente.
 - `prepare-deploy` do CD lê `AWSCURRENT`, mascara senha, senha percent-encoded, URL e URL em base64 e aplica por stdin um manifesto do Secret `database-credentials`; nenhuma representação sensível segue para argumento de processo, output, artifact ou arquivo renderizado. Máscaras protegem logs, não command lines; base64 não é criptografia.
-- `api-secret` contém somente `JWT_SECRET`, `JWT_REFRESH_SECRET` e `CUSTOMER_JWT_PUBLIC_KEY`, evitando misturar lifecycles.
-- Job e Deployment apenas recebem `DATABASE_URL` via `secretKeyRef`. Não há credencial AWS, IRSA, Pod Identity, ESO, CSI/ASCP ou chamada ao Secrets Manager nesses workloads.
+- `cache-credentials` recebe `CACHE_URL` (`rediss://` com o auth token do ElastiCache) pelo mesmo transporte: token lido do Secrets Manager, URL mascarada e aplicada por stdin.
+- `api-secret` contém somente `JWT_SECRET` e `JWT_REFRESH_SECRET`, e `jwt-public-keys` somente `CUSTOMER_JWT_PUBLIC_KEY`, evitando misturar lifecycles.
+- O Deployment recebe `DATABASE_URL` e `CACHE_URL` pelos Secrets e o Job só `DATABASE_URL`. SNS e SQS são chamados com o papel do nó. Não há credencial AWS, IRSA, Pod Identity, ESO, CSI/ASCP ou chamada ao Secrets Manager nesses workloads.
 
 O desenho e as alternativas estão no [ADR 0017](./adr/0017-materializacao-da-credencial-do-banco-no-cd.md).
 

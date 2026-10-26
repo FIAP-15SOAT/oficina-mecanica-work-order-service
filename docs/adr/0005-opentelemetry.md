@@ -207,10 +207,10 @@ O flat config do ESLint aplica as restrições por camada depois das regras gera
 
 Essa ordem evita perder as restrições: um bloco posterior que se aplica ao mesmo arquivo pode substituir as opções da mesma regra. As opções específicas de imports por camada precisam prevalecer sobre as gerais.
 
-## Camada de coleta (versionada aqui, ativada por gate)
+## Camada de coleta
 
 ```
-  cliente ──▶ pod oficina-api
+  cliente ──▶ pod work-order-service
                 ├─ spans/métricas OTLP :4318 ──┐
                 └─ stdout JSON ────────────────┤ (log do contêiner)
                                                ▼
@@ -222,13 +222,13 @@ Essa ordem evita perder as restrições: um bloco posterior que se aplica ao mes
                                           Plataforma
 ```
 
-Os manifestos vivem em `k8s/06-datadog-secret.yaml`, `k8s/07-datadog-agent.yaml` e `k8s/08-datadog-service.yaml`, e o CD os aplica **apenas** quando `vars.ENABLE_TELEMETRY_COLLECTION` está ligada. O `DD_API_KEY` é renderizado por `envsubst` no Secret do Agent e nunca é committado. O precedente de hospedar dependência não-aplicacional em `k8s/` já existia — MailHog está lá.
+O Agent (DaemonSet) e o Service `datadog-agent` rodam no namespace `platform`, aplicados pelo CD do `oficina-mecanica-infra-k8s` (`k8s/platform/`), que também materializa o `DD_API_KEY`; este repositório não tem manifesto do Agent nem a chave. Quando esta ADR foi aceita, os manifestos ficavam em `k8s/06` a `k8s/08` deste repositório, atrás de uma variável de gate.
 
 **Por que o Agent e não um OTel Collector**, sendo esta a change que mais investiu em neutralidade: o requisito escrito é neutralidade **da aplicação**, e ela está satisfeita pelas duas opções — o processo exporta OTLP puro e não conhece fornecedor. O que o Collector acrescentaria é portabilidade da *camada de coleta*, escopo não pedido, ao custo de um ConfigMap com `filelog` + parser de contêiner + `trace_parser`, `kubeletstats` e `k8sattributes` — cada um um lugar onde se recebe silenciosamente nada, que é o modo de falha contra o qual esta change inteira foi construída. E no Datadog, dado de infra vindo do Collector é cidadão de segunda classe: pagar-se-ia a portabilidade e se teria experiência pior na plataforma que de fato existe. A chave de API não é diferencial — o exporter do Collector também precisaria dela. Reavaliar se a plataforma de destino mudar, ou se `tail_sampling` passar a ser necessário.
 
 O endpoint aponta para o **DNS do Service** do agente, não para `status.hostIP` via Downward API: num cluster de um único node a diferença de roteamento é zero, e evita reintroduzir o wiring que o ADR 0002 deliberadamente evitou.
 
-`OTEL_EXPORTER_OTLP_ENDPOINT` é controlado pela variável homônima do GitHub Actions. O CD renderiza seu valor no ConfigMap e reinicia o Deployment para propagá-lo aos Pods: vazio mantém o SDK desligado; `http://datadog-agent.oficina.svc:4318` envia traces e métricas ao Service do Agent. Esse interruptor continua independente de `ENABLE_TELEMETRY_COLLECTION`, que controla a instalação da camada de coleta, e nenhuma alteração exige rebuild da imagem.
+`OTEL_EXPORTER_OTLP_ENDPOINT` é controlado pela variável homônima do GitHub Actions. O CD renderiza seu valor no ConfigMap, e os Pods do rollout seguinte o leem: vazio mantém o SDK desligado; `http://datadog-agent.platform.svc.cluster.local:4318` envia traces e métricas ao Service do Agent. Nenhuma alteração exige rebuild da imagem.
 
 **Uptime não é estado de pod.** Readiness decide roteamento e liveness decide reinício; nenhuma das duas enxerga DNS, load balancer, TLS ou ingress — é possível ter 100% dos pods `Ready` com a API inacessível de fora. O requisito de disponibilidade só se fecha com **monitor sintético externo**, entrega da camada de coleta.
 

@@ -21,9 +21,9 @@ Divisão de responsabilidade: base e plataforma via Terraform no repositório [`
 Os recursos em Kubernetes foram divididos por responsabilidade:
 
 - Base e dados críticos via Terraform ([`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s))
-  - cluster EKS, ECR, namespace `oficina` e metrics-server (o banco relacional é **Amazon RDS**, provisionado em [stack própria](#banco-de-dados-relacional-amazon-rds), fora do cluster)
-- Aplicação via manifests YAML (`k8s/`)
-  - Secret, ConfigMap, Deployments, Services e HPA
+  - cluster EKS, ECR, namespaces `work-order` e `platform`, metrics-server e, no namespace `platform`, o Datadog Agent e o MailHog (o banco relacional é **Amazon RDS** e o cache é **ElastiCache Valkey**, provisionados em [stack própria](#banco-de-dados-relacional-amazon-rds), fora do cluster)
+- Aplicação via manifests YAML (`k8s/`), no namespace `work-order`
+  - Secret, ConfigMap, Deployment, Service, HPA e o Job de migração
 
 ## Motivo da divisão
 
@@ -34,40 +34,43 @@ Os recursos em Kubernetes foram divididos por responsabilidade:
 
 | Recurso | Ownership | Onde é definido/aplicado |
 |---|---|---|
-| Namespace `oficina` | Terraform | [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s) (`terraform/k8s_namespace.tf`) |
+| Namespaces `work-order` e `platform` | Terraform | [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s) (`terraform/k8s_namespace.tf`) |
+| Datadog Agent e MailHog (namespace `platform`) | CD do infra-k8s | [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s) (`k8s/platform/`, job `platform-apply`); o CD deste repositório não os aplica |
 | Banco de dados relacional (Amazon RDS PostgreSQL) e cache (ElastiCache Valkey) | Terraform, em **stack própria** | [`oficina-mecanica-infra-database-work-order`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order) — **fora do cluster**; nenhum manifesto em `k8s/` define workload de banco ou cache |
 | metrics-server | Terraform | [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s) (`terraform/k8s_metrics_server.tf`) |
 | DB migration Job (`00-db-migrate-job.yaml`) | Workflow de CD | Render + `kubectl apply` (job `db-migrate`) em `.github/workflows/cd.yml` |
-| Database Secret (`database-credentials`) | Workflow de CD | Job `prepare-deploy`: descoberta RDS + `GetSecretValue` e manifesto JSON por stdin; não há YAML com valor versionado |
-| Application Secret (`api-secret`; `01-api-secret.yaml` é referência) | Workflow de CD | Outro step de `prepare-deploy`: `kubectl create secret --from-literal` apenas para JWTs/chave pública |
-| API ConfigMap (`02-api-configmap.yaml`) | Workflow de CD | Job `prepare-deploy`: render de `OTEL_EXPORTER_OTLP_ENDPOINT` a partir de GitHub Actions Variables via `envsubst` + `kubectl apply` |
-| API Deployment (`03-api-deployment.yaml`) | Workflow de CD | Render + `kubectl apply` em `.github/workflows/cd.yml` |
-| MailHog Deployment (`03-mailhog-deployment.yaml`) | Workflow de CD | `kubectl apply` em `.github/workflows/cd.yml` (dependência de e-mail) |
-| API Service (`04-api-service.yaml`) | Workflow de CD | `kubectl apply` em `.github/workflows/cd.yml` |
-| MailHog Service (`04-mailhog-service.yaml`) | Workflow de CD | `kubectl apply` em `.github/workflows/cd.yml` (SMTP `1025` / Web UI `8025`) |
-| API HPA (`05-api-hpa.yaml`) | Workflow de CD | `kubectl apply` em `.github/workflows/cd.yml` |
+| Database Secret (`database-credentials`) | Workflow de CD | Declarado em `01-secrets.yaml`; job `prepare-deploy`: descoberta RDS + `GetSecretValue`, e o trecho Node.js preenche o documento e o aplica por stdin; nenhum valor é versionado |
+| Cache Secret (`cache-credentials`) | Workflow de CD | Declarado em `01-secrets.yaml`; job `prepare-deploy`: descoberta do replication group + `GetSecretValue` do auth token, `envsubst` do documento e aplicação por stdin; nenhum valor é versionado |
+| Application Secret (`api-secret`) | Workflow de CD | Declarado em `01-secrets.yaml`; outro step de `prepare-deploy` preenche os segredos JWT HS256 em base64 e aplica por stdin |
+| Chaves públicas JWT (`jwt-public-keys`) | Workflow de CD | Declarado em `01-secrets.yaml`; mesmo step, com `CUSTOMER_JWT_PUBLIC_KEY` em base64 |
+| ConfigMap (`02-work-order-configmap.yaml`) | Workflow de CD | Job `prepare-deploy`: render de `OTEL_EXPORTER_OTLP_ENDPOINT` (GitHub Actions Variable) e `MESSAGING_TOPIC_ARN` (conta da sessão AWS) via `envsubst` + `kubectl apply` |
+| Deployment (`03-work-order-deployment.yaml`) | Workflow de CD | Render da imagem e da label `version` + `kubectl apply` em `.github/workflows/cd.yml` |
+| Service (`04-work-order-service.yaml`) | Workflow de CD | `kubectl apply` em `.github/workflows/cd.yml` |
+| HPA (`05-api-hpa.yaml`) | Workflow de CD | `kubectl apply` em `.github/workflows/cd.yml` |
 
 ## Convenções: labels e wiring de configuração
 
 **Labels.** Todos os recursos carregam as labels recomendadas do Kubernetes, o que permite selecioná-los e agrupá-los de forma consistente:
 
-- `app.kubernetes.io/name` — identifica o componente (`oficina-api`, `mailhog`, `db-migrate-job`).
+- `app.kubernetes.io/name` — identifica o componente (`work-order-service`, `db-migrate-job`).
 - `app.kubernetes.io/part-of` — sempre `oficina-mecanica` (a solução como um todo).
 - `managed-by: terraform` — presente apenas nos recursos provisionados pelo Terraform (`oficina-mecanica-infra-k8s`), distinguindo-os dos manifests aplicados pelo CD.
 
-**Wiring de configuração.** A configuração da API é injetada como variáveis de ambiente a partir de três fontes, separando ownership e sensibilidade:
+**Wiring de configuração.** A configuração da API é injetada por `envFrom` a partir de cinco fontes, separadas por ownership e sensibilidade, sem chave repetida entre elas:
 
-- `configMapKeyRef` → `api-config` (`ConfigMap`, **não sensível**): `NODE_ENV`, `PORT`, `JWT_EXPIRATION`, `JWT_REFRESH_EXPIRATION`, `BCRYPT_SALT_ROUNDS`, `MAIL_HOST`, `MAIL_PORT`, `TZ`, `CUSTOMER_JWT_ISSUER`, `CUSTOMER_JWT_AUDIENCE`, `LOG_LEVEL`, `OTEL_SERVICE_NAME`, `OTEL_SERVICE_NAMESPACE`, `TRUSTED_PROXY_CIDRS`, `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_LOGS_EXPORTER` e `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE`.
-- `secretKeyRef` → `database-credentials` (`Secret`, **sensível**): somente `DATABASE_URL`, materializada pelo CD a partir de RDS/Secrets Manager.
-- `secretKeyRef` → `api-secret` (`Secret` da aplicação): `JWT_SECRET`, `JWT_REFRESH_SECRET`, `CUSTOMER_JWT_PUBLIC_KEY`.
+- `work-order-config` (`ConfigMap`, **não sensível**): `NODE_ENV`, `PORT`, `JWT_EXPIRATION`, `JWT_REFRESH_EXPIRATION`, `BCRYPT_SALT_ROUNDS`, `MAIL_HOST` (`mailhog.platform.svc.cluster.local`), `MAIL_PORT`, `TZ`, `LOG_LEVEL`, `OTEL_SERVICE_NAME`, `OTEL_SERVICE_NAMESPACE`, `TRUSTED_PROXY_CIDRS`, `CUSTOMER_JWT_ISSUER`, `CUSTOMER_JWT_AUDIENCE`, `AWS_REGION`, `WORK_ORDER_QUEUE_NAME` (`work-order.fifo`), `MESSAGING_TOPIC_ARN`, `CACHE_TTL_SECONDS` (`43200`), `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_LOGS_EXPORTER` e `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE`.
+- `database-credentials` (`Secret`, **sensível**): somente `DATABASE_URL`, materializada pelo CD a partir de RDS/Secrets Manager.
+- `cache-credentials` (`Secret`, **sensível**): somente `CACHE_URL` (`rediss://` com o auth token), materializada pelo CD a partir do ElastiCache/Secrets Manager.
+- `api-secret` (`Secret` da aplicação): `JWT_SECRET` e `JWT_REFRESH_SECRET`.
+- `jwt-public-keys` (`Secret`): `CUSTOMER_JWT_PUBLIC_KEY`.
 
-`CUSTOMER_JWT_ISSUER`/`CUSTOMER_JWT_AUDIENCE` são valores fixos e não secretos (identificadores de emissor/audiência do token externo), por isso vivem no ConfigMap; `CUSTOMER_JWT_PUBLIC_KEY` fica no Secret por uniformidade de injeção com os demais valores usados pela validação de JWT, embora uma chave pública não exija sigilo.
+`CUSTOMER_JWT_ISSUER`/`CUSTOMER_JWT_AUDIENCE` são valores fixos e não secretos (identificadores de emissor/audiência do token externo), por isso vivem no ConfigMap; `CUSTOMER_JWT_PUBLIC_KEY` fica num Secret próprio, separado dos segredos HS256, embora uma chave pública não exija sigilo.
 
-O Deployment referencia cada chave individualmente (`valueFrom`), o que torna explícito no manifesto de onde vem cada env — em vez de um `envFrom` opaco.
+Nenhum Secret carrega credencial AWS: SNS e SQS são chamados com o papel do nó (`LabRole`), resolvido pelo SDK.
 
-> ⚠️ **Formato do `CUSTOMER_JWT_PUBLIC_KEY` no GitHub Secret.** O job `prepare-deploy` do `cd.yml` cria o Secret de forma **imperativa** (`kubectl create secret generic ... --from-literal=CUSTOMER_JWT_PUBLIC_KEY="${CUSTOMER_JWT_PUBLIC_KEY}" --dry-run=client -o yaml | kubectl apply -f -`). `--from-literal` aceita o PEM com quebras de linha reais e o próprio `kubectl` faz o escape ao montar o Secret. **Por isso o GitHub Secret pode ser cadastrado com o PEM no formato natural, multilinha, exatamente como o `openssl` ou a autoridade certificadora o gerou**.
+> ⚠️ **Formato do `CUSTOMER_JWT_PUBLIC_KEY` no GitHub Secret.** O job `prepare-deploy` do `cd.yml` codifica a chave em base64, que ocupa uma linha só, antes de preenchê-la no documento `jwt-public-keys` de `k8s/01-secrets.yaml`; o PEM com quebras de linha reais não chega ao YAML. **Por isso o GitHub Secret pode ser cadastrado com o PEM no formato natural, multilinha, exatamente como o `openssl` ou a autoridade certificadora o gerou**.
 >
-> A [documentação de CI/CD](ci-cd.md#injeção-de-secrets-da-aplicação) explica por que interpolar esse PEM diretamente com `envsubst` pode quebrar o YAML e detalha a criação imperativa do Secret.
+> A [documentação de CI/CD](ci-cd.md#injeção-de-secrets-da-aplicação) explica por que o PEM cru quebraria o YAML e como o base64 evita isso.
 >
 > A conversão para uma linha com `\n` literais (a que `app/.env.example` usa) continua necessária **apenas para o `.env` local**: arquivos `.env` não suportam valores multilinha sem aspas, e o parser usado pelo projeto não desfaz esse escape sozinho — por isso `CustomerJwtStrategy` (`customer-jwt.strategy.ts`) aplica `.replaceAll(String.raw`\n`, '\n')` na leitura da env var. Esse mesmo `replaceAll` é um no-op inofensivo quando o valor já chega com quebras de linha reais (como no Secret do cluster), então o código funciona sem alteração nos dois ambientes. Para gerar a versão de uma linha para o `.env`:
 >
@@ -79,19 +82,17 @@ O Deployment referencia cada chave individualmente (`valueFrom`), o que torna ex
 
 | Chave | Valor no ConfigMap | Efeito |
 |---|---|---|
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Renderizado de `vars.OTEL_EXPORTER_OTLP_ENDPOINT` | É o interruptor do SDK: vazio desliga instrumentações e exportadores; preenchido ativa traces e métricas para o endpoint informado. Com o Agent do projeto, usar o **DNS do Service** (`http://datadog-agent.oficina.svc:4318`), nunca `status.hostIP` via Downward API |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Renderizado de `vars.OTEL_EXPORTER_OTLP_ENDPOINT` | É o interruptor do SDK: vazio desliga instrumentações e exportadores; preenchido ativa traces e métricas para o endpoint informado. Com o Agent do projeto, usar o **DNS do Service** (`http://datadog-agent.platform.svc.cluster.local:4318`), nunca `status.hostIP` via Downward API |
 | `OTEL_LOGS_EXPORTER` | `none` | A **ausência** desta chave faria o SDK instanciar um `LoggerProvider` com exportador OTLP de rede. Os logs têm um caminho único — o stdout do contêiner, lido pelo coletor |
 | `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | `delta` | O OTel JS exporta cumulative por padrão, e os destinos compatíveis esperam delta; cumulative descarta pontos na inicialização do processo |
 
-O manifesto contém um placeholder, não um estado fixo. A cada deploy, o workflow lê `vars.OTEL_EXPORTER_OTLP_ENDPOINT`, renderiza `02-api-configmap.yaml` e aplica o resultado. Variável ausente ou vazia produz uma chave vazia e mantém o SDK desligado; qualquer URL válida ativa a exportação sem rebuild da imagem. O `app-deploy` aplica o Deployment renderizado com a imagem do commit e aguarda o rollout corrente; não executa `rollout restart`.
+O manifesto contém um placeholder, não um estado fixo. A cada deploy, o workflow lê `vars.OTEL_EXPORTER_OTLP_ENDPOINT`, renderiza `02-work-order-configmap.yaml` e aplica o resultado. Variável ausente ou vazia produz uma chave vazia e mantém o SDK desligado; qualquer URL válida ativa a exportação sem rebuild da imagem. O `app-deploy` aplica o Deployment renderizado com a imagem do commit e aguarda o rollout corrente; não executa `rollout restart`.
 
 ### Camada de coleta
 
-Os manifestos do agente vivem em `k8s/06-datadog-secret.yaml` (chave por `envsubst`, nunca committada), `k8s/07-datadog-agent.yaml` (ServiceAccount + RBAC somente-leitura + DaemonSet) e `k8s/08-datadog-service.yaml` (ClusterIP expondo `4318`). É a **única peça do sistema que conhece o fornecedor**: a aplicação exporta OTLP puro, sem dependência, cabeçalho ou credencial de plataforma.
+O Datadog Agent (DaemonSet, RBAC somente-leitura e o Service `datadog-agent` na porta OTLP HTTP `4318`) roda no namespace `platform` e é aplicado pelo CD do [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s) (`k8s/platform/`), que serve todos os serviços do cluster. O CD deste repositório não aplica nem conhece o Agent. É a **única peça do sistema que conhece o fornecedor**: a aplicação exporta OTLP puro, sem dependência, cabeçalho ou credencial de plataforma.
 
-O CD aplica o Agent quando `vars.ENABLE_TELEMETRY_COLLECTION == 'true'`. O node group usa `t3.medium`, com teto de 17 pods pela configuração atual do VPC CNI. O workflow exige `DD_API_KEY` como secret; `OTEL_EXPORTER_OTLP_ENDPOINT=http://datadog-agent.oficina.svc:4318` é a configuração da aplicação para exportar ao Service do Agent.
-
-Os dois controles continuam independentes: `ENABLE_TELEMETRY_COLLECTION` instala ou remove da execução do CD a camada do Agent; `OTEL_EXPORTER_OTLP_ENDPOINT` liga ou desliga o SDK da aplicação. Assim é possível manter apenas logs/métricas de infraestrutura pelo Agent com o endpoint vazio, ou apontar a aplicação para outro coletor OTLP.
+Ligar a telemetria da aplicação é só preencher `vars.OTEL_EXPORTER_OTLP_ENDPOINT` com `http://datadog-agent.platform.svc.cluster.local:4318`; com o valor vazio, o Agent continua coletando os logs do contêiner e as métricas do kubelet, sem traces nem métricas OTLP da aplicação.
 
 ⚠️ `OTEL_RESOURCE_ATTRIBUTES` **não** entra aqui com nenhum dos cinco atributos compartilhados (`service.name`, `service.namespace`, `service.version`, `service.instance.id`, `deployment.environment.name`): o detector de ambiente do SDK **vence** o resource montado em código, e o caminho de log não lê essa variável — trace e log passariam a reportar valores diferentes, em silêncio, desligando a navegação cruzada entre sinais. Os cinco continuam vindo de `OTEL_SERVICE_NAME`, `OTEL_SERVICE_NAMESPACE`, `SERVICE_VERSION` (assada na imagem) e `NODE_ENV`, que **ambos** os caminhos leem. Ver [ADR 0005](../adr/0005-opentelemetry.md).
 
@@ -106,7 +107,7 @@ O log **não** passa por OTLP (`OTEL_LOGS_EXPORTER: none`): o caminho é o stdou
 Não remova esta variável junto com uma atualização do agente sem antes confirmar que a 4318 continua escutando:
 
 ```sh
-kubectl exec -n oficina ds/datadog-agent -- ss -lntp | grep 4318
+kubectl exec -n platform ds/datadog-agent -- ss -lntp | grep 4318
 ```
 
 **Nome de operação do APM.** Até a 7.65, o agente nomeava a operação de um span OTLP pelo **escopo de instrumentação**, e o que aparecia no APM era literalmente `opentelemetry_instrumentation_http.server` — com as métricas de trace derivadas herdando esse nome. A partir da **7.66** a lógica de mapeamento v2 é o padrão na ingestão OTLP via agente. A imagem 7.83.1 está acima desse piso; nesta solução, as operações vigentes são `http.server.request` para HTTP e `postgresql.query` para PostgreSQL, sem consumidores baseados nos nomes anteriores dos escopos de instrumentação.
@@ -117,12 +118,14 @@ Nenhum dashboard ou monitor da solução consulta `trace.*`: a latência permane
 
 | Workload | `tags.datadoghq.com/service` | Manifesto |
 |---|---|---|
-| API | `oficina-mecanica-work-order-service` | `k8s/03-api-deployment.yaml` |
+| API | `oficina-mecanica-work-order-service` | `k8s/03-work-order-deployment.yaml` |
 | Job de migração | `oficina-mecanica-work-order-service-db-migrate` | `k8s/00-db-migrate-job.yaml` |
 
 Os dois valores são **deliberadamente diferentes**. Job e Deployment compartilham a imagem, mas são workloads distintos com ciclo de vida distinto: unificá-los encheria a aba Logs da API com saída de migração a cada deploy — que é o problema que as labels vieram resolver, só que com outro nome.
 
-⚠️ As labels são valores **espelhados**, não derivados: label de Kubernetes não referencia ConfigMap. `service` precisa seguir igual a `OTEL_SERVICE_NAME` e `env` igual a `NODE_ENV`, ambos em `02-api-configmap.yaml`, de onde o resource do OTel tira `service.name` e `deployment.environment.name`. **Mudou lá, muda aqui** — não há verificação automática.
+O Deployment também carrega `tags.datadoghq.com/version`, com a tag da imagem (o SHA do commit) renderizada pelo CD no lugar de `VERSION_PLACEHOLDER` — o mesmo valor que a imagem assa em `SERVICE_VERSION`.
+
+⚠️ As labels são valores **espelhados**, não derivados: label de Kubernetes não referencia ConfigMap. `service` precisa seguir igual a `OTEL_SERVICE_NAME` e `env` igual a `NODE_ENV`, ambos em `02-work-order-configmap.yaml`, de onde o resource do OTel tira `service.name` e `deployment.environment.name`. **Mudou lá, muda aqui** — não há verificação automática.
 
 ## Recursos: CPU e memória (requests e limits)
 
@@ -130,8 +133,7 @@ Cada workload declara `requests` (o que o scheduler reserva) e `limits` (o teto 
 
 | Workload | Requests (CPU / memória) | Limits (CPU / memória) | Fonte |
 |---|---|---|---|
-| API (`oficina-api`) | `200m` / `256Mi` | `500m` / `512Mi` | `k8s/03-api-deployment.yaml` |
-| MailHog | `50m` / `64Mi` | `200m` / `256Mi` | `k8s/03-mailhog-deployment.yaml` |
+| API (`work-order-service`) | `200m` / `256Mi` | `500m` / `512Mi` | `k8s/03-work-order-deployment.yaml` |
 | Job `db-migrate` | — (não define) | — (não define) | `k8s/00-db-migrate-job.yaml` |
 
 ## Banco de Dados Relacional (Amazon RDS)
@@ -141,7 +143,7 @@ A persistência relacional da aplicação é fornecida pelo **Amazon RDS (Postgr
 - Instância gerenciada PostgreSQL 18 (`rds-oficina-mecanica-work-order`, Single-AZ, `db.t4g.micro`, 20 GiB GP3), acompanhada de uma instância ElastiCache Valkey 9.1 (`cache-oficina-mecanica-work-order`, `cache.t4g.micro`).
 - Alocados nas subnets privadas da VPC, com Security Groups restritos por origem (`secgrp-eks-nodes-oficina-mecanica`, mais as CIDRs privadas da VPC no RDS de forma transitória até a C-20).
 - A master password é gerada e mantida pelo RDS em um Secret do AWS Secrets Manager, com rotação automática desabilitada. O Terraform conhece ARN/status/KMS e metadados de conexão, não o valor da senha; `sensitive` sozinho não impediria sua presença no State.
-- O job `prepare-deploy` do CD descobre o Secret e o endpoint pelo identificador da instância, lê `AWSCURRENT` e materializa `DATABASE_URL` em `database-credentials` usando Node.js inline e manifesto JSON por stdin, com os parâmetros descritos em [Conexão obrigatoriamente cifrada (TLS)](#conexão-obrigatoriamente-cifrada-tls). Migration/seed ficam somente no job `db-migrate` seguinte.
+- O job `prepare-deploy` do CD descobre o Secret e o endpoint pelo identificador da instância, lê `AWSCURRENT` e materializa `DATABASE_URL` em `database-credentials` usando Node.js inline, que preenche o documento `database-credentials` de `k8s/01-secrets.yaml` e o aplica por stdin, com os parâmetros descritos em [Conexão obrigatoriamente cifrada (TLS)](#conexão-obrigatoriamente-cifrada-tls). Migration/seed ficam somente no job `db-migrate` seguinte.
 
 O [ADR de database sobre RDS](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0001-banco-gerenciado-amazon-rds.md#postgresql-auto-hospedado-dentro-do-cluster-eks) preserva o diagnóstico histórico das tentativas de persistência com EBS CSI no EKS e as razões para abandonar `emptyDir`/`hostPath`.
 
@@ -169,12 +171,10 @@ O ambiente local não carrega esses parâmetros: `docker-compose` e Testcontaine
 Arquivos em `k8s/`:
 
 - `00-db-migrate-job.yaml`: Job **one-shot** de migração/seed do banco (`prisma migrate deploy` + `db seed`), com placeholders de nome (`JOB_NAME_PLACEHOLDER`) e imagem (`IMAGE_URI_PLACEHOLDER`); renderizado e aplicado pelo job `db-migrate` do CD antes do rollout — não é um recurso de estado da aplicação, por isso o prefixo `00-`. Detalhes em [Job de migração do banco](#job-de-migração-do-banco)
-- `01-api-secret.yaml`: referência apenas dos secrets da aplicação (`JWT_SECRET`, `JWT_REFRESH_SECRET` e `CUSTOMER_JWT_PUBLIC_KEY`) para deploy manual; `DATABASE_URL` pertence ao Secret separado `database-credentials`
-- `02-api-configmap.yaml`: variáveis não sensíveis da aplicação (`NODE_ENV`, `PORT`, `JWT_EXPIRATION`, `JWT_REFRESH_EXPIRATION`, `BCRYPT_SALT_ROUNDS`, `MAIL_HOST`, `MAIL_PORT`, `TZ`, `LOG_LEVEL`, `OTEL_SERVICE_NAME`, `OTEL_SERVICE_NAMESPACE`, `TRUSTED_PROXY_CIDRS`, `CUSTOMER_JWT_ISSUER`, `CUSTOMER_JWT_AUDIENCE` e as chaves de telemetria); o placeholder de `OTEL_EXPORTER_OTLP_ENDPOINT` é renderizado pelo CD a partir da variável homônima do GitHub Actions
-- `03-api-deployment.yaml`: deployment da API com placeholder de imagem, `imagePullPolicy: Always`, consumo de Secret/ConfigMap (ver [wiring de configuração](#convenções-labels-e-wiring-de-configuração)) e probes de saúde
-- `03-mailhog-deployment.yaml`: deployment do MailHog para captura de e-mails enviados pela aplicação
-- `04-api-service.yaml`: Service **`NodePort`** da API (`3000` → `30080` nos nós). `NodePort` é um superconjunto de `ClusterIP`: o Service continua recebendo um ClusterIP e o DNS interno segue igual. A porta dos nós é o destino do target group do NLB interno provisionado em `oficina-mecanica-infra-k8s`, que por sua vez é o backend da integração privada do [API Gateway](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway). O valor precisa casar com `api_node_port` naquele repositório
-- `04-mailhog-service.yaml`: Service `ClusterIP` do MailHog, expondo as portas SMTP (`1025`) e Web UI (`8025`) para acesso interno ao cluster
+- `01-secrets.yaml`: os quatro Secrets do serviço (`api-secret`, `jwt-public-keys`, `database-credentials` e `cache-credentials`), com nome, namespace, labels e chaves. Os valores são placeholders base64 (`${<CHAVE>_B64}`): cada passo do CD seleciona o seu documento com `yq`, preenche e aplica por stdin, e nenhum valor é versionado
+- `02-work-order-configmap.yaml`: ConfigMap `work-order-config` com as variáveis não sensíveis listadas em [wiring de configuração](#convenções-labels-e-wiring-de-configuração); os placeholders `OTEL_EXPORTER_OTLP_ENDPOINT` (variável homônima do GitHub Actions) e `MESSAGING_TOPIC_ARN` (`arn:aws:sns:<região>:<conta>:oficina-events.fifo`, com a conta de `aws sts get-caller-identity`, porque o SNS não resolve ARN por nome) são renderizados pelo CD
+- `03-work-order-deployment.yaml`: Deployment `work-order-service` com placeholders de imagem e de `version`, `imagePullPolicy: Always`, `envFrom` dos Secrets e do ConfigMap e probes de saúde. **Não declara `replicas`**: o HPA é o dono da contagem, e um valor no manifesto a reverteria a cada apply
+- `04-work-order-service.yaml`: Service **`NodePort`** `work-order-service` (`3000` → `30080` nos nós). `NodePort` é um superconjunto de `ClusterIP`: o Service continua recebendo um ClusterIP e o DNS interno segue igual. A porta dos nós é o destino do target group do NLB interno provisionado em `oficina-mecanica-infra-k8s`, que por sua vez é o backend da integração privada do [API Gateway](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway). O valor precisa casar com o `node_port` de `work-order` em `local.services` (`terraform/locals.tf`) naquele repositório
 - `05-api-hpa.yaml`: autoscaling da API por CPU e memória (HPA v2) — ver [Autoscaling da API (HPA)](#autoscaling-da-api-hpa)
 
 ## Job de migração do banco
@@ -198,20 +198,20 @@ O `00-db-migrate-job.yaml` é um `Job` do Kubernetes executado **uma vez por dep
 
 ## Autoscaling da API (HPA)
 
-O `05-api-hpa.yaml` (HPA `autoscaling/v2`) escala o Deployment `oficina-api` com base em **duas métricas de recurso**:
+O `05-api-hpa.yaml` (HPA `autoscaling/v2` `work-order-service-hpa`) escala o Deployment `work-order-service` com base em **duas métricas de recurso**:
 
 | Campo | Valor |
 |---|---|
-| `scaleTargetRef` | `Deployment/oficina-api` |
-| `minReplicas` / `maxReplicas` | `1` / `5` |
+| `scaleTargetRef` | `Deployment/work-order-service` |
+| `minReplicas` / `maxReplicas` | `1` / `2` |
 | CPU (`Resource`, `averageUtilization`) | `70` |
 | Memória (`Resource`, `averageUtilization`) | `80` |
 
 `averageUtilization` é medido como **percentual da `request`** do pod — por exemplo, 70% de CPU significa 70% dos `200m` requisitados pela API (≈ `140m` de média entre as réplicas) como gatilho para escalar. O HPA escala quando **qualquer** das duas métricas ultrapassa seu alvo. As métricas vêm do **metrics-server** (provisionado em `oficina-mecanica-infra-k8s`); sem ele, o HPA não teria dados para decidir.
 
-O HPA escala apenas os **pods da API** (`1→5`); a escala do _cluster_ (nodes) está fora do escopo — o node group é mantido fixo em 1 por decisão, como registrado em [overview.md › Limitações](overview.md#limitações-e-o-que-produção-exigiria).
+O HPA escala apenas os **pods da API** (`1→2`); a escala do _cluster_ (nodes) está fora do escopo — o node group é mantido fixo por decisão, como registrado em [overview.md › Limitações](overview.md#limitações-e-o-que-produção-exigiria).
 
-⚠️ **O `maxReplicas: 5` compartilha a capacidade de um único node com os workloads de sistema.** Pela fórmula padrão do VPC CNI (sem prefix delegation), o `t3.medium` configurado permite **17 pods**. Nesse teto entram `coredns` ×2, `aws-node`, `kube-proxy`, `metrics-server`, `mailhog`, o DaemonSet do Agent e as réplicas da API. O valor observado no cluster pode ser consultado com:
+⚠️ **O `maxReplicas: 2` existe porque os nós são compartilhados pelos quatro serviços.** Pela fórmula padrão do VPC CNI (sem prefix delegation), cada `t3.medium` configurado permite **17 pods**. Nesse teto entram `coredns` ×2, `aws-node`, `kube-proxy`, `metrics-server`, o MailHog e o DaemonSet do Agent do namespace `platform` e as réplicas de todos os serviços. O valor observado no cluster pode ser consultado com:
 
 ```bash
 kubectl get node -o jsonpath='{.items[*].status.allocatable.pods}'
@@ -228,7 +228,7 @@ A aplicação tem **dois** caminhos de acesso.
 **Diagnóstico**, para testes e validações manuais: `kubectl port-forward`. O Service `NodePort` também possui `ClusterIP`, portanto suporta o túnel e o DNS interno.
 
 ```bash
-kubectl port-forward -n oficina svc/oficina-api 3000:3000
+kubectl port-forward -n work-order svc/work-order-service 3000:3000
 ```
 
 Após estabelecer o túnel, a aplicação poderá ser acessada localmente através dos seguintes endereços:
@@ -241,13 +241,13 @@ Para interromper o túnel, pressione `Ctrl+C` no terminal onde o comando estiver
 Caso seja necessário validar se o Service possui endpoints disponíveis:
 
 ```bash
-kubectl get endpoints oficina-api -n oficina
+kubectl get endpoints work-order-service -n work-order
 ```
 
-Para acessar a interface web do MailHog executando no cluster:
+Para acessar a interface web do MailHog executando no cluster (namespace `platform`):
 
 ```bash
-kubectl port-forward -n oficina svc/mailhog 8025:8025
+kubectl port-forward -n platform svc/mailhog 8025:8025
 ```
 
 A interface ficará disponível em:
@@ -256,14 +256,9 @@ A interface ficará disponível em:
 
 ## Health probes
 
-Cada workload usa o **mecanismo de probe mais adequado ao que expõe**:
+A API (`work-order-service`) usa probes HTTP `GET` em `/api/health/live` e `/api/health/ready` (porta 3000). As probes do MailHog são do `oficina-mecanica-infra-k8s`, dono dele.
 
-| Workload | Mecanismo | Alvo |
-|---|---|---|
-| API (`oficina-api`) | HTTP `GET` | `/api/health/live` e `/api/health/ready` (porta 3000) |
-| MailHog | TCP socket | porta `1025` (SMTP) |
-
-O MailHog não tem endpoint HTTP de health dedicado, então um **TCP check** na porta SMTP (`1025`) basta para saber que o processo está de pé. A API expõe HTTP e tem endpoints de saúde próprios, então usa probes HTTP.
+O smoke do CD é outra coisa: `GET /health/work-order` **pelo API Gateway**, depois do rollout, para provar o caminho público inteiro (Gateway → VPC Link → NLB → NodePort `30080` → pod). Ver [ci-cd.md](ci-cd.md).
 
 **Não existe probe de banco de dados aqui.** A persistência relacional é [Amazon RDS, fora do cluster](#banco-de-dados-relacional-amazon-rds); nenhum manifesto em `k8s/` define workload de PostgreSQL, e portanto não há `pg_isready` a descrever. Quem reporta a capacidade da aplicação de **alcançar** o banco é a `readinessProbe` da API. Diagnóstico de `/ready` falhando em produção começa nos eventos do pod, no DNS e no Security Group da VPC, e nas métricas da instância RDS — não em `kubectl logs` de um pod de banco, que não existe.
 
@@ -336,39 +331,39 @@ As rotas de saúde ficam **dentro** da fronteira de cobertura do access log — 
 
 ## Deploy em Kubernetes (manual)
 
-> O caminho canônico de deploy manual é `workflow_dispatch`, pois ele descobre e materializa a credencial sem expô-la. Os comandos abaixo pressupõem que `database-credentials` já foi criado pelo CD no namespace e não leem seu valor. Ao renderizar `01-api-secret.yaml` com `envsubst`, `CUSTOMER_JWT_PUBLIC_KEY` precisa estar em uma única linha, com `\n` literais; prefira o comando imperativo do CD para usar o PEM multilinha natural.
+> O caminho canônico de deploy manual é `workflow_dispatch` (com `image_tag` para reimplantar uma imagem já publicada, sem build nem migração), pois ele descobre e materializa as credenciais sem expô-las. Os comandos abaixo pressupõem que `database-credentials`, `cache-credentials` e `jwt-public-keys` já foram criados pelo CD no namespace e não leem seus valores.
 
 ```bash
-# Renderiza segredo
+# Renderiza os segredos JWT HS256 (base64 numa linha só, como o CD)
 
-export JWT_SECRET=<JWT_SECRET>
-export JWT_REFRESH_SECRET=<JWT_REFRESH_SECRET>
-export CUSTOMER_JWT_PUBLIC_KEY=<CUSTOMER_JWT_PUBLIC_KEY>
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://datadog-agent.oficina.svc:4318
+export JWT_SECRET_B64="$(printf '%s' '<JWT_SECRET>' | base64 -w0)"
+export JWT_REFRESH_SECRET_B64="$(printf '%s' '<JWT_REFRESH_SECRET>' | base64 -w0)"
 
-envsubst \
-'${JWT_SECRET} ${JWT_REFRESH_SECRET} ${CUSTOMER_JWT_PUBLIC_KEY}' \
-< k8s/01-api-secret.yaml \
+yq 'select(.metadata.name == "api-secret")' k8s/01-secrets.yaml \
+| envsubst '${JWT_SECRET_B64} ${JWT_REFRESH_SECRET_B64}' \
 > k8s/01-api-secret.rendered.yaml
 
-# Renderiza o ConfigMap com o endpoint OTLP; use valor vazio para desligar o SDK
+# Renderiza o ConfigMap: endpoint OTLP (vazio desliga o SDK) e ARN do tópico com a conta da sessão
 
-envsubst '${OTEL_EXPORTER_OTLP_ENDPOINT}' \
-< k8s/02-api-configmap.yaml \
-> k8s/02-api-configmap.rendered.yaml
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://datadog-agent.platform.svc.cluster.local:4318
+export MESSAGING_TOPIC_ARN="arn:aws:sns:us-east-1:$(aws sts get-caller-identity --query Account --output text):oficina-events.fifo"
 
-# Renderiza imagem
+envsubst '${OTEL_EXPORTER_OTLP_ENDPOINT} ${MESSAGING_TOPIC_ARN}' \
+< k8s/02-work-order-configmap.yaml \
+> k8s/02-work-order-configmap.rendered.yaml
 
-sed -e "s|IMAGE_URI_PLACEHOLDER|<IMAGE_URI>|g" \
-  k8s/03-api-deployment.yaml > k8s/03-api-deployment.rendered.yaml
+# Renderiza imagem e a label version (a tag da imagem)
 
-# Aplica recursos da aplicação
+sed -e "s|IMAGE_URI_PLACEHOLDER|<IMAGE_URI>|g" -e "s|VERSION_PLACEHOLDER|<IMAGE_TAG>|g" \
+  k8s/03-work-order-deployment.yaml > k8s/03-work-order-deployment.rendered.yaml
 
-kubectl get secret database-credentials -n oficina \
-  -o go-template='{{.metadata.name}} {{range $key, $_ := .data}}{{$key}}{{end}}{{"\n"}}'
+# Confere os Secrets do CD (só os nomes das chaves) e aplica os recursos da aplicação
+
+kubectl get secret database-credentials cache-credentials jwt-public-keys -n work-order \
+  -o go-template='{{range .items}}{{.metadata.name}} {{range $key, $_ := .data}}{{$key}}{{end}}{{"\n"}}{{end}}'
 kubectl apply -f k8s/01-api-secret.rendered.yaml
-kubectl apply -f k8s/02-api-configmap.rendered.yaml
-kubectl apply -f k8s/03-api-deployment.rendered.yaml
-kubectl apply -f k8s/04-api-service.yaml
+kubectl apply -f k8s/02-work-order-configmap.rendered.yaml
+kubectl apply -f k8s/03-work-order-deployment.rendered.yaml
+kubectl apply -f k8s/04-work-order-service.yaml
 kubectl apply -f k8s/05-api-hpa.yaml
 ```

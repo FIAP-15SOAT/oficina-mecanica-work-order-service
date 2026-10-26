@@ -31,8 +31,8 @@ O job `prepare-deploy` do CD atua como intermediário e, antes das migrations:
 5. monta a URL PostgreSQL em um trecho Node.js **inline no `cd.yml`**, aplicando `encodeURIComponent`
    separadamente ao usuário e à senha e preservando
    `schema=public&sslmode=require&uselibpqcompat=true`;
-6. mascara senha, senha percent-encoded, URL e URL em base64 antes do uso e envia por stdin um manifesto JSON do
-   Secret Kubernetes `database-credentials`, contendo somente `DATABASE_URL`;
+6. mascara senha, senha percent-encoded, URL e URL em base64 antes do uso, preenche `DATABASE_URL` no documento
+   `database-credentials` declarado em `k8s/01-secrets.yaml` (lido com `yq` como JSON) e o envia por stdin;
 7. aplica `api-secret` e o ConfigMap em um step separado, sem publicar outputs
    de credenciais ou versão.
 
@@ -44,7 +44,7 @@ metadados de credenciais.
 
 Reexecutar o CD sem mudar a credencial continua idempotente. Atualizar somente o Secret em um ambiente com Pods existentes e a mesma imagem não atualiza seu environment nem força sua substituição; esse cenário exige revisão do fluxo antes de ser adotado.
 
-A lógica permanece no próprio workflow: não existe arquivo Node.js auxiliar de produção. O trecho inline faz parse/encoding, constrói o manifesto JSON e chama `kubectl` com o manifesto em stdin. As verificações mínimas rejeitam campos obrigatórios ausentes, porta inválida e username diferente do master do RDS; não revalidam por regex host, banco, username ou ARN autoritativos.
+A lógica permanece no próprio workflow: não existe arquivo Node.js auxiliar de produção. O trecho inline faz parse/encoding, preenche o documento declarado em `k8s/01-secrets.yaml` e chama `kubectl` com ele em stdin. As verificações mínimas rejeitam campos obrigatórios ausentes, porta inválida e username diferente do master do RDS; não revalidam por regex host, banco, username ou ARN autoritativos.
 Nenhuma representação sensível é gravada em argumento de processo,
 arquivo renderizado, artifact, output de job ou log. `api-secret` continua
 contendo apenas os JWTs e a chave pública do token de cliente.
