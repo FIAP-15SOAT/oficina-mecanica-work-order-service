@@ -30,7 +30,6 @@ import {
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
-import { JwtAuthGuard } from '@infrastructure/http/guards/jwt-auth.guard';
 import { Roles } from '@infrastructure/http/decorators/roles.decorator';
 import { RolesGuard } from '@infrastructure/http/guards/roles.guard';
 import { CurrentPrincipal } from '@infrastructure/http/decorators/current-principal.decorator';
@@ -50,7 +49,7 @@ import { UserDataResponseDto, UserPaginatedResponseDto } from './dto/responses/u
 @ApiUnauthorizedResponse({ description: 'Não autenticado' })
 @ApiInternalServerErrorResponse({ description: 'Erro interno do servidor' })
 @Controller('users')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @ApiBearerAuth('access-token')
 export class UserController {
   constructor(private readonly controller: UserCleanController) {}

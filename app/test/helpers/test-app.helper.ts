@@ -1,10 +1,12 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, Type } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { Logger } from 'nestjs-pino';
 import { join } from 'path';
-import { GenericContainer, StartedTestContainer } from 'testcontainers';
+import { GenericContainer, StartedTestContainer, Wait } from 'testcontainers';
+import { LocalstackContainer, StartedLocalStackContainer } from '@testcontainers/localstack';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import { StartedValkeyContainer, ValkeyContainer } from '@testcontainers/valkey';
 import type { Server } from 'http';
 import { execSync } from 'child_process';
 import { lookup } from 'dns/promises';
@@ -13,6 +15,8 @@ import type { DestinationStream } from 'pino';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/infrastructure/config/app-bootstrap';
 import { PrismaService } from '../../src/infrastructure/persistence/prisma/prisma.service';
+import { OutboxRelayService } from '../../src/infrastructure/messaging/outbox-relay.service';
+import { SqsConsumerService } from '../../src/infrastructure/messaging/sqs-consumer.service';
 import { LOGGER_DESTINATION, LOGGER_LEVEL } from '../../src/infrastructure/logging/logging.module';
 import {
   CUSTOMER_JWT_TEST_PUBLIC_KEY,
@@ -32,6 +36,8 @@ export interface TestContext {
   prisma: PrismaService;
   postgresContainer: StartedPostgreSqlContainer;
   mailhogContainer: StartedTestContainer;
+  valkeyContainer: StartedValkeyContainer;
+  localstackContainer?: StartedLocalStackContainer;
   logCapture?: LogCapture;
 }
 
@@ -47,6 +53,10 @@ export interface SetupTestAppOptions {
    * antes do `pino-http`, que é quem registra o ouvinte de conclusão.
    */
   configure?: (app: NestExpressApplication) => void;
+  /** Extra controllers mounted next to AppModule, for routes that exist only in the test. */
+  controllers?: Type[];
+  /** Starts LocalStack with the messaging topology and runs the real relay and consumer. */
+  withMessaging?: boolean;
 }
 
 interface LogCaptureSeam {
@@ -98,9 +108,35 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
     .withPassword('test')
     .start();
 
-  const mailhogContainer = await new GenericContainer('mailhog/mailhog')
+  const mailhogContainer = await new GenericContainer('mailhog/mailhog:v1.0.1')
     .withExposedPorts(1025, 8025)
     .start();
+
+  const valkeyContainer = await new ValkeyContainer('valkey/valkey:9.1')
+    .withPassword('test')
+    .start();
+
+  const localstackContainer = options.withMessaging
+    ? await new LocalstackContainer('localstack/localstack:4.14.0')
+        .withCopyFilesToContainer([
+          {
+            source: join(__dirname, '..', '..', 'localstack', 'init-topology.sh'),
+            target: '/etc/localstack/init/ready.d/init-topology.sh',
+            mode: 0o755,
+          },
+        ])
+        .withWaitStrategy(Wait.forLogMessage('oficina-events.fifo topology ready'))
+        .start()
+    : undefined;
+
+  if (localstackContainer) {
+    process.env.AWS_ENDPOINT_URL = localstackContainer.getConnectionUri();
+    process.env.AWS_REGION = 'us-east-1';
+    process.env.AWS_ACCESS_KEY_ID = 'test';
+    process.env.AWS_SECRET_ACCESS_KEY = 'test';
+    process.env.WORK_ORDER_QUEUE_NAME = 'work-order.fifo';
+    process.env.MESSAGING_TOPIC_ARN = 'arn:aws:sns:us-east-1:000000000000:oficina-events.fifo';
+  }
 
   const databaseUrl = postgresContainer.getConnectionUri();
 
@@ -109,6 +145,8 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
   // at once a dropped query for "localhost" costs a 5 s retry and expires the 5 s Prisma transaction.
   process.env.MAIL_HOST = (await lookup(mailhogContainer.getHost(), { family: 4 })).address;
   process.env.MAIL_PORT = mailhogContainer.getMappedPort(1025).toString();
+  process.env.CACHE_URL = valkeyContainer.getConnectionUrl();
+  process.env.CACHE_TTL_SECONDS = '43200';
   process.env.JWT_SECRET = 'test-jwt-secret-key-for-e2e';
   process.env.JWT_EXPIRATION = '15m';
   process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-key-for-e2e';
@@ -125,7 +163,14 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
 
   const builder = Test.createTestingModule({
     imports: [AppModule],
+    controllers: options.controllers,
   });
+
+  // Suites without a broker get an inert relay and consumer; the messaging suite runs the real ones.
+  if (!localstackContainer) {
+    builder.overrideProvider(OutboxRelayService).useValue({});
+    builder.overrideProvider(SqsConsumerService).useValue({});
+  }
 
   const captureLogs = options.captureLogs === true || options.captureBootstrap === true;
   const logCaptureSeam = captureLogs ? createLogCapture() : undefined;
@@ -162,6 +207,8 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
     prisma,
     postgresContainer,
     mailhogContainer,
+    valkeyContainer,
+    localstackContainer,
     logCapture: logCaptureSeam?.capture,
   };
 }
@@ -170,4 +217,6 @@ export async function teardownTestApp(ctx: TestContext): Promise<void> {
   if (ctx?.app) await ctx.app.close();
   if (ctx?.postgresContainer) await ctx.postgresContainer.stop();
   if (ctx?.mailhogContainer) await ctx.mailhogContainer.stop();
+  if (ctx?.valkeyContainer) await ctx.valkeyContainer.stop();
+  if (ctx?.localstackContainer) await ctx.localstackContainer.stop();
 }

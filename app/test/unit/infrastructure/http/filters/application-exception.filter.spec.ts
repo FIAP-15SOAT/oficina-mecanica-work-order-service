@@ -8,6 +8,7 @@ import { ResourceConflictException } from '@application/exceptions/resource-conf
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { BadRequestException } from '@application/exceptions/bad-request.exception';
 import { UnauthorizedAccessException } from '@application/exceptions/unauthorized-access.exception';
+import { ServiceRequestRejectedException } from '@application/exceptions/service-request-rejected.exception';
 
 import { ApplicationExceptionFilter } from '@infrastructure/http/filters/application-exception.filter';
 import { getRequestLogContext } from '@infrastructure/logging/request-log-context';
@@ -102,6 +103,30 @@ describe('ApplicationExceptionFilter', () => {
       error: 'Unauthorized',
       message: 'Credenciais inválidas',
     });
+  });
+
+  it('should answer the owner status and the standard error body for ServiceRequestRejectedException', () => {
+    const { host, statusFn, jsonFn } = createMockHost();
+
+    const exception = new ServiceRequestRejectedException(422, 'Estoque insuficiente');
+
+    filter.catch(exception, host);
+
+    expect(statusFn).toHaveBeenCalledWith(HttpStatus.UNPROCESSABLE_ENTITY);
+
+    expect(jsonFn).toHaveBeenCalledWith({
+      statusCode: HttpStatus.UNPROCESSABLE_ENTITY,
+      error: 'Unprocessable Entity',
+      message: 'Estoque insuficiente',
+    });
+  });
+
+  it('should answer a generic error name for an owner status without a standard name', () => {
+    const { host, jsonFn } = createMockHost();
+
+    filter.catch(new ServiceRequestRejectedException(499, 'Recusado'), host);
+
+    expect(jsonFn).toHaveBeenCalledWith({ statusCode: 499, error: 'Error', message: 'Recusado' });
   });
 
   it('should return 500 for generic ApplicationException', () => {

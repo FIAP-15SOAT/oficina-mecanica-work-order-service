@@ -75,6 +75,44 @@ describe('PrismaWorkOrderRepository', () => {
     });
   });
 
+  describe('findByCustomerId', () => {
+    it('should find the work orders of a customer without relations and return domain entities', async () => {
+      const customerId = randomUUID();
+      const ids = [randomUUID(), randomUUID()];
+      prisma.workOrder.findMany.mockResolvedValue([
+        { id: ids[0], number: '000001', customerId },
+        { id: ids[1], number: '000002', customerId },
+      ]);
+
+      const result = await repository.findByCustomerId(customerId);
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBeInstanceOf(WorkOrder);
+      expect(result[0].id).toBe(ids[0]);
+      expect(result[1].id).toBe(ids[1]);
+      expect(prisma.workOrder.findMany).toHaveBeenCalledWith({ where: { customerId } });
+    });
+  });
+
+  describe('findByVehicleId', () => {
+    it('should find the work orders of a vehicle without relations and return domain entities', async () => {
+      const vehicleId = randomUUID();
+      const ids = [randomUUID(), randomUUID()];
+      prisma.workOrder.findMany.mockResolvedValue([
+        { id: ids[0], number: '000001', vehicleId },
+        { id: ids[1], number: '000002', vehicleId },
+      ]);
+
+      const result = await repository.findByVehicleId(vehicleId);
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBeInstanceOf(WorkOrder);
+      expect(result[0].id).toBe(ids[0]);
+      expect(result[1].id).toBe(ids[1]);
+      expect(prisma.workOrder.findMany).toHaveBeenCalledWith({ where: { vehicleId } });
+    });
+  });
+
   describe('findByIdWithDetails', () => {
     it('should return a work order with relations when found', async () => {
       const id = randomUUID();
@@ -474,7 +512,7 @@ describe('PrismaWorkOrderRepository', () => {
   });
 
   describe('updateServiceItemStatus', () => {
-    it('should atomically update service item and work order root', async () => {
+    it('should update the service item and then the work order with the version check, without a nested $transaction', async () => {
       const workOrderId = randomUUID();
       const serviceId = randomUUID();
       const workOrder = WorkOrder.reconstitute({
@@ -524,6 +562,10 @@ describe('PrismaWorkOrderRepository', () => {
           data: expect.objectContaining({ version: { increment: 1 } }),
         }),
       );
+      expect(prisma.workOrderService.update.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.workOrder.update.mock.invocationCallOrder[0],
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
     it('should throw ConcurrencyException on P2025 during atomic update', async () => {

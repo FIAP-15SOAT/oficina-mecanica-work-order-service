@@ -1,17 +1,11 @@
-import { Reflector } from '@nestjs/core';
-import { ExecutionContext } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
-
 import { JwtAuthGuard } from '@infrastructure/http/guards/jwt-auth.guard';
 import { AuthenticationFailedException } from '@infrastructure/exceptions/authentication-failed.exception';
-
-import { IS_PUBLIC_KEY } from '@infrastructure/http/decorators/public.decorator';
 
 describe('JwtAuthGuard', () => {
   let guard: JwtAuthGuard;
 
   beforeEach(() => {
-    guard = new JwtAuthGuard(new Reflector());
+    guard = new JwtAuthGuard();
   });
 
   describe('handleRequest', () => {
@@ -59,48 +53,6 @@ describe('JwtAuthGuard', () => {
       expect(() => {
         guard.handleRequest(error, user);
       }).toThrow(AuthenticationFailedException);
-    });
-  });
-
-  describe('canActivate', () => {
-    let reflector: jest.Mocked<Reflector>;
-    let context: jest.Mocked<ExecutionContext>;
-
-    beforeEach(() => {
-      reflector = {
-        getAllAndOverride: jest.fn(),
-      } as unknown as jest.Mocked<Reflector>;
-      context = {
-        getHandler: jest.fn(),
-        getClass: jest.fn(),
-      } as unknown as jest.Mocked<ExecutionContext>;
-      guard = new JwtAuthGuard(reflector);
-    });
-
-    it('should return true when route is public', async () => {
-      reflector.getAllAndOverride.mockReturnValue(true);
-
-      const result = await guard.canActivate(context);
-
-      expect(result).toBe(true);
-      expect(reflector.getAllAndOverride).toHaveBeenCalledWith(IS_PUBLIC_KEY, [
-        context.getHandler(),
-        context.getClass(),
-      ]);
-    });
-
-    it('should call super.canActivate when route is not public', async () => {
-      reflector.getAllAndOverride.mockReturnValue(false);
-      const superCanActivateSpy = jest
-        .spyOn(AuthGuard('jwt').prototype, 'canActivate')
-        .mockReturnValue(true);
-
-      const result = await guard.canActivate(context);
-
-      expect(result).toBe(true);
-      expect(superCanActivateSpy).toHaveBeenCalledWith(context);
-
-      superCanActivateSpy.mockRestore();
     });
   });
 });

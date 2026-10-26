@@ -11,11 +11,16 @@ import { UpdateCustomerDto } from '@application/ports/input/customer/dto/update-
 import { ResourceConflictException } from '@application/exceptions/resource-conflict.exception';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
+import { ICache } from '@application/ports/output/cache.service.interface';
+import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
+import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
 
 export class UpdateCustomerUseCase implements IUpdateCustomerUseCase {
   constructor(
     private readonly customerRepository: ICustomerRepository,
     private readonly userCustomerRepository: IUserCustomerRepository,
+    private readonly workOrderRepository: IWorkOrderRepository,
+    private readonly cache: ICache,
   ) {}
 
   async execute(id: string, input: UpdateCustomerDto): Promise<Customer> {
@@ -26,30 +31,59 @@ export class UpdateCustomerUseCase implements IUpdateCustomerUseCase {
     }
 
     await this.ensureIdentityCanChange(existing, input);
-
-    const newDocument = Document.create(input.document, input.type);
-
-    if (!newDocument.equals(existing.document)) {
-      const existingByDocument = await this.customerRepository.findByDocument(newDocument.value);
-
-      if (existingByDocument) {
-        throw new ResourceConflictException(`Documento '${newDocument.value}' já está cadastrado.`);
-      }
-    }
-
-    const newEmail = Email.create(input.email);
-
-    if (!newEmail.equals(existing.email)) {
-      const existingByEmail = await this.customerRepository.findByEmail(newEmail.value);
-
-      if (existingByEmail) {
-        throw new ResourceConflictException(`E-mail '${newEmail.value}' já está cadastrado.`);
-      }
-    }
+    await this.validateExistenceByDocument(existing, input);
+    await this.validateExistenceByEmail(existing, input);
 
     existing.update(input);
 
-    return this.customerRepository.update(existing);
+    // Read before the write: a failed lookup must fail the request before anything is stored.
+    const cacheKeys = await this.findWorkOrderCacheKeys(id);
+
+    const updated = await this.customerRepository.update(existing);
+
+    await this.cache.delete(cacheKeys);
+
+    return updated;
+  }
+
+  private async validateExistenceByDocument(
+    existing: Customer,
+    input: UpdateCustomerDto,
+  ): Promise<void> {
+    const newDocument = Document.create(input.document, input.type);
+
+    if (newDocument.equals(existing.document)) {
+      return;
+    }
+
+    const existingByDocument = await this.customerRepository.findByDocument(newDocument.value);
+
+    if (existingByDocument) {
+      throw new ResourceConflictException(`Documento '${newDocument.value}' já está cadastrado.`);
+    }
+  }
+
+  private async validateExistenceByEmail(
+    existing: Customer,
+    input: UpdateCustomerDto,
+  ): Promise<void> {
+    const newEmail = Email.create(input.email);
+
+    if (newEmail.equals(existing.email)) {
+      return;
+    }
+
+    const existingByEmail = await this.customerRepository.findByEmail(newEmail.value);
+
+    if (existingByEmail) {
+      throw new ResourceConflictException(`E-mail '${newEmail.value}' já está cadastrado.`);
+    }
+  }
+
+  private async findWorkOrderCacheKeys(customerId: string): Promise<string[]> {
+    const workOrders = await this.workOrderRepository.findByCustomerId(customerId);
+
+    return workOrders.map((workOrder) => workOrderCacheKey(workOrder.id));
   }
 
   /**

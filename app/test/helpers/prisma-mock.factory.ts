@@ -48,6 +48,7 @@ export type MockPrismaService = {
   statusHistory: MockDelegate;
   userCustomer: MockDelegate;
   passwordResetCode: MockDelegate;
+  outboxMessage: MockDelegate;
   $connect: jest.Mock;
   $disconnect: jest.Mock;
   $transaction: jest.Mock;
@@ -74,6 +75,7 @@ export function createMockPrismaClient(): MockPrismaService {
     statusHistory: createMockDelegate(),
     userCustomer: createMockDelegate(),
     passwordResetCode: createMockDelegate(),
+    outboxMessage: createMockDelegate(),
     $connect: jest.fn(),
     $disconnect: jest.fn(),
     $transaction: jest

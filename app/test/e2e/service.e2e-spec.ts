@@ -573,6 +573,73 @@ describe('Service (E2E)', () => {
       expect(decimalPart.length).toBeLessThanOrEqual(2);
     });
 
+    it('should return zero executions for a service without completed executions', async () => {
+      const createRes = await request(httpServer)
+        .post('/api/services')
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ name: 'Alinhamento', basePrice: 80, estimatedTimeMin: 40 })
+        .expect(201);
+
+      const serviceId = createRes.body.data.id;
+
+      const customer = await ctx.prisma.customer.create({
+        data: {
+          name: 'Métricas Vazias',
+          document: '52998224725',
+          type: 'INDIVIDUAL',
+          email: 'metrics-empty@test.com',
+          phone: '11999999999',
+          address: {
+            create: { street: 'Rua Teste', city: 'São Paulo', state: 'SP', zipCode: '01234-567' },
+          },
+        },
+      });
+
+      const vehicle = await ctx.prisma.vehicle.create({
+        data: {
+          customerId: customer.id,
+          plate: 'MET-0002',
+          brand: 'Test',
+          model: 'Test',
+          year: 2020,
+        },
+      });
+
+      const workOrder = await ctx.prisma.workOrder.create({
+        data: {
+          customerId: customer.id,
+          vehicleId: vehicle.id,
+          number: '910003',
+          status: 'IN_PROGRESS',
+        },
+      });
+
+      // An execution still in progress must not count.
+      await ctx.prisma.workOrderService.create({
+        data: {
+          workOrderId: workOrder.id,
+          serviceId,
+          quantity: 1,
+          unitPrice: 80,
+          totalPrice: 80,
+          status: 'IN_PROGRESS',
+          startedAt: new Date(),
+        },
+      });
+
+      const res = await request(httpServer)
+        .get(`/api/services/${serviceId}/metrics`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .expect(200);
+
+      expect(res.body.data).toEqual({
+        serviceId,
+        serviceName: 'Alinhamento',
+        executionCount: 0,
+        averageTimeMinutes: null,
+      });
+    });
+
     it('should return 403 for metrics when user is not ADMIN', async () => {
       const mechanicAuth = await registerAndLogin(
         httpServer,
@@ -697,6 +764,7 @@ describe('Service (E2E)', () => {
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send(validService)
         .expect(201);
+
       const serviceId = createRes.body.data.id;
 
       await ctx.prisma.workOrderService.create({

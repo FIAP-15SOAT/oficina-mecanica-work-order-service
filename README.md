@@ -95,6 +95,9 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 - **Framework**: NestJS 12
 - **ORM**: Prisma 7.10 (driver `@prisma/adapter-pg`, client gerado em `prisma/generated/`)
 - **Banco de dados**: PostgreSQL 18
+- **Mensageria**: Amazon SNS FIFO + SQS FIFO (`@aws-sdk/client-sns`, `@aws-sdk/client-sqs`, `sqs-consumer`), com outbox transacional no PostgreSQL; LocalStack 4.14 em desenvolvimento
+- **Cache**: Valkey 9.1 (Amazon ElastiCache no cluster) via `ioredis`, cache-aside no detalhe da OS
+- **Chamadas internas**: REST entre serviços pela rede do cluster, com `@nestjs/axios`
 - **Autenticação**: dois fluxos JWT isolados via `passport-jwt` — interno (HS256, access + refresh token, bcrypt) e externo por CPF + senha (RS256, emitido por uma função serverless dedicada) — ver [Autenticação](#-autenticação)
 - **E-mail**: Nodemailer + `@nestjs-modules/mailer` (SMTP via MailHog em desenvolvimento)
 - **Segurança HTTP**: Helmet, CORS configurável via `ALLOWED_ORIGINS`, `SanitizeStringsPipe` global, `ValidationPipe` global (`whitelist`, `forbidNonWhitelisted`, `transform`)
@@ -102,7 +105,7 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 - **Telemetria**: traces e métricas de negócio pelo SDK do OpenTelemetry, correlacionados ao log por `trace_id`, sem nenhuma dependência ou credencial de fornecedor na aplicação; desligada por padrão (endpoint vazio) — ver [ADR 0005](docs/adr/0005-opentelemetry.md)
 - **Health checks**: endpoints dedicados de vivacidade (`/api/health/live`) e prontidão (`/api/health/ready`), consumidos pelas três probes do Kubernetes, com encerramento gracioso — ver [ADR 0003](docs/adr/0003-health-checks.md)
 - **Documentação**: Swagger/OpenAPI (`@nestjs/swagger`) — disponível em `/api/docs`
-- **Testes**: Jest 30 + ts-jest (unitários com mocks tipados e E2E com **Testcontainers 12** + PostgreSQL 18 real)
+- **Testes**: Jest 30 + ts-jest (unitários com mocks tipados e E2E com **Testcontainers 12** + PostgreSQL 18, Valkey e LocalStack reais)
 - **Qualidade**: SonarQube Cloud (Sonar Scan via GitHub Actions)
 - **Análise de segurança**: OWASP ZAP (DAST) e SonarQube (SAST/qualidade) — relatórios em `reports/`
 - **Containerização**: Docker (multi-stage `node:24-alpine`) + Docker Compose
@@ -116,7 +119,7 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 
 ## 🚀 Quick Start
 
-Esse modo sobe todos os serviços — PostgreSQL, MailHog e API — em containers. As migrations são executadas automaticamente e o banco é populado com o seed.
+Esse modo sobe todos os serviços — PostgreSQL, MailHog, Valkey, LocalStack (SNS e SQS) e API — em containers. As migrations são executadas automaticamente e o banco é populado com o seed.
 
 ```bash
 # Clonar o repositório e entrar na pasta da aplicação
@@ -126,8 +129,8 @@ cd oficina-mecanica-work-order-service/app
 # (Opcional) Copiar e ajustar variáveis de ambiente
 cp .env.example .env
 
-# Subir todos os serviços em background
-docker compose up -d --build
+# Subir todos os serviços em background e esperar que fiquem saudáveis
+docker compose up -d --build --wait
 ```
 
 Após a inicialização:
@@ -135,23 +138,19 @@ Após a inicialização:
 - **API:** `http://localhost:3000`
 - **Swagger:** `http://localhost:3000/api/docs`
 - **MailHog (interface web):** `http://localhost:8025`
-
-Para acompanhar os logs em tempo real:
+- **LocalStack (SNS/SQS):** `http://localhost:4566`
 
 ```bash
+# Acompanhar os logs da API em tempo real
 docker compose logs -f api
-```
 
-Para conferir que a aplicação subiu e alcança o banco:
+# Conferir que o processo responde: 200 {"status":"ok"}
+curl -i http://localhost:3000/api/health/live
 
-```bash
-curl -i http://localhost:3000/api/health/live   # 200 {"status":"ok"} — o processo responde
-curl -i http://localhost:3000/api/health/ready  # 200 {"status":"ok"} — e o banco está acessível
-```
+# Conferir que o banco também está acessível: 200 {"status":"ok"}
+curl -i http://localhost:3000/api/health/ready
 
-Para parar e remover os containers:
-
-```bash
+# Parar e remover os containers
 docker compose down
 ```
 
@@ -202,7 +201,7 @@ Dois fluxos de autenticação **totalmente isolados** — nunca um único verifi
 | Como autentica | `POST /api/auth/login` (e-mail + senha) nesta própria API | CPF + senha, verificados por uma **função serverless dedicada** que consulta o banco diretamente — nunca um proxy do login interno |
 | Algoritmo / chave | JWT **HS256**, `JWT_SECRET` (simétrica) | JWT **RS256** assimétrico — esta API só guarda a chave **pública** (`CUSTOMER_JWT_PUBLIC_KEY`); a privada vive na função serverless |
 | Estratégia Passport | `jwt` (`JwtStrategy`) | `customer-jwt` (`CustomerJwtStrategy`) |
-| Guard HTTP | `JwtAuthGuard` (+ `RolesGuard` por papel) | `CustomerJwtAuthGuard` (`AnyAuthGuard` aceita os dois em `GET /api/me` e `PATCH /api/me/password`) |
+| Guard HTTP | `JwtAuthGuard`, o padrão do guard global (+ `RolesGuard` por papel) | `CustomerJwtAuthGuard` por `@CustomerArea()` (`AnyAuthGuard`, por `@CustomerArea('any')`, aceita os dois em `GET /api/me` e `PATCH /api/me/password`) |
 | O que o token carrega | `sub` (userId) + `role` | Só `sub` (userId) — **nunca** `customerId`. Autorização é resolvida por vínculo (`UserCustomer`) a cada requisição, então revogar acesso ou desativar o cliente vale imediatamente, sem lista de revogação de token |
 | Superfície de rotas | Todas as rotas internas por perfil (ver matriz abaixo) | `/api/me/*` |
 
@@ -211,75 +210,79 @@ A função serverless de autenticação externa **não está neste repositório*
 <details>
 <summary><strong>Matriz completa de rotas e permissões</strong></summary>
 
-| Rota | Guard(s) | Acesso |
+| Rota | Marcação / guard | Acesso |
 |---|---|---|
-| `POST /api/auth/login` | — | Público |
-| `POST /api/auth/refresh` | — | Público |
+| `POST /api/auth/login` | `@Public()` | Público |
+| `POST /api/auth/refresh` | `@Public()` | Público |
 | `POST /api/auth/password-reset-confirmations` | `@Public()` | Público (exige e-mail + código numérico válidos) |
-| `GET /api/me` | `AnyAuthGuard` | JWT interno OU `customer-jwt` |
-| `PATCH /api/me/password` | `AnyAuthGuard` | JWT interno OU `customer-jwt` |
-| `GET /api/me/work-orders` | `CustomerJwtAuthGuard` | `customer-jwt` |
-| `GET /api/me/work-orders/:workOrderId` | `CustomerJwtAuthGuard` | `customer-jwt` |
-| `GET /api/me/work-orders/:workOrderId/quotes` | `CustomerJwtAuthGuard` | `customer-jwt` |
-| `GET /api/me/quotes/:quoteId` | `CustomerJwtAuthGuard` | `customer-jwt` |
-| `POST /api/me/quotes/:quoteId/decisions` | `CustomerJwtAuthGuard` | `customer-jwt` |
-| `POST /api/users` | `JwtAuthGuard`, `RolesGuard` | `ADMIN` |
-| `GET /api/users` | `JwtAuthGuard`, `RolesGuard` | `ADMIN` |
-| `GET /api/users/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN` |
-| `PUT /api/users/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN` |
-| `PATCH /api/users/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN` |
-| `DELETE /api/users/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN` |
-| `POST /api/users/:userId/password-resets` | `JwtAuthGuard`, `RolesGuard` | `ADMIN` |
-| `GET /api/users/:userId/customers` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `POST /api/customers` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `GET /api/customers` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `GET /api/customers/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `GET /api/customers/:id/vehicles` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `PUT /api/customers/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `DELETE /api/customers/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `POST /api/customers/:customerId/users` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `GET /api/customers/:customerId/users` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `DELETE /api/customers/:customerId/users/:userId` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `PATCH /api/customers/:customerId` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `POST /api/vehicles` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `GET /api/vehicles` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `GET /api/vehicles/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `PUT /api/vehicles/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `DELETE /api/vehicles/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `POST /api/services` | `JwtAuthGuard`, `RolesGuard` | `ADMIN` |
-| `GET /api/services` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `GET /api/services/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN` |
-| `GET /api/services/:id/metrics` | `JwtAuthGuard`, `RolesGuard` | `ADMIN` |
-| `PUT /api/services/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN` |
-| `DELETE /api/services/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN` |
-| `GET /api/services-metrics` | `JwtAuthGuard`, `RolesGuard` | `ADMIN` |
-| `POST /api/parts-supplies` | `JwtAuthGuard`, `RolesGuard` | `ADMIN` |
-| `GET /api/parts-supplies` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `GET /api/parts-supplies/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `PUT /api/parts-supplies/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN` |
-| `PATCH /api/parts-supplies/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `DELETE /api/parts-supplies/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN` |
-| `POST /api/work-orders` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `GET /api/work-orders` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `GET /api/work-orders/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `PUT /api/work-orders/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `PATCH /api/work-orders/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `PATCH /api/work-orders/:workOrderId/services/:serviceId` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `GET /api/work-orders/:id/status-history` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `GET /api/work-orders/:id/quotes` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `GET /api/quotes` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `POST /api/quotes` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `GET /api/quotes/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `POST /api/quotes/:id/services` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `PATCH /api/quotes/:id/services/:serviceId` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `DELETE /api/quotes/:id/services/:serviceId` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `POST /api/quotes/:id/parts-supplies` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `PATCH /api/quotes/:id/parts-supplies/:partSupplyId` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `DELETE /api/quotes/:id/parts-supplies/:partSupplyId` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `POST /api/quotes/:id/submissions` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `PATCH /api/quotes/:id` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `GET /api/stock-movements` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `GET /api/stock-reservations` | `JwtAuthGuard`, `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `GET /api/me` | `@CustomerArea('any')` (`AnyAuthGuard`) | JWT interno OU `customer-jwt` |
+| `PATCH /api/me/password` | `@CustomerArea('any')` (`AnyAuthGuard`) | JWT interno OU `customer-jwt` |
+| `GET /api/me/work-orders` | `@CustomerArea()` (`CustomerJwtAuthGuard`) | `customer-jwt` |
+| `GET /api/me/work-orders/:workOrderId` | `@CustomerArea()` (`CustomerJwtAuthGuard`) | `customer-jwt` |
+| `GET /api/me/work-orders/:workOrderId/quotes` | `@CustomerArea()` (`CustomerJwtAuthGuard`) | `customer-jwt` |
+| `GET /api/me/quotes/:quoteId` | `@CustomerArea()` (`CustomerJwtAuthGuard`) | `customer-jwt` |
+| `POST /api/me/quotes/:quoteId/decisions` | `@CustomerArea()` (`CustomerJwtAuthGuard`) | `customer-jwt` |
+| `POST /api/users` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
+| `GET /api/users` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
+| `GET /api/users/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
+| `PUT /api/users/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
+| `PATCH /api/users/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
+| `DELETE /api/users/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
+| `POST /api/users/:userId/password-resets` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
+| `GET /api/users/:userId/customers` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `POST /api/customers` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `GET /api/customers` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `GET /api/customers/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `GET /api/customers/:id/vehicles` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `PUT /api/customers/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `DELETE /api/customers/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `POST /api/customers/:customerId/users` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `GET /api/customers/:customerId/users` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `DELETE /api/customers/:customerId/users/:userId` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `PATCH /api/customers/:customerId` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `POST /api/vehicles` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `GET /api/vehicles` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `GET /api/vehicles/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `PUT /api/vehicles/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `DELETE /api/vehicles/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `POST /api/services` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
+| `GET /api/services` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `GET /api/services/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
+| `GET /api/services/:id/metrics` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
+| `PUT /api/services/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
+| `DELETE /api/services/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
+| `GET /api/services-metrics` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
+| `POST /api/parts-supplies` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
+| `GET /api/parts-supplies` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `GET /api/parts-supplies/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `PUT /api/parts-supplies/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
+| `PATCH /api/parts-supplies/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `DELETE /api/parts-supplies/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
+| `POST /api/work-orders` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `GET /api/work-orders` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `GET /api/work-orders/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `PUT /api/work-orders/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `PATCH /api/work-orders/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `PATCH /api/work-orders/:workOrderId/services/:serviceId` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `GET /api/work-orders/:id/status-history` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `GET /api/work-orders/:id/quotes` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `GET /api/quotes` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `POST /api/quotes` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `GET /api/quotes/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `POST /api/quotes/:id/services` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `PATCH /api/quotes/:id/services/:serviceId` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `DELETE /api/quotes/:id/services/:serviceId` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `POST /api/quotes/:id/parts-supplies` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `PATCH /api/quotes/:id/parts-supplies/:partSupplyId` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `DELETE /api/quotes/:id/parts-supplies/:partSupplyId` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `POST /api/quotes/:id/submissions` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `PATCH /api/quotes/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `GET /api/stock-movements` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `GET /api/stock-reservations` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
+| `GET /api/health/live`, `GET /api/health/ready` | `@Public()` | Público |
+| `GET /internal/work-orders/:id` | `@Public()` | Rede do cluster (fora do prefixo `/api`, não passa pelo API Gateway) |
+
+> A autenticação é negada por padrão: um guard global (`AuthenticationGuard`) exige o token de funcionário em toda rota sem marcação, `@Public()` dispensa o token e `@CustomerArea()` troca o token exigido. O `RolesGuard` restringe por papel depois dele.
 
 > A decisão do cliente usa `POST /api/me/quotes/:quoteId/decisions`, com autenticação `customer-jwt` RS256.
 
@@ -310,9 +313,10 @@ A solução é composta por **sete repositórios especializados**, com responsab
 │   │   ├── domain/              # Entidades e regras de domínio
 │   │   ├── application/         # Casos de uso e portas
 │   │   ├── interface-adapters/  # Controllers, presenters e DTOs
-│   │   └── infrastructure/      # Persistência, serviços, logging e telemetria
+│   │   └── infrastructure/      # Persistência, mensageria, cache, clientes internos, HTTP, logging e telemetria
+│   ├── localstack/             # Topologia SNS/SQS criada no LocalStack (cópia do repositório de mensageria)
 │   ├── prisma/                 # Schema, migrations e seed
-│   ├── test/                    # Testes unitários e E2E
+│   ├── test/                    # Testes unitários, E2E e fixtures de contrato das rotas /internal
 │   ├── .env.example            # Referência de configuração local
 │   ├── Dockerfile              # Build da imagem da API
 │   ├── docker-compose.yml      # Stack para execução local
@@ -333,19 +337,20 @@ A solução é composta por **sete repositórios especializados**, com responsab
 
 | Documento | Conteúdo |
 |---|---|
-| 🏛️ [Arquitetura](docs/architecture.md) | Clean Architecture, DDD, ciclos de vida, UoW, exceções, logs estruturados |
+| 🏛️ [Arquitetura](docs/architecture.md) | Clean Architecture, DDD, ciclos de vida, UoW, mensageria com outbox, cache, chamadas internas, exceções |
 | 🗃️ [Banco de Dados](docs/database.md) | Diagrama ER, tabelas e relacionamentos, enums, convenções de modelagem |
 | 🔀 [Diagramas de Sequência](docs/sequence-diagrams.md) | Login interno, abertura de OS e autenticação externa por CPF |
-| 🔌 [Referência da API](docs/api.md) | Endpoints por domínio, perfis (RBAC), formato de resposta |
-| 💻 [Como executar localmente](docs/local-setup.md) | Setup local, MailHog, variáveis de ambiente, seed |
-| 🧪 [Testes](docs/testing.md) | Unitários, E2E, Postman/Newman |
+| 🔌 [Referência da API](docs/api.md) | Endpoints por domínio, perfis (RBAC), rotas /internal, formato de resposta |
+| 💻 [Como executar localmente](docs/local-setup.md) | Setup local, MailHog, Valkey, LocalStack, variáveis de ambiente, seed |
+| 🆔 [Ids canônicos do seed](docs/seed-ids.md) | UUIDs fixos de usuários, clientes, veículos, serviços e peças, compartilhados entre os serviços |
+| 🧪 [Testes](docs/testing.md) | Unitários, E2E (PostgreSQL, Valkey e LocalStack), contrato das rotas /internal, Postman/Newman |
 | 🔒 [Segurança](docs/security.md) | Mitigações no código, proteção de dados nos logs e relatórios (ZAP, SonarQube) |
 | 🔭 [Observabilidade](docs/observability.md) | Logs estruturados, correlação, traces, métricas e degradação segura |
 | 🏗️ [Infra · Visão Geral](docs/infra/overview.md) | Arquitetura da infra como sistema: componentes, ownership e fluxos |
 | 🌍 [Infra · Terraform](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base) | Infraestrutura AWS e Kubernetes (IaC nos repositórios dedicados) |
 | ☸️ [Infra · Kubernetes](docs/infra/kubernetes.md) | Manifests de aplicação (`k8s/`), probes, HPA e deploy |
 | 🔄 [Infra · CI/CD](docs/infra/ci-cd.md) | Workflows de CI, CD, SAST e DAST |
-| 📐 [ADRs](docs/adr) | Decisões arquiteturais — [0001 PostgreSQL](docs/adr/0001-uso-do-postgresql-como-banco-de-dados.md), [0002 Logging estruturado](docs/adr/0002-logging-estruturado.md), [0003 Health checks](docs/adr/0003-health-checks.md), [0004 Autenticação de clientes](docs/adr/0004-autenticacao-de-clientes.md), [0005 OpenTelemetry](docs/adr/0005-opentelemetry.md), [0006 Escolha de nuvem](docs/adr/0006-escolha-de-nuvem-aws.md), [0007 Padrão de comunicação](docs/adr/0007-padrao-de-comunicacao-rest-monolito.md), [0008 Autoscaling (HPA)](docs/adr/0008-autoscaling-via-hpa.md), [0009 Clean Architecture/DDD](docs/adr/0009-clean-architecture-ddd-em-camadas.md), [0010 Concorrência otimista](docs/adr/0010-concorrencia-otimista-via-version.md), [0011 Unit of Work](docs/adr/0011-unit-of-work-transacoes-multi-repositorio.md), [0012 Exceções por camada](docs/adr/0012-hierarquia-de-excecoes-por-camada.md), [0013 Autenticação interna JWT](docs/adr/0013-autenticacao-interna-jwt-stateless.md), [0014 Pipelines CI/CD/SAST/DAST](docs/adr/0014-pipelines-ci-cd-sast-dast-separados.md), [0015 Testcontainers no E2E](docs/adr/0015-testcontainers-e2e-postgresql-real.md), [0016 Sanitização e validação em duas camadas](docs/adr/0016-sanitizacao-e-validacao-em-duas-camadas.md), [0017 Credencial do banco no CD](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md) |
+| 📐 [ADRs](docs/adr) | Decisões arquiteturais — [0001 PostgreSQL](docs/adr/0001-uso-do-postgresql-como-banco-de-dados.md), [0002 Logging estruturado](docs/adr/0002-logging-estruturado.md), [0003 Health checks](docs/adr/0003-health-checks.md), [0004 Autenticação de clientes](docs/adr/0004-autenticacao-de-clientes.md), [0005 OpenTelemetry](docs/adr/0005-opentelemetry.md), [0006 Escolha de nuvem](docs/adr/0006-escolha-de-nuvem-aws.md), [0007 Padrão de comunicação](docs/adr/0007-padrao-de-comunicacao-rest-monolito.md), [0008 Autoscaling (HPA)](docs/adr/0008-autoscaling-via-hpa.md), [0009 Clean Architecture/DDD](docs/adr/0009-clean-architecture-ddd-em-camadas.md), [0010 Concorrência otimista](docs/adr/0010-concorrencia-otimista-via-version.md), [0011 Unit of Work](docs/adr/0011-unit-of-work-transacoes-multi-repositorio.md), [0012 Exceções por camada](docs/adr/0012-hierarquia-de-excecoes-por-camada.md), [0013 Autenticação interna JWT](docs/adr/0013-autenticacao-interna-jwt-stateless.md), [0014 Pipelines CI/CD/SAST/DAST](docs/adr/0014-pipelines-ci-cd-sast-dast-separados.md), [0015 Testcontainers no E2E](docs/adr/0015-testcontainers-e2e-postgresql-real.md), [0016 Sanitização e validação em duas camadas](docs/adr/0016-sanitizacao-e-validacao-em-duas-camadas.md), [0017 Credencial do banco no CD](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md), [0018 Mensageria com outbox](docs/adr/0018-mensageria-sns-sqs-fifo-com-outbox.md), [0019 Cache do dono](docs/adr/0019-cache-do-dono-no-elasticache.md), [0020 Chamadas internas e rotas negadas por padrão](docs/adr/0020-chamadas-internas-e-rotas-negadas-por-padrao.md), [0021 Span de consumo de mensagens](docs/adr/0021-span-de-consumo-de-mensagens.md) |
 | 🧩 [Modelo C4](docs/c4) | Diagramas de Contexto, Container e Componente |
 | 🎨 [Modelagem de Domínio (Miro)](https://miro.com/app/board/uXjVGvVPEOw=/?share_link_id=9196435429) | Domain Storytelling, Event Storming e Dicionário de Linguagem Ubíqua |
 

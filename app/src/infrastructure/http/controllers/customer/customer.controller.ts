@@ -30,7 +30,6 @@ import {
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 
-import { JwtAuthGuard } from '@infrastructure/http/guards/jwt-auth.guard';
 import { Roles } from '@infrastructure/http/decorators/roles.decorator';
 import { RolesGuard } from '@infrastructure/http/guards/roles.guard';
 import { CurrentPrincipal } from '@infrastructure/http/decorators/current-principal.decorator';
@@ -49,7 +48,7 @@ import { CustomerPaginatedResponseDto } from './dto/responses/customer-paginated
 @ApiProduces('application/json')
 @ApiInternalServerErrorResponse({ description: 'Erro interno do servidor' })
 @ApiBearerAuth('access-token')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @Controller('customers')
 export class CustomerController {
   constructor(private readonly controller: CustomerCleanController) {}

@@ -238,6 +238,20 @@ describe('Me (E2E)', () => {
     });
   });
 
+  // ─── Token de cliente fora da área do cliente ───────────────────────────────
+
+  describe('Customer token outside the customer area', () => {
+    it('should answer 401 to a customer token on a staff route', async () => {
+      const customer = await createCustomer();
+      const user = await createExternalUserLinkedTo(customer.id, generateCPF(6000));
+
+      await request(httpServer)
+        .get('/api/customers')
+        .set('Authorization', `Bearer ${signTestCustomerToken(user.id)}`)
+        .expect(401);
+    });
+  });
+
   // ─── Recursos inexistentes nas rotas externas ───────────────────────────────
 
   describe('Unknown resources on the external routes', () => {

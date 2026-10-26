@@ -9,7 +9,6 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 
-import { JwtAuthGuard } from '@infrastructure/http/guards/jwt-auth.guard';
 import { RolesGuard } from '@infrastructure/http/guards/roles.guard';
 import { Roles } from '@infrastructure/http/decorators/roles.decorator';
 import { UserRole } from '@domain/enums/user-role.enum';
@@ -23,7 +22,7 @@ import { FindStockReservationsQueryDto } from './dto/requests/filter-stock-reser
 @ApiProduces('application/json')
 @ApiInternalServerErrorResponse({ description: 'Erro interno do servidor' })
 @Controller('stock-reservations')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @ApiBearerAuth('access-token')
 export class StockReservationsController {
   constructor(private readonly controller: StockController) {}

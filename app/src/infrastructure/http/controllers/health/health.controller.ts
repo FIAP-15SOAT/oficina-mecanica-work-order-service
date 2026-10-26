@@ -17,6 +17,7 @@ import {
   UNAVAILABLE_BODY,
 } from '@infrastructure/health/health.constants';
 import { ReadinessState } from '@infrastructure/health/readiness-state';
+import { Public } from '@infrastructure/http/decorators/public.decorator';
 
 import { HealthyResponseDto, UnavailableResponseDto } from './dto/responses/health-response.dto';
 
@@ -25,6 +26,7 @@ const CACHE_CONTROL_VALUE = 'no-store';
 
 @ApiTags('Health')
 @ApiProduces('application/json')
+@Public()
 @Controller(HEALTH_SEGMENT)
 export class HealthController {
   constructor(private readonly readiness: ReadinessState) {}

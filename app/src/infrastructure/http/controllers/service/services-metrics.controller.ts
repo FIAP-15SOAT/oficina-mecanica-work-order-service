@@ -8,7 +8,6 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
-import { JwtAuthGuard } from '@infrastructure/http/guards/jwt-auth.guard';
 import { Roles } from '@infrastructure/http/decorators/roles.decorator';
 import { RolesGuard } from '@infrastructure/http/guards/roles.guard';
 import { UserRole } from '@domain/enums/user-role.enum';
@@ -22,7 +21,7 @@ import { ServiceMetricsPaginatedResponseDto } from './dto/responses/service-metr
 @ApiProduces('application/json')
 @ApiInternalServerErrorResponse({ description: 'Erro interno do servidor' })
 @Controller('services-metrics')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @ApiBearerAuth('access-token')
 export class ServicesMetricsController {
   constructor(private readonly controller: ServiceCleanController) {}

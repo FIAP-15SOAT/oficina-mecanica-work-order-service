@@ -178,10 +178,14 @@ function applyPipelineDefaults(): void {
  * entrega um `pg.Pool` explícito: o driver é onde a consulta de fato acontece.
  */
 function buildInstrumentations() {
+  const { AwsInstrumentation } =
+    require('@opentelemetry/instrumentation-aws-sdk') as typeof import('@opentelemetry/instrumentation-aws-sdk');
   const { ExpressInstrumentation, ExpressLayerType } =
     require('@opentelemetry/instrumentation-express') as typeof import('@opentelemetry/instrumentation-express');
   const { HttpInstrumentation } =
     require('@opentelemetry/instrumentation-http') as typeof import('@opentelemetry/instrumentation-http');
+  const { IORedisInstrumentation } =
+    require('@opentelemetry/instrumentation-ioredis') as typeof import('@opentelemetry/instrumentation-ioredis');
   const { PgInstrumentation } =
     require('@opentelemetry/instrumentation-pg') as typeof import('@opentelemetry/instrumentation-pg');
   const { RuntimeNodeInstrumentation } =
@@ -193,11 +197,27 @@ function buildInstrumentations() {
 
   return [
     new HttpInstrumentation({
+      // Health probes start no trace; the suppression also reaches their `pg` child spans.
       ignoreIncomingRequestHook: isIgnoredIncomingRequest,
+      // Overwrites url.path, client.address and user_agent.original with the log's sanitized
+      // values and drops url.query, so a span never carries data the log does not.
       startIncomingSpanHook: buildIncomingSpanAttributes,
     }),
+    // One span per middleware (body parser, CORS, pino-http...) adds volume and no answer;
+    // router and request handler layers stay, and they are what resolves `http.route`.
     new ExpressInstrumentation({ ignoreLayersType: [ExpressLayerType.MIDDLEWARE] }),
-    new PgInstrumentation({ enhancedDatabaseReporting: false }),
+    new PgInstrumentation({
+      // When on, the span gets the query parameter values: CPF, e-mail, phone.
+      enhancedDatabaseReporting: false,
+      // Without it every query outside a request becomes its own root trace: the outbox
+      // relay polls every 500 ms per replica. Those queries also leave db.client metrics.
+      requireParentSpan: true,
+    }),
+    // The SDK calls AWS over HTTPS: without this each SNS/SQS call also gets an HTTP client
+    // child span that repeats the operation span. Trace context injection is not affected.
+    new AwsInstrumentation({ suppressInternalInstrumentation: true }),
+    // Command name only: the arguments carry the cached work order, with customer PII.
+    new IORedisInstrumentation({ dbStatementSerializer: (command) => command }),
     new RuntimeNodeInstrumentation(),
   ];
 }

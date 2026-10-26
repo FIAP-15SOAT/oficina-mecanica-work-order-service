@@ -12,7 +12,6 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 
-import { JwtAuthGuard } from '@infrastructure/http/guards/jwt-auth.guard';
 import { Roles } from '@infrastructure/http/decorators/roles.decorator';
 import { RolesGuard } from '@infrastructure/http/guards/roles.guard';
 import { UserRole } from '@domain/enums/user-role.enum';
@@ -24,7 +23,7 @@ import { VehicleListResponseDto } from './dto/responses/vehicle-list-response.dt
 @ApiTags('Gestão de Clientes')
 @ApiProduces('application/json')
 @ApiBearerAuth('access-token')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(RolesGuard)
 @Controller('customers')
 export class CustomerVehiclesController {
   constructor(private readonly controller: VehicleController) {}

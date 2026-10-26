@@ -1,3 +1,4 @@
+import { STATUS_CODES } from 'node:http';
 import { ArgumentsHost, Catch, ExceptionFilter, HttpStatus, Inject } from '@nestjs/common';
 import { Request, Response } from 'express';
 
@@ -5,6 +6,7 @@ import { ApplicationException } from '@application/exceptions/application.except
 import { BadRequestException } from '@application/exceptions/bad-request.exception';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { ResourceConflictException } from '@application/exceptions/resource-conflict.exception';
+import { ServiceRequestRejectedException } from '@application/exceptions/service-request-rejected.exception';
 import { UnauthorizedAccessException } from '@application/exceptions/unauthorized-access.exception';
 import { ILogger } from '@application/ports/output/logger.service.interface';
 import { recordHttpFailure } from '@infrastructure/logging/http-failure.recorder';
@@ -48,6 +50,13 @@ export class ApplicationExceptionFilter implements ExceptionFilter {
 
     if (exception instanceof UnauthorizedAccessException) {
       return { status: HttpStatus.UNAUTHORIZED, error: 'Unauthorized' };
+    }
+
+    if (exception instanceof ServiceRequestRejectedException) {
+      return {
+        status: exception.statusCode,
+        error: STATUS_CODES[exception.statusCode] ?? 'Error',
+      };
     }
 
     return { status: HttpStatus.INTERNAL_SERVER_ERROR, error: 'Internal Server Error' };

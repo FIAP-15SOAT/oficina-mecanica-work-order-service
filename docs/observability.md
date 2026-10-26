@@ -173,7 +173,7 @@ O NestJS 12 é distribuído só como ESM e carrega o `express` por `import`, um 
 
 O hook tem custo: ele envolve todo módulo carregado por `import` e mantém uma thread própria durante o processo, o que consome mais memória e deixa o boot um pouco mais lento. Se o loader não conseguir envolver um módulo, ele o carrega sem envolver e o app segue, mas o Node escreve um aviso `(node:PID) Warning: …` cru no stderr, fora do envelope JSON; no Datadog ele aparece como `error`, porque a severidade vem do stream.
 
-Quatro instrumentações, nomeadas: `http`, `express` (que é quem resolve `http.route` **parametrizado**, a dimensão de toda métrica por rota), `pg` (o driver que de fato executa as consultas, já que o `PrismaService` entrega um `pg.Pool` explícito) e `runtime-node`. **Nenhum metapacote**, e **nenhum span criado por código de negócio**.
+Seis instrumentações, nomeadas: `http`, `express` (que é quem resolve `http.route` **parametrizado**, a dimensão de toda métrica por rota), `pg` (o driver que de fato executa as consultas, já que o `PrismaService` entrega um `pg.Pool` explícito), `runtime-node`, `aws-sdk` (SNS e SQS) e `ioredis` (cache). **Nenhum metapacote**, e **nenhum span criado por código de negócio**: o único span manual é o de consumo de mensagens, na infraestrutura (ver [Consumo de mensagens](#consumo-de-mensagens)).
 
 ### Correlação log-trace
 
@@ -207,6 +207,60 @@ Toda a cadeia de redação existe apenas no caminho de log; um atributo de span 
 | consulta ao banco | `enhancedDatabaseReporting` desligado: nenhum valor de parâmetro no atributo |
 
 `instrumentation-nestjs-core` é **excluído** por esse mesmo critério: grava `url.full` sem oferecer ponto de configuração, e qualquer parâmetro de query com PII ou segredo — `GET /api/customers?document=<CPF>`, por exemplo — sairia inteiro num span que nenhuma correção nossa alcança.
+
+### Consumo de mensagens
+
+O span de consumo é a **única instrumentação manual** da aplicação, e só existe porque a instrumentação da AWS cria apenas o span do *receive*: sem ele, o processamento da mensagem não teria span próprio nem se ligaria ao produtor. O `SqsConsumerService` (infraestrutura) abre um span `CONSUMER` por mensagem:
+
+| Atributo | Valor |
+| --- | --- |
+| nome do span | `process work-order.fifo` |
+| `messaging.system` | `aws_sqs` |
+| `messaging.destination.name` | `work-order.fifo` |
+| `messaging.operation.type` | `process` |
+| `messaging.message.id` | o `messageId` do envelope (ou o do SQS, quando o envelope é inválido) |
+
+O pai do span vem do contexto W3C nos atributos da mensagem, que a instrumentação do SNS injeta no `Publish` a partir do contexto que o relay restaura da coluna `trace_context` do outbox. Assim, o trace segue a requisição que gravou a mensagem até o handler de outro serviço. Falha marca o span com `ERROR` e registra a exceção. A regra continua valendo para o resto do código: nenhum `startSpan` em código de negócio e nenhuma porta `ITracer`.
+
+### Mensageria, cache e banco nos spans
+
+| Instrumentação | Configuração | Por quê |
+| --- | --- | --- |
+| `aws-sdk` | `suppressInternalInstrumentation: true` | O SDK chama a AWS por HTTPS: sem isso, cada chamada ao SNS ou ao SQS ganharia um span HTTP filho repetindo o span da operação. A injeção de contexto não é afetada |
+| `ioredis` | `dbStatementSerializer` que devolve só o nome do comando | Os argumentos levam o detalhe da OS em cache, com documento, e-mail e telefone do cliente |
+| `pg` | `requireParentSpan: true` | Sem span pai, toda consulta fora de requisição viraria um trace raiz: o relay do outbox consulta o banco a cada 500 ms por réplica. Rotas e handlers sempre têm span pai |
+
+As chamadas ao Valkey, ao SNS e ao SQS e as chamadas REST internas aparecem como spans `CLIENT`. As chamadas internas saem pelo `axios`, que roda sobre `node:http`: a instrumentação `http` injeta o `traceparent` e cria o span sem código nosso.
+
+### Campos e eventos de mensageria e cache
+
+Toda linha emitida durante a publicação ou o processamento de uma mensagem carrega os campos de `MESSAGING_FIELDS` (`field-registry.ts`), ligados por `PinoLogger.runInContext`, e `request.id` igual ao `messageId`:
+
+| Campo | Exemplo |
+| --- | --- |
+| `messaging.system` | `aws_sqs` ou `aws_sns` |
+| `messaging.destination.name` | `work-order.fifo` ou `oficina-events.fifo` |
+| `messaging.message.id` | o `messageId` |
+| `messaging.operation` | `process` ou `publish` |
+| `oficina.messaging.message.type` | `inventory.stock.reserved` |
+| `oficina.work_order.id` | a OS do envelope, quando houver |
+
+Eventos técnicos novos, no catálogo de `technical-event.catalog.ts`:
+
+| Evento | Nível | Quando |
+| --- | --- | --- |
+| `messaging.outbox.publish_failed` | `error` | O relay não conseguiu publicar uma linha; o lote para ali |
+| `messaging.message.unhandled` | `warn` | Mensagem sem handler registrado; não é confirmada |
+| `messaging.message.failed` | `error` | Envelope ou payload inválido, ou erro do handler; a mensagem volta à fila |
+| `messaging.message.dead_lettered` | `error` | Falha na quinta entrega; o SQS move a mensagem para a DLQ |
+| `cache.unavailable` | `warn` | Leitura ou gravação no cache falhou; a leitura vai ao banco |
+| `cache.invalidation_failed` | `error` | A exclusão de chaves depois de uma escrita falhou; a chave expira pelo TTL |
+
+Métrica técnica do consumidor:
+
+| Métrica | Instrumento | Unidade | Atributos |
+| --- | --- | --- | --- |
+| `oficina.messaging.consumed` | Counter | `{message}` | `messaging.destination.name`; `outcome` = `success`, `retry` ou `dead_lettered` |
 
 ### Métricas de negócio
 

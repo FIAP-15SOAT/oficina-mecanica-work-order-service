@@ -16,6 +16,7 @@ import { PrismaServiceRepository } from './prisma-service.repository';
 import { PrismaUserRepository } from './prisma-user.repository';
 import { PrismaUserCustomerRepository } from './prisma-user-customer.repository';
 import { PrismaPasswordResetCodeRepository } from './prisma-password-reset-code.repository';
+import { PrismaOutboxRepository } from './prisma-outbox.repository';
 
 @Injectable()
 export class PrismaUnitOfWork implements IUnitOfWork {
@@ -36,6 +37,7 @@ export class PrismaUnitOfWork implements IUnitOfWork {
         user: new PrismaUserRepository(tx as unknown as PrismaService),
         userCustomer: new PrismaUserCustomerRepository(tx as unknown as PrismaService),
         passwordResetCode: new PrismaPasswordResetCodeRepository(tx as unknown as PrismaService),
+        outbox: new PrismaOutboxRepository(tx as unknown as PrismaService),
       };
 
       return work(repositories);

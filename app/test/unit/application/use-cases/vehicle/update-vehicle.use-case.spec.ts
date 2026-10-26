@@ -14,8 +14,18 @@ import {
   createMockVehicleRepository,
 } from '../../../../helpers/vehicle-mock.factory';
 import { Plate } from '@domain/value-objects/plate.vo';
+import { ICache } from '@application/ports/output/cache.service.interface';
+import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
+import { createMockCache } from '../../../../helpers/cache-mock.factory';
+import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
+import {
+  createMockWorkOrder,
+  createMockWorkOrderRepository,
+} from '../../../../helpers/work-order-mock.factory';
 
 describe('UpdateVehicleUseCase', () => {
+  let cache: jest.Mocked<ICache>;
+  let workOrderRepository: jest.Mocked<IWorkOrderRepository>;
   let useCase: UpdateVehicleUseCase;
   let vehicleRepository: jest.Mocked<IVehicleRepository>;
   let customerRepository: jest.Mocked<ICustomerRepository>;
@@ -35,7 +45,14 @@ describe('UpdateVehicleUseCase', () => {
   beforeEach(() => {
     vehicleRepository = createMockVehicleRepository();
     customerRepository = createMockCustomerRepository();
-    useCase = new UpdateVehicleUseCase(vehicleRepository, customerRepository);
+    cache = createMockCache();
+    workOrderRepository = createMockWorkOrderRepository();
+    useCase = new UpdateVehicleUseCase(
+      vehicleRepository,
+      customerRepository,
+      workOrderRepository,
+      cache,
+    );
   });
 
   it('should update vehicle successfully', async () => {
@@ -152,5 +169,57 @@ describe('UpdateVehicleUseCase', () => {
     expect(vehicleRepository.update).toHaveBeenCalledWith(
       expect.objectContaining({ plate: expect.objectContaining({ value: 'XYZ9999' }) }),
     );
+  });
+
+  it('should delete the keys of every work order of the vehicle', async () => {
+    const existing = createMockVehicle({
+      id: 'veh-1',
+      customerId: customerId1,
+      plate: Plate.create('ABC1234'),
+    });
+
+    vehicleRepository.findById.mockResolvedValue(existing);
+    vehicleRepository.update.mockResolvedValue(existing);
+    workOrderRepository.findByVehicleId.mockResolvedValue([
+      createMockWorkOrder({ id: 'wo-1' }),
+      createMockWorkOrder({ id: 'wo-2' }),
+    ]);
+
+    await useCase.execute('veh-1', validInput);
+
+    expect(workOrderRepository.findByVehicleId).toHaveBeenCalledWith('veh-1');
+
+    expect(cache.delete).toHaveBeenCalledWith([
+      workOrderCacheKey('wo-1'),
+      workOrderCacheKey('wo-2'),
+    ]);
+
+    expect(cache.delete.mock.invocationCallOrder[0]).toBeGreaterThan(
+      vehicleRepository.update.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('should not touch the cache when the write fails', async () => {
+    vehicleRepository.findById.mockResolvedValue(
+      createMockVehicle({ id: 'veh-1', customerId: customerId1, plate: Plate.create('ABC1234') }),
+    );
+
+    vehicleRepository.update.mockRejectedValue(new Error('write failed'));
+
+    await expect(useCase.execute('veh-1', validInput)).rejects.toThrow('write failed');
+
+    expect(cache.delete).not.toHaveBeenCalled();
+  });
+
+  it('should not write the vehicle when the work order lookup fails', async () => {
+    vehicleRepository.findById.mockResolvedValue(
+      createMockVehicle({ id: 'veh-1', customerId: customerId1, plate: Plate.create('ABC1234') }),
+    );
+
+    workOrderRepository.findByVehicleId.mockRejectedValue(new Error('lookup failed'));
+
+    await expect(useCase.execute('veh-1', validInput)).rejects.toThrow('lookup failed');
+
+    expect(vehicleRepository.update).not.toHaveBeenCalled();
   });
 });

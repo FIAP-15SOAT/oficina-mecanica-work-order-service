@@ -14,6 +14,8 @@ import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interf
 import { IHashService } from '@application/ports/output/hash.service.interface';
 import { IEmailSenderService } from '@application/ports/output/email-sender.service.interface';
 import { ILogger } from '@application/ports/output/logger.service.interface';
+import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
+import { ICache } from '@application/ports/output/cache.service.interface';
 
 import { CustomerController as CustomerCleanController } from '@interface-adapters/customer/customer.controller';
 import { CustomerController } from './customer.controller';
@@ -31,6 +33,8 @@ import { CustomerController } from './customer.controller';
         hashService: IHashService,
         emailSender: IEmailSenderService,
         logger: ILogger,
+        workOrderRepository: IWorkOrderRepository,
+        cache: ICache,
       ) =>
         new CustomerCleanController(
           new CreateCustomerUseCase(
@@ -44,7 +48,12 @@ import { CustomerController } from './customer.controller';
           ),
           new FindAllCustomersUseCase(customerRepository),
           new FindCustomerByIdUseCase(customerRepository),
-          new UpdateCustomerUseCase(customerRepository, userCustomerRepository),
+          new UpdateCustomerUseCase(
+            customerRepository,
+            userCustomerRepository,
+            workOrderRepository,
+            cache,
+          ),
           new DeleteCustomerUseCase(customerRepository),
         ),
       inject: [
@@ -54,6 +63,8 @@ import { CustomerController } from './customer.controller';
         'IHashService',
         'IEmailSenderService',
         'ILogger',
+        'IWorkOrderRepository',
+        'ICache',
       ],
     },
   ],

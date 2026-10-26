@@ -10,6 +10,7 @@ import { IServiceRepository } from './service.repository.interface';
 import { IUserRepository } from './user.repository.interface';
 import { IUserCustomerRepository } from './user-customer.repository.interface';
 import { IPasswordResetCodeRepository } from './password-reset-code.repository.interface';
+import { IOutboxRepository } from './outbox.repository.interface';
 
 export interface IRepositories {
   customer: ICustomerRepository;
@@ -24,6 +25,7 @@ export interface IRepositories {
   user: IUserRepository;
   userCustomer: IUserCustomerRepository;
   passwordResetCode: IPasswordResetCodeRepository;
+  outbox: IOutboxRepository;
 }
 
 export interface IUnitOfWork {

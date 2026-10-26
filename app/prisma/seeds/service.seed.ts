@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 import { PrismaClient } from '../generated/client';
+import { SEED_IDS } from './seed-ids';
 
 interface ServiceSeed {
   name: string;
@@ -176,6 +177,7 @@ export async function seedServices(prisma: PrismaClient): Promise<Record<string,
         estimatedTimeMin: service.estimatedTimeMin,
       },
       create: {
+        id: SEED_IDS.services[service.name],
         name: service.name,
         description: service.description,
         basePrice: service.basePrice,

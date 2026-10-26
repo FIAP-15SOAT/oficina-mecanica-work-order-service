@@ -9,7 +9,6 @@ import {
   Patch,
   Post,
   Query,
-  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
@@ -27,8 +26,7 @@ import {
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 
-import { AnyAuthGuard } from '@infrastructure/http/guards/any-auth.guard';
-import { CustomerJwtAuthGuard } from '@infrastructure/http/guards/customer-jwt-auth.guard';
+import { CustomerArea } from '@infrastructure/http/decorators/customer-area.decorator';
 import { CurrentPrincipal } from '@infrastructure/http/decorators/current-principal.decorator';
 import { AuthenticatedPrincipal } from '@application/ports/output/authenticated-principal';
 
@@ -55,7 +53,7 @@ export class MeController {
   constructor(private readonly controller: MeCleanController) {}
 
   @Get()
-  @UseGuards(AnyAuthGuard)
+  @CustomerArea('any')
   @ApiOperation({ summary: 'Identidade do sujeito autenticado (interno ou externo)' })
   @ApiOkResponse({ type: MeDataResponseDto })
   @ApiUnauthorizedResponse({ description: 'Não autenticado' })
@@ -64,7 +62,7 @@ export class MeController {
   }
 
   @Patch('password')
-  @UseGuards(AnyAuthGuard)
+  @CustomerArea('any')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Trocar a própria senha (token interno ou externo)' })
   @ApiNoContentResponse()
@@ -79,7 +77,7 @@ export class MeController {
   }
 
   @Get('work-orders')
-  @UseGuards(CustomerJwtAuthGuard)
+  @CustomerArea()
   @ApiOperation({ summary: 'Listar ordens de serviço dos clientes vinculados' })
   @ApiOkResponse({ type: MyWorkOrderPaginatedResponseDto })
   listWorkOrders(
@@ -94,7 +92,7 @@ export class MeController {
   }
 
   @Get('work-orders/:workOrderId')
-  @UseGuards(CustomerJwtAuthGuard)
+  @CustomerArea()
   @ApiOperation({ summary: 'Detalhe externo de uma ordem de serviço vinculada' })
   @ApiParam({ name: 'workOrderId', format: 'uuid' })
   @ApiOkResponse({ type: MyWorkOrderDataResponseDto })
@@ -107,7 +105,7 @@ export class MeController {
   }
 
   @Get('work-orders/:workOrderId/quotes')
-  @UseGuards(CustomerJwtAuthGuard)
+  @CustomerArea()
   @ApiOperation({ summary: 'Orçamentos de uma ordem de serviço vinculada' })
   @ApiParam({ name: 'workOrderId', format: 'uuid' })
   @ApiOkResponse({ type: MyQuoteListResponseDto })
@@ -120,7 +118,7 @@ export class MeController {
   }
 
   @Get('quotes/:quoteId')
-  @UseGuards(CustomerJwtAuthGuard)
+  @CustomerArea()
   @ApiOperation({ summary: 'Orçamento e itens de uma ordem vinculada' })
   @ApiParam({ name: 'quoteId', format: 'uuid' })
   @ApiOkResponse({ type: MyQuoteDataResponseDto })
@@ -133,7 +131,7 @@ export class MeController {
   }
 
   @Post('quotes/:quoteId/decisions')
-  @UseGuards(CustomerJwtAuthGuard)
+  @CustomerArea()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Aprovar ou rejeitar um orçamento vinculado' })
   @ApiParam({ name: 'quoteId', format: 'uuid' })

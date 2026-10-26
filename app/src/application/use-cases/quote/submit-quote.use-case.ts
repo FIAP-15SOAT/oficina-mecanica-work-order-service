@@ -17,6 +17,8 @@ import {
 } from '@application/ports/output/email-sender.service.interface';
 
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
+import { ICache } from '@application/ports/output/cache.service.interface';
+import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 
 interface QuoteRecipient {
   email: string;
@@ -31,6 +33,7 @@ export class SubmitQuoteUseCase {
     private readonly logger: ILogger,
     private readonly metrics: IMetrics,
     private readonly statusHistoryRepository: IStatusHistoryRepository,
+    private readonly cache: ICache,
   ) {}
 
   async execute(quoteId: string): Promise<Quote> {
@@ -74,6 +77,8 @@ export class SubmitQuoteUseCase {
         transition,
       };
     });
+
+    await this.cache.delete([workOrderCacheKey(workOrderId)]);
 
     this.logger.event(BUSINESS_EVENTS.QUOTE_SUBMITTED, {
       quoteId: submittedQuote.id,

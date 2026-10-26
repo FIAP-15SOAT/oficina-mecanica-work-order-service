@@ -22,8 +22,12 @@ import {
   arrangeStatusHistory,
   createMockStatusHistory,
 } from '../../../../helpers/status-history-mock.factory';
+import { ICache } from '@application/ports/output/cache.service.interface';
+import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
+import { createMockCache } from '../../../../helpers/cache-mock.factory';
 
 describe('ApproveQuoteUseCase', () => {
+  let cache: jest.Mocked<ICache>;
   let useCase: ApproveQuoteUseCase;
   let logger: jest.Mocked<ILogger>;
   let mockRepos: jest.Mocked<IRepositories>;
@@ -36,7 +40,8 @@ describe('ApproveQuoteUseCase', () => {
     mockUow = unitOfWork;
     metrics = createMockMetrics();
     logger = createMockLogger();
-    useCase = new ApproveQuoteUseCase(mockUow, logger, metrics, mockRepos.statusHistory);
+    cache = createMockCache();
+    useCase = new ApproveQuoteUseCase(mockUow, logger, metrics, mockRepos.statusHistory, cache);
   });
 
   it('should approve quote, create WO services, WO parts, stock reservations and update work order', async () => {
@@ -250,5 +255,40 @@ describe('ApproveQuoteUseCase', () => {
 
       expect(metrics.record).not.toHaveBeenCalled();
     });
+  });
+
+  it('should delete the work order cache keys after the commit', async () => {
+    const quote = createMockQuote({
+      status: QuoteStatus.SENT,
+      services: [createMockQuoteService()],
+    });
+
+    const workOrder = createMockWorkOrder({
+      id: quote.workOrderId,
+      status: WorkOrderStatus.AWAITING_APPROVAL,
+    });
+
+    (mockRepos.quote.findByIdWithDetails as jest.Mock).mockResolvedValue(quote);
+    (mockRepos.workOrder.findByIdWithDetails as jest.Mock).mockResolvedValue(workOrder);
+    (mockRepos.partSupply.findByIds as jest.Mock).mockResolvedValue([]);
+    (mockRepos.quote.update as jest.Mock).mockResolvedValue(quote);
+    (mockRepos.workOrder.update as jest.Mock).mockResolvedValue(workOrder);
+    (mockRepos.statusHistory.create as jest.Mock).mockResolvedValue({});
+
+    await useCase.execute(quote.id, '550e8400-e29b-41d4-a716-446655440099');
+
+    expect(cache.delete).toHaveBeenCalledWith([workOrderCacheKey(workOrder.id)]);
+
+    expect(cache.delete.mock.invocationCallOrder[0]).toBeGreaterThan(
+      jest.mocked(mockRepos.workOrder.update).mock.invocationCallOrder[0],
+    );
+  });
+
+  it('should not touch the cache when the write fails', async () => {
+    mockUow.executeTransaction.mockRejectedValueOnce(new Error('commit failed'));
+
+    await expect(useCase.execute(randomUUID())).rejects.toThrow('commit failed');
+
+    expect(cache.delete).not.toHaveBeenCalled();
   });
 });

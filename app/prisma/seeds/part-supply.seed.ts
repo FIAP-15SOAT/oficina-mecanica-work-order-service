@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 import { PrismaClient, PartSupplyCategory, Unit } from '../generated/client';
+import { SEED_IDS } from './seed-ids';
 
 interface PartSupplySeed {
   name: string;
@@ -129,6 +130,7 @@ export async function seedPartSupplies(prisma: PrismaClient): Promise<Record<str
         minStock: part.minStock,
       },
       create: {
+        id: SEED_IDS.partSupplies[part.sku],
         name: part.name,
         description: part.description,
         sku: part.sku,

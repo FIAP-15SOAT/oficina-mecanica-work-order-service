@@ -6,11 +6,14 @@ import { IUserRepository } from '@domain/interfaces/repositories/user.repository
 
 import { UpdateWorkOrderDto } from '@application/ports/input/work-order/dto/update-work-order.dto';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
+import { ICache } from '@application/ports/output/cache.service.interface';
+import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 
 export class UpdateWorkOrderUseCase {
   constructor(
     private readonly workOrderRepository: IWorkOrderRepository,
     private readonly userRepository: IUserRepository,
+    private readonly cache: ICache,
   ) {}
 
   async execute(id: string, dto: UpdateWorkOrderDto): Promise<WorkOrder> {
@@ -34,6 +37,10 @@ export class UpdateWorkOrderUseCase {
 
     workOrder.update({ ...updateData, assignedUser });
 
-    return this.workOrderRepository.update(workOrder);
+    const saved = await this.workOrderRepository.update(workOrder);
+
+    await this.cache.delete([workOrderCacheKey(id)]);
+
+    return saved;
   }
 }

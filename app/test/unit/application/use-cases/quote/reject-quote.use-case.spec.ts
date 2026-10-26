@@ -15,8 +15,13 @@ import {
   arrangeStatusHistory,
   createMockStatusHistory,
 } from '../../../../helpers/status-history-mock.factory';
+import { ICache } from '@application/ports/output/cache.service.interface';
+import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
+import { createMockCache } from '../../../../helpers/cache-mock.factory';
+import { randomUUID } from 'node:crypto';
 
 describe('RejectQuoteUseCase', () => {
+  let cache: jest.Mocked<ICache>;
   let useCase: RejectQuoteUseCase;
   let logger: jest.Mocked<ILogger>;
   let mockRepos: jest.Mocked<IRepositories>;
@@ -29,7 +34,8 @@ describe('RejectQuoteUseCase', () => {
     mockUow = unitOfWork;
     metrics = createMockMetrics();
     logger = createMockLogger();
-    useCase = new RejectQuoteUseCase(mockUow, logger, metrics, mockRepos.statusHistory);
+    cache = createMockCache();
+    useCase = new RejectQuoteUseCase(mockUow, logger, metrics, mockRepos.statusHistory, cache);
   });
 
   it('should reject quote and update work order status to REJECTED', async () => {
@@ -187,5 +193,37 @@ describe('RejectQuoteUseCase', () => {
       expect(metrics.record).not.toHaveBeenCalled();
       expect(mockRepos.statusHistory.findByWorkOrderId).not.toHaveBeenCalled();
     });
+  });
+
+  it('should delete the work order cache keys after the commit', async () => {
+    const quote = createMockQuote({ status: QuoteStatus.SENT });
+
+    const workOrder = createMockWorkOrder({
+      id: quote.workOrderId,
+      status: WorkOrderStatus.AWAITING_APPROVAL,
+    });
+
+    (mockRepos.quote.findById as jest.Mock).mockResolvedValue(quote);
+    (mockRepos.workOrder.findById as jest.Mock).mockResolvedValue(workOrder);
+    (mockRepos.quote.findByWorkOrderId as jest.Mock).mockResolvedValue([quote]);
+    (mockRepos.workOrder.update as jest.Mock).mockResolvedValue(workOrder);
+    (mockRepos.quote.update as jest.Mock).mockResolvedValue(quote);
+    (mockRepos.statusHistory.create as jest.Mock).mockResolvedValue({});
+
+    await useCase.execute(quote.id, 'Preço alto', '550e8400-e29b-41d4-a716-446655440099');
+
+    expect(cache.delete).toHaveBeenCalledWith([workOrderCacheKey(workOrder.id)]);
+
+    expect(cache.delete.mock.invocationCallOrder[0]).toBeGreaterThan(
+      jest.mocked(mockRepos.workOrder.update).mock.invocationCallOrder[0],
+    );
+  });
+
+  it('should not touch the cache when the write fails', async () => {
+    mockUow.executeTransaction.mockRejectedValueOnce(new Error('commit failed'));
+
+    await expect(useCase.execute(randomUUID())).rejects.toThrow('commit failed');
+
+    expect(cache.delete).not.toHaveBeenCalled();
   });
 });

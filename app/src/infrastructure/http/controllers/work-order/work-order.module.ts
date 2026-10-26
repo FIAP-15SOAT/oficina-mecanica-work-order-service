@@ -15,6 +15,7 @@ import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status
 import { IQuoteRepository } from '@domain/interfaces/repositories/quote.repository.interface';
 import { ILogger } from '@application/ports/output/logger.service.interface';
 import { IMetrics } from '@application/ports/output/metrics.service.interface';
+import { ICache } from '@application/ports/output/cache.service.interface';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 
 import { WorkOrderController as WorkOrderCleanController } from '@interface-adapters/work-order/work-order.controller';
@@ -33,23 +34,26 @@ import { WorkOrderController } from './work-order.controller';
         quoteRepository: IQuoteRepository,
         logger: ILogger,
         metrics: IMetrics,
+        cache: ICache,
       ) =>
         new WorkOrderCleanController(
           new CreateWorkOrderUseCase(unitOfWork, metrics),
-          new FindWorkOrderByIdUseCase(workOrderRepository),
+          new FindWorkOrderByIdUseCase(workOrderRepository, userRepository, cache),
           new FindAllWorkOrdersPaginatedUseCase(workOrderRepository),
-          new UpdateWorkOrderUseCase(workOrderRepository, userRepository),
+          new UpdateWorkOrderUseCase(workOrderRepository, userRepository, cache),
           new UpdateWorkOrderStatusUseCase(
             unitOfWork,
             logger.forContext(UpdateWorkOrderStatusUseCase.name),
             metrics,
             statusHistoryRepository,
+            cache,
           ),
           new UpdateWorkOrderServiceStatusUseCase(
             unitOfWork,
             logger.forContext(UpdateWorkOrderServiceStatusUseCase.name),
             metrics,
             statusHistoryRepository,
+            cache,
           ),
           new FindWorkOrderStatusHistoryUseCase(statusHistoryRepository, workOrderRepository),
           new FindWorkOrderQuotesUseCase(quoteRepository, workOrderRepository),
@@ -62,8 +66,10 @@ import { WorkOrderController } from './work-order.controller';
         'IQuoteRepository',
         'ILogger',
         'IMetrics',
+        'ICache',
       ],
     },
   ],
+  exports: [WorkOrderCleanController],
 })
 export class WorkOrderModule {}

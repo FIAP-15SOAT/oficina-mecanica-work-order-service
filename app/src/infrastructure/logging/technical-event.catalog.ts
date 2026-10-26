@@ -89,4 +89,34 @@ export const TECHNICAL_EVENTS = {
     message: 'http request failed with a server error',
     level: 'error',
   }),
+  MESSAGING_OUTBOX_PUBLISH_FAILED: defineLogEvent<EmptyFields>({
+    name: 'messaging.outbox.publish_failed',
+    message: 'outbox message could not be published',
+    level: 'error',
+  }),
+  MESSAGING_MESSAGE_UNHANDLED: defineLogEvent<EmptyFields>({
+    name: 'messaging.message.unhandled',
+    message: 'message received without a registered handler',
+    level: 'warn',
+  }),
+  MESSAGING_MESSAGE_FAILED: defineLogEvent<EmptyFields>({
+    name: 'messaging.message.failed',
+    message: 'message processing failed',
+    level: 'error',
+  }),
+  MESSAGING_MESSAGE_DEAD_LETTERED: defineLogEvent<EmptyFields>({
+    name: 'messaging.message.dead_lettered',
+    message: 'message failed on its last delivery and goes to the dead-letter queue',
+    level: 'error',
+  }),
+  CACHE_UNAVAILABLE: defineLogEvent<EmptyFields>({
+    name: 'cache.unavailable',
+    message: 'cache command failed, falling back to the database',
+    level: 'warn',
+  }),
+  CACHE_INVALIDATION_FAILED: defineLogEvent<EmptyFields>({
+    name: 'cache.invalidation_failed',
+    message: 'cache keys could not be deleted after a write',
+    level: 'error',
+  }),
 } as const;
