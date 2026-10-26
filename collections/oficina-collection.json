@@ -358,9 +358,9 @@
                   "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
                   "pm.test('Retorna accessToken externo', () => {",
                   "    const response = pm.response.json();",
-                  "    pm.expect(response).to.have.property('accessToken');",
-                  "    pm.expect(response.accessToken).to.be.a('string').and.not.empty;",
-                  "    pm.environment.set('customerJwtToken', response.accessToken);",
+                  "    pm.expect(response.data).to.have.property('accessToken');",
+                  "    pm.expect(response.data.accessToken).to.be.a('string').and.not.empty;",
+                  "    pm.environment.set('customerJwtToken', response.data.accessToken);",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -2735,7 +2735,7 @@
                   "    pm.expect(res.data.id).to.be.a('string').and.not.empty;",
                   "    pm.environment.set('customerId', res.data.id);",
                   "    pm.expect(res.data.name).to.equal('João da Silva');",
-                  "    pm.expect(res.data.document).to.equal('929.362.770-19');",
+                  "    pm.expect(res.data.document).to.equal('92936277019');",
                   "    pm.expect(res.data.type).to.equal('INDIVIDUAL');",
                   "    pm.expect(res.data.email).to.equal('joao3@oficina-test.com');",
                   "});"
@@ -2788,7 +2788,7 @@
                   "    const res = pm.response.json();",
                   "    pm.expect(res.data.id).to.be.a('string').and.not.empty;",
                   "    pm.expect(res.data.type).to.equal('COMPANY');",
-                  "    pm.expect(res.data.document).to.equal('12.345.678/0001-95');",
+                  "    pm.expect(res.data.document).to.equal('11222333000181');",
                   "    pm.environment.set('customerId2', res.data.id);",
                   "});"
                 ],
@@ -2806,7 +2806,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\"name\": \"Empresa ABC Ltda\", \"document\": \"12.345.678/0001-95\", \"type\": \"COMPANY\", \"email\": \"empresa@oficina-test.com\", \"phone\": \"(11) 88888-8888\", \"address\": {\"street\": \"Av. Paulista, 1000\", \"city\": \"São Paulo\", \"state\": \"SP\", \"zipCode\": \"01310-200\"}}",
+              "raw": "{\"name\": \"Empresa ABC Ltda\", \"document\": \"11.222.333/0001-81\", \"type\": \"COMPANY\", \"email\": \"empresa@oficina-test.com\", \"phone\": \"(11) 88888-8888\", \"address\": {\"street\": \"Av. Paulista, 1000\", \"city\": \"São Paulo\", \"state\": \"SP\", \"zipCode\": \"01310-200\"}}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3528,7 +3528,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Doc Tipo Errado PF\",\n  \"document\": \"12.345.678/0001-95\",\n  \"type\": \"INDIVIDUAL\",\n  \"email\": \"cust19@oficina-test.com\",\n  \"phone\": \"(11) 11111-1111\",\n  \"address\": {\n    \"street\": \"Rua Teste, 19\",\n    \"city\": \"São Paulo\",\n    \"state\": \"SP\",\n    \"zipCode\": \"01310-100\"\n  }\n}",
+              "raw": "{\n  \"name\": \"Doc Tipo Errado PF\",\n  \"document\": \"11.222.333/0001-81\",\n  \"type\": \"INDIVIDUAL\",\n  \"email\": \"cust19@oficina-test.com\",\n  \"phone\": \"(11) 11111-1111\",\n  \"address\": {\n    \"street\": \"Rua Teste, 19\",\n    \"city\": \"São Paulo\",\n    \"state\": \"SP\",\n    \"zipCode\": \"01310-100\"\n  }\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4848,7 +4848,7 @@
           ]
         },
         {
-          "name": "TC-ACC-04 — Ativar/desativar um cliente",
+          "name": "TC-ACC-04 — Desativar um cliente (204)",
           "request": {
             "method": "PATCH",
             "header": [
@@ -4871,6 +4871,50 @@
             "body": {
               "mode": "raw",
               "raw": "{\r\n    \"isActive\": false\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-ACC-04B — Reativar o cliente (204)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/{{customerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "customers",
+                "{{customerId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"isActive\": true\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5068,7 +5112,7 @@
                   "    const res = pm.response.json();",
                   "    pm.expect(res.data.id).to.be.a('string').and.not.empty;",
                   "    pm.environment.set('vehicleId', res.data.id);",
-                  "    pm.expect(res.data.plate).to.equal('ABC-1234');",
+                  "    pm.expect(res.data.plate).to.equal('QWE4321');",
                   "    pm.expect(res.data.brand).to.equal('Toyota');",
                   "    pm.expect(res.data.model).to.equal('Corolla');",
                   "    pm.expect(res.data.year).to.equal(2020);",
@@ -5092,7 +5136,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n    \"customerId\": \"{{customerId}}\",\r\n    \"plate\": \"ABC-1234\",\r\n    \"brand\": \"Toyota\",\r\n    \"model\": \"Corolla\",\r\n    \"year\": 2020,\r\n    \"color\": \"Prata\",\r\n    \"mileage\": 15000\r\n}",
+              "raw": "{\r\n    \"customerId\": \"{{customerId}}\",\r\n    \"plate\": \"QWE-4321\",\r\n    \"brand\": \"Toyota\",\r\n    \"model\": \"Corolla\",\r\n    \"year\": 2020,\r\n    \"color\": \"Prata\",\r\n    \"mileage\": 15000\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5226,7 +5270,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\"customerId\":\"{{customerId}}\",\"plate\":\"ABC-1234\",\"brand\":\"Fiat\",\"model\":\"Uno\",\"year\":2018}",
+              "raw": "{\"customerId\":\"{{customerId}}\",\"plate\":\"QWE-4321\",\"brand\":\"Fiat\",\"model\":\"Uno\",\"year\":2018}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -5516,7 +5560,7 @@
                   "pm.test('Retorna veículo com cliente aninhado', () => {",
                   "    const res = pm.response.json();",
                   "    pm.expect(res.data.id).to.equal(pm.environment.get('vehicleId'));",
-                  "    pm.expect(res.data.plate).to.equal('ABC-1234');",
+                  "    pm.expect(res.data.plate).to.equal('QWE4321');",
                   "    pm.expect(res.data.customer).to.have.property('id');",
                   "    pm.expect(res.data.customer).to.have.property('name');",
                   "});"
@@ -5600,7 +5644,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\"customerId\": \"{{customerId}}\", \"plate\": \"ABC-1234\", \"brand\": \"Honda\", \"model\": \"Corolla\", \"year\": 2020, \"mileage\": 20000}",
+              "raw": "{\"customerId\": \"{{customerId}}\", \"plate\": \"QWE-4321\", \"brand\": \"Honda\", \"model\": \"Corolla\", \"year\": 2020, \"mileage\": 20000}",
               "options": {
                 "raw": {
                   "language": "json"
