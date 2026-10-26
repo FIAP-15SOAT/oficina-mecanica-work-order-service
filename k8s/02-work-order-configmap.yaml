@@ -9,8 +9,10 @@ metadata:
 data:
   NODE_ENV: production
   PORT: "3000"
-  JWT_EXPIRATION: "15m"
-  JWT_REFRESH_EXPIRATION: "7d"
+  STAFF_JWT_ISSUER: "oficina-identity"
+  STAFF_JWT_AUDIENCE: "oficina-services"
+  STAFF_JWT_EXPIRATION: "10m"
+  STAFF_JWT_REFRESH_EXPIRATION: "7d"
   BCRYPT_SALT_ROUNDS: "12"
   MAIL_HOST: "mailhog.platform.svc.cluster.local"
   MAIL_PORT: "1025"
