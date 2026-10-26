@@ -41,6 +41,7 @@ describe('AuthenticateUserUseCase', () => {
     expect(tokenService.signTokenPair).toHaveBeenCalledWith({
       sub: user.id,
       email: user.email.value,
+      name: user.name,
       role: user.role,
     });
   });

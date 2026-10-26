@@ -83,6 +83,7 @@ export class RefreshTokenUseCase {
     const newTokenPair: TokenPair = this.tokenService.signTokenPair({
       sub: user.id,
       email: user.email.value,
+      name: user.name,
       role: user.role,
     });
 

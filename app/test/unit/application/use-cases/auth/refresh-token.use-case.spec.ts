@@ -34,6 +34,7 @@ describe('RefreshTokenUseCase', () => {
     expect(tokenService.signTokenPair).toHaveBeenCalledWith({
       sub: user.id,
       email: user.email.value,
+      name: user.name,
       role: user.role,
     });
   });
@@ -87,6 +88,7 @@ describe('RefreshTokenUseCase', () => {
     tokenService.verifyRefreshToken.mockReturnValue({
       sub: user.id,
       email: user.email.value,
+      name: user.name,
       role: user.role,
       iat: Math.floor((passwordChangedAt.getTime() - 60_000) / 1000),
     });

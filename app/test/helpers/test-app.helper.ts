@@ -23,6 +23,14 @@ import {
   CUSTOMER_JWT_TEST_ISSUER,
   CUSTOMER_JWT_TEST_AUDIENCE,
 } from './customer-jwt.helper';
+import {
+  STAFF_JWT_TEST_AUDIENCE,
+  STAFF_JWT_TEST_ISSUER,
+  STAFF_JWT_TEST_KEY_ID,
+  STAFF_JWT_TEST_PRIVATE_KEY,
+  STAFF_JWT_TEST_PUBLIC_KEY,
+  STAFF_REFRESH_TEST_PRIVATE_KEY,
+} from './staff-jwt.helper';
 
 export interface LogCapture {
   lines(): Record<string, unknown>[];
@@ -147,10 +155,14 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
   process.env.MAIL_PORT = mailhogContainer.getMappedPort(1025).toString();
   process.env.CACHE_URL = valkeyContainer.getConnectionUrl();
   process.env.CACHE_TTL_SECONDS = '43200';
-  process.env.JWT_SECRET = 'test-jwt-secret-key-for-e2e';
-  process.env.JWT_EXPIRATION = '15m';
-  process.env.JWT_REFRESH_SECRET = 'test-jwt-refresh-secret-key-for-e2e';
-  process.env.JWT_REFRESH_EXPIRATION = '7d';
+  process.env.STAFF_JWT_PRIVATE_KEY = STAFF_JWT_TEST_PRIVATE_KEY;
+  process.env.STAFF_JWT_PUBLIC_KEY = STAFF_JWT_TEST_PUBLIC_KEY;
+  process.env.STAFF_JWT_KEY_ID = STAFF_JWT_TEST_KEY_ID;
+  process.env.STAFF_JWT_ISSUER = STAFF_JWT_TEST_ISSUER;
+  process.env.STAFF_JWT_AUDIENCE = STAFF_JWT_TEST_AUDIENCE;
+  process.env.STAFF_JWT_EXPIRATION = '10m';
+  process.env.STAFF_JWT_REFRESH_PRIVATE_KEY = STAFF_REFRESH_TEST_PRIVATE_KEY;
+  process.env.STAFF_JWT_REFRESH_EXPIRATION = '7d';
   process.env.CUSTOMER_JWT_PUBLIC_KEY = CUSTOMER_JWT_TEST_PUBLIC_KEY;
   process.env.CUSTOMER_JWT_ISSUER = CUSTOMER_JWT_TEST_ISSUER;
   process.env.CUSTOMER_JWT_AUDIENCE = CUSTOMER_JWT_TEST_AUDIENCE;

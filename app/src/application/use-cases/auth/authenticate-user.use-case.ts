@@ -65,7 +65,13 @@ export class AuthenticateUserUseCase {
       throw new UnauthorizedAccessException(INVALID_CREDENTIALS_MESSAGE);
     }
 
-    const payload = { sub: user.id, email: user.email.value, role: user.role };
+    const payload = {
+      sub: user.id,
+      email: user.email.value,
+      name: user.name,
+      role: user.role,
+    };
+
     const { accessToken, refreshToken } = this.tokenService.signTokenPair(payload);
 
     this.logger.event(BUSINESS_EVENTS.AUTHENTICATION_SUCCEEDED, {

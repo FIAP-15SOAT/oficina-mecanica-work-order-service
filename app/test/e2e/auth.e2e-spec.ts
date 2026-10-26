@@ -2,11 +2,21 @@ import { Controller, Get } from '@nestjs/common';
 import type { Server } from 'http';
 import type { StartedTestContainer } from 'testcontainers';
 import * as bcrypt from 'bcrypt';
-import { sign } from 'jsonwebtoken';
+import { generateKeyPairSync } from 'node:crypto';
+import { decode, JwtPayload, sign, verify } from 'jsonwebtoken';
 import request from 'supertest';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import { registerAndLogin } from '../helpers/auth.helper';
+import { signTestCustomerToken } from '../helpers/customer-jwt.helper';
+import {
+  STAFF_JWT_TEST_KEY_ID,
+  STAFF_JWT_TEST_PRIVATE_KEY,
+  STAFF_JWT_TEST_PUBLIC_KEY,
+  STAFF_REFRESH_TEST_PUBLIC_KEY,
+  signTestRefreshToken,
+  signTestStaffToken,
+} from '../helpers/staff-jwt.helper';
 
 interface MailhogMessage {
   Created: string;
@@ -281,16 +291,131 @@ describe('Auth (E2E)', () => {
         },
       });
 
-      const forgedRefreshToken = sign(
-        { sub: user.id, email: user.email, role: null },
-        process.env.JWT_REFRESH_SECRET!,
-        { expiresIn: '7d' },
-      );
+      const forgedRefreshToken = signTestRefreshToken({
+        sub: user.id,
+        email: user.email,
+        name: user.name,
+        role: null,
+      });
 
       await request(httpServer)
         .post('/api/auth/refresh')
         .send({ refreshToken: forgedRefreshToken })
         .expect(401);
+    });
+  });
+
+  // ─── Staff token profile (RS256) ─────────────────────────────────────────
+
+  describe('Staff token profile', () => {
+    const staffClaims = {
+      sub: '00000000-0000-4000-8000-000000000001',
+      email: 'profile@e2e.test',
+      name: 'Profile User',
+      role: 'ADMIN',
+    };
+
+    const otherKey = generateKeyPairSync('rsa', {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+    }).privateKey;
+
+    it('issues an access token that a service validates with only the public key and kid', async () => {
+      const auth = await registerAndLogin(
+        httpServer,
+        { name: 'Contract User', email: 'contract@e2e.test' },
+        ctx.prisma,
+      );
+
+      const { header } = decode(auth.accessToken, { complete: true })!;
+
+      const claims = verify(auth.accessToken, STAFF_JWT_TEST_PUBLIC_KEY, {
+        algorithms: ['RS256'],
+        issuer: 'oficina-identity',
+        audience: 'oficina-services',
+      }) as JwtPayload;
+
+      expect(header).toMatchObject({
+        alg: 'RS256',
+        kid: STAFF_JWT_TEST_KEY_ID,
+      });
+
+      expect(claims).toMatchObject({
+        sub: auth.user.id,
+        email: 'contract@e2e.test',
+        name: 'Contract User',
+        role: 'ADMIN',
+        typ: 'access',
+      });
+      expect(claims.exp! - claims.iat!).toBe(600);
+    });
+
+    it('issues a refresh token with its own audience and type', async () => {
+      const auth = await registerAndLogin(
+        httpServer,
+        { email: 'refresh-profile@e2e.test' },
+        ctx.prisma,
+      );
+
+      const claims = verify(auth.refreshToken, STAFF_REFRESH_TEST_PUBLIC_KEY, {
+        algorithms: ['RS256'],
+        issuer: 'oficina-identity',
+        audience: 'oficina-identity',
+      }) as JwtPayload;
+
+      expect(claims.typ).toBe('refresh');
+      expect(claims.exp! - claims.iat!).toBe(604800);
+    });
+
+    it.each([
+      ['HS256', () => sign({ ...staffClaims, typ: 'access' }, 'secret', { algorithm: 'HS256' })],
+      [
+        'without kid',
+        () =>
+          sign({ ...staffClaims, typ: 'access' }, STAFF_JWT_TEST_PRIVATE_KEY, {
+            algorithm: 'RS256',
+            issuer: 'oficina-identity',
+            audience: 'oficina-services',
+            expiresIn: 600,
+          }),
+      ],
+      ['with another kid', () => signTestStaffToken(staffClaims, { keyid: 'other-kid' })],
+      ['signed by another RS256 key', () => signTestStaffToken(staffClaims, {}, otherKey)],
+      ['with another issuer', () => signTestStaffToken(staffClaims, { issuer: 'other' })],
+      ['with another audience', () => signTestStaffToken(staffClaims, { audience: 'oficina-api' })],
+      ['from the customer flow', () => signTestCustomerToken(staffClaims.sub)],
+      ['refresh sent as access', () => signTestRefreshToken(staffClaims)],
+    ])('rejects a token %s on a staff route with 401', async (_case, token) => {
+      await ctx.prisma.user.create({
+        data: {
+          id: staffClaims.sub,
+          name: staffClaims.name,
+          email: staffClaims.email,
+          passwordHash: 'x',
+          role: 'ADMIN',
+        },
+      });
+
+      await request(httpServer)
+        .get('/api/unmarked-test-route')
+        .set('Authorization', `Bearer ${token()}`)
+        .expect(401);
+    });
+
+    it('rejects an access token sent to POST /api/auth/refresh', async () => {
+      const auth = await registerAndLogin(
+        httpServer,
+        { email: 'access-as-refresh@e2e.test' },
+        ctx.prisma,
+      );
+
+      const res = await request(httpServer)
+        .post('/api/auth/refresh')
+        .send({ refreshToken: auth.accessToken })
+        .expect(401);
+
+      expect(res.body.data).toBeUndefined();
     });
   });
 
@@ -411,11 +536,12 @@ describe('Auth (E2E)', () => {
 
       // Token assinado para o alvo antes do reset — prova que a confirmação
       // por código também invalida sessões antigas, não só a troca autenticada.
-      const tokenIssuedBeforeReset = sign(
-        { sub: targetUserId, email: targetEmail, role: 'ATTENDANT' },
-        process.env.JWT_SECRET!,
-        { expiresIn: '15m' },
-      );
+      const tokenIssuedBeforeReset = signTestStaffToken({
+        sub: targetUserId,
+        email: targetEmail,
+        name: 'Target User',
+        role: 'ATTENDANT',
+      });
 
       // iat tem granularidade de segundo; garante que a confirmação do reset
       // cai num segundo seguinte ao da assinatura, para não colidir por
