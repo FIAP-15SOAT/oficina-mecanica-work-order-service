@@ -1,4 +1,5 @@
 import { context, metrics, propagation, SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
+import { isTracingSuppressed, suppressTracing } from '@opentelemetry/core';
 import {
   AggregationTemporality,
   InMemoryMetricExporter,
@@ -152,6 +153,18 @@ describe('SqsConsumerService', () => {
         }),
       );
       expect(consumer.start).toHaveBeenCalled();
+    });
+
+    it('should start polling with tracing suppressed, so receive and delete calls create no spans', async () => {
+      let suppressed: boolean | undefined;
+
+      consumer.start.mockImplementation(() => {
+        suppressed = isTracingSuppressed(context.active());
+      });
+
+      await service.onApplicationBootstrap();
+
+      expect(suppressed).toBe(true);
     });
 
     it('should log errors from the consumer', async () => {
@@ -470,6 +483,31 @@ describe('SqsConsumerService', () => {
         {},
         error,
       );
+    });
+
+    it('should still trace the message and its handler when the polling context suppresses tracing', async () => {
+      let handlerSuppressed: boolean | undefined;
+
+      registry.register(
+        'inventory.stock.reserved',
+        jest.fn(() => {
+          handlerSuppressed = isTracingSuppressed(context.active());
+          return Promise.resolve();
+        }),
+        ReservedPayload,
+      );
+
+      await context.with(suppressTracing(context.active()), () =>
+        service.handleMessage(createMessage({}, 1, { traceparent: true })),
+      );
+
+      const [span] = spanExporter.getFinishedSpans();
+
+      expect(span.name).toBe('process work-order.fifo');
+
+      expect(span.spanContext().traceId).toBe(TRACE_ID);
+
+      expect(handlerSuppressed).toBe(false);
     });
 
     it('should open a CONSUMER span named process work-order.fifo, child of the traceparent attribute', async () => {

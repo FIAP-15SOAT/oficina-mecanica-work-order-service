@@ -188,7 +188,7 @@ app/test/
 ├── helpers/                         # Mock factories reutilizáveis (incluindo
 │                                    # UnitOfWorkMockFactory) e helpers de E2E
 │                                    # (auth, db cleanup, test app bootstrap)
-├── unit/                            # 229 suites de testes unitários (espelham src/)
+├── unit/                            # 230 suites de testes unitários (espelham src/)
 │   ├── domain/                      # entities/, value-objects/, validators/
 │   ├── application/use-cases/       # auth, customer, customer-access, me,
 │   │                                # part-supply, quote, service, stock, user,

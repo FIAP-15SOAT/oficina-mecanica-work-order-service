@@ -24,7 +24,7 @@ Os scripts rodam o Jest como `node --experimental-vm-modules node_modules/jest/b
 
 As suítes cobrem todas as camadas (`application/`, `domain/` — incluindo entidades, value objects e validators —, `interface-adapters/` e `infrastructure/`). Use-cases são instanciados diretamente com mocks do tipo `jest.Mocked<IRepository>` (ou `jest.Mocked<IUnitOfWork>` onde aplicável) — sem NestJS DI, sem banco de dados. Os Clean Controllers são instanciados diretamente com use-cases mockados; a borda HTTP (`@Controller` fino) é exercitada via `jest.spyOn` no Clean Controller real. As factories de mocks (incluindo `UnitOfWorkMockFactory`) estão em `test/helpers/`, organizadas por entidade.
 
-229 suites e 2219 testes, com **100% de cobertura em lines, statements, functions e branches**. O piso é declarado em `package.json` → `jest.coverageThreshold`, então `npm run test:cov` (e com ele o job `unit-tests` do CI) falha quando qualquer uma das quatro métricas cai abaixo de 100% — foi assim que a cobertura voltou a ser um contrato verificado em vez de um número observado.
+230 suites e 2243 testes, com **100% de cobertura em lines, statements, functions e branches**. O piso é declarado em `package.json` → `jest.coverageThreshold`, então `npm run test:cov` (e com ele o job `unit-tests` do CI) falha quando qualquer uma das quatro métricas cai abaixo de 100% — foi assim que a cobertura voltou a ser um contrato verificado em vez de um número observado.
 
 A cobertura é coletada em todo `src/**` (todas as camadas — `domain/`, `application/`, `interface-adapters/` e `infrastructure/`). As exclusões são por sufixo/caminho, não por camada: `*.module.ts`, `main.ts`, `otel.ts`, `*.enums.ts`, `*.config.ts`, `*.exception.ts`, `*.dto.ts`, `infrastructure/persistence/prisma/prisma.service.ts` e `domain/constants/**` (ver `package.json` → `jest.collectCoverageFrom`). Os arquivos gerados pelo Prisma ficam de fora por viverem em `prisma/generated/`, fora de `src/`.
 
@@ -105,7 +105,7 @@ Toda suíte E2E sobe, além do PostgreSQL, um **Valkey real** (`valkey/valkey:9.
 | Sem handler | Mensagem sem handler registrado não é confirmada e volta a ser entregue |
 | Campos de log | As linhas da mensageria só emitem campos declarados no dicionário |
 
-O cache tem e2e próprio em `work-order.e2e-spec.ts` (`GET /api/work-orders/:id — cache`): a segunda leitura sai do cache com o mesmo corpo, a mudança de status e a troca de placa do veículo aparecem na leitura seguinte (a invalidação depois do commit funciona), e, com o Valkey pausado, a rota responde pelo PostgreSQL e registra `cache.unavailable`.
+O cache tem e2e próprio em `work-order.e2e-spec.ts` (`GET /api/work-orders/:id — cache`): a segunda leitura sai do cache com o mesmo corpo, a mudança de status e a troca de placa do veículo aparecem na leitura seguinte (a invalidação depois do commit funciona), renomear um serviço não muda o nome no detalhe em cache (escrita de catálogo não invalida a OS) e, com o Valkey pausado, a rota responde pelo PostgreSQL e registra `cache.unavailable`.
 
 ## Contrato das rotas `/internal`
 
