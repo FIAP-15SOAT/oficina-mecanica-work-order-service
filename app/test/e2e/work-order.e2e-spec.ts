@@ -1987,6 +1987,57 @@ describe('WorkOrder (E2E)', () => {
       expect((await getDetail(id)).body.data.vehicle.plate).toBe('XYZ9876');
     });
 
+    it('should keep the cached service name after the service is renamed', async () => {
+      const { id } = await createCachedWorkOrder();
+
+      await request(httpServer)
+        .patch(`/api/work-orders/${id}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ status: 'IN_DIAGNOSIS' })
+        .expect(200);
+
+      const service = await createService();
+      const quoteRes = await request(httpServer)
+        .post('/api/quotes')
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ workOrderId: id })
+        .expect(201);
+
+      const quoteId = quoteRes.body.data.id as string;
+
+      await request(httpServer)
+        .post(`/api/quotes/${quoteId}/services`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ serviceId: service.id, quantity: 1 })
+        .expect(200);
+
+      await request(httpServer)
+        .post(`/api/quotes/${quoteId}/submissions`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .expect(200);
+
+      await request(httpServer)
+        .patch(`/api/quotes/${quoteId}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ status: 'APPROVED' })
+        .expect(200);
+
+      const cachedName = (await getDetail(id)).body.data.services[0].name as string;
+
+      await request(httpServer)
+        .put(`/api/services/${service.id}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({
+          name: 'Serviço renomeado',
+          description: 'Troca de óleo do motor',
+          basePrice: 150,
+          estimatedTimeMin: 30,
+        })
+        .expect(200);
+
+      expect((await getDetail(id)).body.data.services[0].name).toBe(cachedName);
+    });
+
     it('should answer from PostgreSQL when the cache is down', async () => {
       const { id } = await createCachedWorkOrder();
       ctx.logCapture!.clear();
