@@ -2,7 +2,7 @@
 
 ## Status
 
-Aceito — 2026-09-07
+Substituído pelo [ADR 0022](0022-token-de-funcionario-em-rs256.md) em 2026-10-26 (aceito em 2026-09-07). O token de funcionário passou a RS256, com `iss`, `aud`, `kid` e access de 10 minutos; o par access/refresh, a revalidação no banco e a invalidação por `passwordChangedAt` descritos aqui continuam valendo.
 
 ## Contexto
 

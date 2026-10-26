@@ -46,10 +46,14 @@ services:
       NODE_ENV: production
       PORT: 3000
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/techchallenge?schema=public
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
-      JWT_EXPIRATION: ${JWT_EXPIRATION:-15m}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-me-refresh-in-production}
-      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
+      STAFF_JWT_PRIVATE_KEY: ${STAFF_JWT_PRIVATE_KEY:?Gere as chaves RS256 de funcionário conforme docs/local-setup.md}
+      STAFF_JWT_PUBLIC_KEY: ${STAFF_JWT_PUBLIC_KEY:?Gere as chaves RS256 de funcionário conforme docs/local-setup.md}
+      STAFF_JWT_KEY_ID: ${STAFF_JWT_KEY_ID:-staff-local}
+      STAFF_JWT_ISSUER: ${STAFF_JWT_ISSUER:-oficina-identity}
+      STAFF_JWT_AUDIENCE: ${STAFF_JWT_AUDIENCE:-oficina-services}
+      STAFF_JWT_EXPIRATION: ${STAFF_JWT_EXPIRATION:-10m}
+      STAFF_JWT_REFRESH_PRIVATE_KEY: ${STAFF_JWT_REFRESH_PRIVATE_KEY:?Gere as chaves RS256 de funcionário conforme docs/local-setup.md}
+      STAFF_JWT_REFRESH_EXPIRATION: ${STAFF_JWT_REFRESH_EXPIRATION:-7d}
       BCRYPT_SALT_ROUNDS: ${BCRYPT_SALT_ROUNDS:-12}
       CUSTOMER_JWT_PUBLIC_KEY: ${CUSTOMER_JWT_PUBLIC_KEY:------BEGIN PUBLIC KEY-----\nMIIB...\n-----END PUBLIC KEY-----}
       CUSTOMER_JWT_ISSUER: ${CUSTOMER_JWT_ISSUER:-oficina-customer-auth}

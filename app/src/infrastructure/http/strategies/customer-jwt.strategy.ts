@@ -7,6 +7,7 @@ import { IUserRepository } from '@domain/interfaces/repositories/user.repository
 import { IUserCustomerRepository } from '@domain/interfaces/repositories/user-customer.repository.interface';
 import { AuthenticatedPrincipal } from '@application/ports/output/authenticated-principal';
 import { AuthFlow } from '@domain/enums/auth-flow.enum';
+import { readPemKey } from '@infrastructure/utils/read-pem-key.util';
 
 interface CustomerJwtClaims {
   sub: string;
@@ -17,11 +18,9 @@ interface CustomerJwtClaims {
 }
 
 /**
- * Estratégia Passport totalmente isolada da interna: verifica
- * RS256 com a chave pública, emissor e audiência do token externo. Nunca
- * compartilha verificador com a JwtStrategy — elimina a classe de ataque de
- * confusão de algoritmo por construção (a HS256 nunca alcança este código, e
- * este RS256 nunca alcança o verificador HS256 da JwtStrategy).
+ * Passport strategy fully isolated from the staff one: both are RS256, but
+ * each has its own public key, issuer and audience, so a staff token never
+ * passes here and a customer token never passes the JwtStrategy.
  */
 @Injectable()
 export class CustomerJwtStrategy extends PassportStrategy(Strategy, 'customer-jwt') {
@@ -35,32 +34,11 @@ export class CustomerJwtStrategy extends PassportStrategy(Strategy, 'customer-jw
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: CustomerJwtStrategy.resolvePublicKey(configService),
+      secretOrKey: readPemKey(configService, 'CUSTOMER_JWT_PUBLIC_KEY', 'PUBLIC'),
       algorithms: ['RS256'],
       issuer: configService.getOrThrow<string>('CUSTOMER_JWT_ISSUER'),
       audience: configService.getOrThrow<string>('CUSTOMER_JWT_AUDIENCE'),
     });
-  }
-
-  /**
-   * Falha cedo, com uma mensagem que aponta a causa, em vez de deixar o
-   * passport-jwt estourar um `TypeError: JwtStrategy requires a secret or key`
-   * genérico no bootstrap — o cenário mais comum é o secret não cadastrado
-   * (string vazia) ou colado num formato que não é PEM.
-   */
-  private static resolvePublicKey(configService: ConfigService): string {
-    const publicKey = configService
-      .getOrThrow<string>('CUSTOMER_JWT_PUBLIC_KEY')
-      .replaceAll(String.raw`\n`, '\n');
-
-    if (!publicKey.includes('BEGIN PUBLIC KEY')) {
-      throw new Error(
-        'CUSTOMER_JWT_PUBLIC_KEY não é uma chave pública PEM válida ' +
-          '(esperado um bloco "-----BEGIN PUBLIC KEY-----")',
-      );
-    }
-
-    return publicKey;
   }
 
   async validate(payload: CustomerJwtClaims): Promise<AuthenticatedPrincipal> {

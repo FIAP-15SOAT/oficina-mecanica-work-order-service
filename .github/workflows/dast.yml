@@ -40,6 +40,25 @@ jobs:
           openssl rsa -in /tmp/customer-jwt.key -pubout -out /tmp/customer-jwt.pub
           echo "CUSTOMER_JWT_PUBLIC_KEY=$(awk 'NF {sub(/\r/, ""); printf "%s\\n", $0}' /tmp/customer-jwt.pub)" >> "$GITHUB_ENV"
 
+      # Pares efêmeros do token de funcionário (access e refresh), só para este run.
+      - name: Generate ephemeral RS256 key pairs for the staff tokens
+        run: |
+          pem_line() { awk 'NF {sub(/\r/, ""); printf "%s\\n", $0}' "$1"; }
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /tmp/staff-jwt.key
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /tmp/staff-refresh.key
+          openssl pkey -in /tmp/staff-jwt.key -pubout -out /tmp/staff-jwt.pub
+          staff_private="$(pem_line /tmp/staff-jwt.key)"
+          refresh_private="$(pem_line /tmp/staff-refresh.key)"
+          echo "::add-mask::$staff_private"
+          echo "::add-mask::$refresh_private"
+          {
+            echo "STAFF_JWT_PRIVATE_KEY=$staff_private"
+            echo "STAFF_JWT_REFRESH_PRIVATE_KEY=$refresh_private"
+            echo "STAFF_JWT_PUBLIC_KEY=$(pem_line /tmp/staff-jwt.pub)"
+            echo "STAFF_JWT_KEY_ID=staff-dast"
+          } >> "$GITHUB_ENV"
+          rm /tmp/staff-jwt.key /tmp/staff-refresh.key
+
       - name: Start the target stack and wait for it to become healthy
         run: |
           if ! docker compose up -d --build --wait --wait-timeout "$STACK_WAIT_TIMEOUT"; then

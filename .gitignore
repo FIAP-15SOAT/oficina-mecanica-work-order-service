@@ -32,3 +32,6 @@ CLAUDE.md
 !.github/actions/
 openspec/
 superpowers/
+
+# Private keys (PEM) never enter the repository
+*.pem

@@ -57,7 +57,7 @@ spec:
             - configMapRef:
                 name: work-order-config
             - secretRef:
-                name: api-secret
+                name: jwt-private-keys
             - secretRef:
                 name: database-credentials
             - secretRef:

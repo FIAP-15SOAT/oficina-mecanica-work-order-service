@@ -490,7 +490,7 @@ describe('Me (E2E)', () => {
 
       expect(crossAccessResponse.status).toBe(404);
 
-      // An internal (HS256) token is rejected on the external-only route
+      // A staff token is rejected on the external-only route
       const internalTokenOnExternalRoute = await request(httpServer)
         .get('/api/me/work-orders')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`);

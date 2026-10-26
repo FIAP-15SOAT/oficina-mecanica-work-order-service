@@ -107,6 +107,18 @@
                   "    const res = pm.response.json();",
                   "    pm.expect(res.data).to.have.property('refreshToken');",
                   "    pm.environment.set('refreshToken', res.data.refreshToken);",
+                  "});",
+                  "pm.test('Access token RS256 com perfil de funcionário e validade de 10 min', () => {",
+                  "    const decode = (part) => JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')));",
+                  "    const [header, payload] = pm.response.json().data.accessToken.split('.');",
+                  "    const jwtHeader = decode(header);",
+                  "    const claims = decode(payload);",
+                  "    pm.expect(jwtHeader.alg).to.equal('RS256');",
+                  "    pm.expect(jwtHeader.kid).to.be.a('string').and.not.empty;",
+                  "    pm.expect(claims.typ).to.equal('access');",
+                  "    pm.expect(claims.iss).to.equal('oficina-identity');",
+                  "    pm.expect(claims.aud).to.equal('oficina-services');",
+                  "    pm.expect(claims.exp - claims.iat).to.equal(600);",
                   "});"
                 ],
                 "type": "text/javascript",
@@ -145,7 +157,8 @@
                 "auth",
                 "login"
               ]
-            }
+            },
+            "description": "Login de funcionário. O `accessToken` é um JWT RS256 com `kid` no cabeçalho, `iss = oficina-identity`, `aud = oficina-services`, `typ = access` e validade de 10 minutos; o `refreshToken` vale 7 dias. O script guarda os dois no environment (`authToken` e `refreshToken`)."
           },
           "response": []
         },

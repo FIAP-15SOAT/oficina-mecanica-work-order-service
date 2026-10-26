@@ -112,21 +112,35 @@ jobs:
           fi
 
       # Falha rápido e com causa explícita, antes de gastar uma autenticação AWS e
-      # um kubectl apply: sem este secret, o Secret do cluster sobe com um valor
-      # vazio ou malformado, o pod da API entra em CrashLoopBackOff, e o
-      # TypeError do passport-jwt no log do pod não diz o que realmente faltou.
+      # um kubectl apply: sem estas chaves, os Secrets do cluster sobem com valores
+      # vazios ou malformados e o pod da API só falha depois, em CrashLoopBackOff.
       - name: Validate required secrets
         env:
           CUSTOMER_JWT_PUBLIC_KEY: ${{ secrets.CUSTOMER_JWT_PUBLIC_KEY }}
+          STAFF_JWT_PRIVATE_KEY: ${{ secrets.STAFF_JWT_PRIVATE_KEY }}
+          STAFF_JWT_REFRESH_PRIVATE_KEY: ${{ secrets.STAFF_JWT_REFRESH_PRIVATE_KEY }}
+          STAFF_JWT_PUBLIC_KEY: ${{ vars.STAFF_JWT_PUBLIC_KEY }}
+          STAFF_JWT_KEY_ID: ${{ vars.STAFF_JWT_KEY_ID }}
         run: |
-          if [ -z "${CUSTOMER_JWT_PUBLIC_KEY}" ]; then
-            echo "::error::CUSTOMER_JWT_PUBLIC_KEY não está configurado nos secrets do repositório."
+          # require_pem <variável> <bloco PEM esperado> <onde se cadastra>
+          require_pem() {
+            if [ -z "${!1}" ]; then
+              echo "::error::$1 não está configurado nos $3."
+              exit 1
+            fi
+            case "${!1}" in
+              *"BEGIN $2"*) ;;
+              *) echo "::error::$1 não parece um bloco PEM \"BEGIN $2\"."; exit 1 ;;
+            esac
+          }
+          require_pem CUSTOMER_JWT_PUBLIC_KEY 'PUBLIC KEY' 'secrets do repositório'
+          require_pem STAFF_JWT_PRIVATE_KEY 'PRIVATE KEY' 'secrets do environment production'
+          require_pem STAFF_JWT_REFRESH_PRIVATE_KEY 'PRIVATE KEY' 'secrets do environment production'
+          require_pem STAFF_JWT_PUBLIC_KEY 'PUBLIC KEY' 'variables da organização'
+          if [ -z "${STAFF_JWT_KEY_ID}" ]; then
+            echo "::error::STAFF_JWT_KEY_ID não está configurado nas variables da organização."
             exit 1
           fi
-          case "${CUSTOMER_JWT_PUBLIC_KEY}" in
-            *"BEGIN PUBLIC KEY"*) ;;
-            *) echo "::error::CUSTOMER_JWT_PUBLIC_KEY não parece uma chave pública PEM."; exit 1 ;;
-          esac
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@254c19bd240aabef8777f48595e9d2d7b972184b # v6.2.1
@@ -241,22 +255,28 @@ jobs:
 
       - name: Render and apply application secrets and ConfigMap
         env:
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+          STAFF_JWT_PRIVATE_KEY: ${{ secrets.STAFF_JWT_PRIVATE_KEY }}
+          STAFF_JWT_REFRESH_PRIVATE_KEY: ${{ secrets.STAFF_JWT_REFRESH_PRIVATE_KEY }}
           CUSTOMER_JWT_PUBLIC_KEY: ${{ secrets.CUSTOMER_JWT_PUBLIC_KEY }}
+          STAFF_JWT_PUBLIC_KEY: ${{ vars.STAFF_JWT_PUBLIC_KEY }}
+          STAFF_JWT_KEY_ID: ${{ vars.STAFF_JWT_KEY_ID }}
           OTEL_EXPORTER_OTLP_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
         # Base64 keeps the multiline PEM on one line, so envsubst cannot break the YAML.
         run: |
           set -euo pipefail
-          JWT_SECRET_B64="$(printf '%s' "${JWT_SECRET}" | base64 -w0)"
-          JWT_REFRESH_SECRET_B64="$(printf '%s' "${JWT_REFRESH_SECRET}" | base64 -w0)"
-          CUSTOMER_JWT_PUBLIC_KEY_B64="$(printf '%s' "${CUSTOMER_JWT_PUBLIC_KEY}" | base64 -w0)"
-          echo "::add-mask::${JWT_SECRET_B64}"
-          echo "::add-mask::${JWT_REFRESH_SECRET_B64}"
-          export JWT_SECRET_B64 JWT_REFRESH_SECRET_B64 CUSTOMER_JWT_PUBLIC_KEY_B64
+          b64() { printf '%s' "$1" | base64 -w0; }
+          STAFF_JWT_PRIVATE_KEY_B64="$(b64 "${STAFF_JWT_PRIVATE_KEY}")"
+          STAFF_JWT_REFRESH_PRIVATE_KEY_B64="$(b64 "${STAFF_JWT_REFRESH_PRIVATE_KEY}")"
+          CUSTOMER_JWT_PUBLIC_KEY_B64="$(b64 "${CUSTOMER_JWT_PUBLIC_KEY}")"
+          STAFF_JWT_PUBLIC_KEY_B64="$(b64 "${STAFF_JWT_PUBLIC_KEY}")"
+          STAFF_JWT_KEY_ID_B64="$(b64 "${STAFF_JWT_KEY_ID}")"
+          echo "::add-mask::${STAFF_JWT_PRIVATE_KEY_B64}"
+          echo "::add-mask::${STAFF_JWT_REFRESH_PRIVATE_KEY_B64}"
+          export STAFF_JWT_PRIVATE_KEY_B64 STAFF_JWT_REFRESH_PRIVATE_KEY_B64 CUSTOMER_JWT_PUBLIC_KEY_B64 \
+            STAFF_JWT_PUBLIC_KEY_B64 STAFF_JWT_KEY_ID_B64
           # shellcheck disable=SC2016 # envsubst receives the variable names literally
-          yq 'select(.metadata.name == "api-secret" or .metadata.name == "jwt-public-keys")' k8s/01-secrets.yaml \
-            | envsubst '${JWT_SECRET_B64} ${JWT_REFRESH_SECRET_B64} ${CUSTOMER_JWT_PUBLIC_KEY_B64}' \
+          yq 'select(.metadata.name == "jwt-private-keys" or .metadata.name == "jwt-public-keys")' k8s/01-secrets.yaml \
+            | envsubst '${STAFF_JWT_PRIVATE_KEY_B64} ${STAFF_JWT_REFRESH_PRIVATE_KEY_B64} ${CUSTOMER_JWT_PUBLIC_KEY_B64} ${STAFF_JWT_PUBLIC_KEY_B64} ${STAFF_JWT_KEY_ID_B64}' \
             | kubectl apply -f -
 
           AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"

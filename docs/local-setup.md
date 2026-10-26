@@ -43,8 +43,13 @@ A API acha o LocalStack por `AWS_ENDPOINT_URL`, variável que o próprio SDK da 
 cd app
 npm install
 
-# 2. Copiar e ajustar variáveis de ambiente
+# 2. Copiar as variáveis de ambiente e gerar as chaves RS256 de teste do token de funcionário
 cp .env.example .env
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out staff.pem
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out staff-refresh.pem
+openssl pkey -in staff.pem -pubout -out staff.pub.pem
+node -e "const pem = (f) => JSON.stringify(require('node:fs').readFileSync(f, 'utf8')); console.log(['STAFF_JWT_PRIVATE_KEY=' + pem('staff.pem'), 'STAFF_JWT_REFRESH_PRIVATE_KEY=' + pem('staff-refresh.pem'), 'STAFF_JWT_PUBLIC_KEY=' + pem('staff.pub.pem')].join('\n'))" >> .env
+rm staff.pem staff-refresh.pem staff.pub.pem
 
 # 3. Subir a infraestrutura (PostgreSQL, MailHog, Valkey e LocalStack), sem o container da API
 docker compose up postgres mailhog valkey localstack -d --wait
@@ -80,11 +85,15 @@ TZ=America/Sao_Paulo
 # Banco de dados
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/techchallenge?schema=public
 
-# Autenticação
-JWT_SECRET=your-secret-key
-JWT_EXPIRATION=15m
-JWT_REFRESH_SECRET=your-refresh-secret-key
-JWT_REFRESH_EXPIRATION=7d
+# Autenticação de funcionário (RS256; as três chaves vêm dos comandos do passo 2)
+STAFF_JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+STAFF_JWT_REFRESH_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+STAFF_JWT_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
+STAFF_JWT_KEY_ID=staff-local
+STAFF_JWT_ISSUER=oficina-identity
+STAFF_JWT_AUDIENCE=oficina-services
+STAFF_JWT_EXPIRATION=10m
+STAFF_JWT_REFRESH_EXPIRATION=7d
 BCRYPT_SALT_ROUNDS=12
 
 # Autenticação do Cliente (via função serverless externa)
@@ -136,7 +145,11 @@ OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta
 
 `WORK_ORDER_QUEUE_NAME`, `MESSAGING_TOPIC_ARN` e `CACHE_URL` são obrigatórias: sem elas a API não sobe. `CACHE_TTL_SECONDS` é opcional, mas um valor que não seja inteiro maior que zero também impede o boot, porque faria toda gravação no cache falhar. No cluster, o CD monta o ARN do tópico com a conta da AWS e o `CACHE_URL` usa `rediss://` com a senha do ElastiCache.
 
-> **Atenção**: em produção, gere segredos fortes para `JWT_SECRET`, `JWT_REFRESH_SECRET` e `CUSTOMER_JWT_PUBLIC_KEY`. Os valores padrão do `docker-compose.yml` são apenas placeholders.
+### Chaves do token de funcionário
+
+Os comandos do passo 2 geram dois pares RSA de 2048 bits com `openssl` (um para o access, outro para o refresh) e acrescentam ao `.env` `STAFF_JWT_PRIVATE_KEY`, `STAFF_JWT_REFRESH_PRIVATE_KEY` e `STAFF_JWT_PUBLIC_KEY`, cada PEM numa linha só, entre aspas e com `\n` literal; o `STAFF_JWT_KEY_ID=staff-local` já vem do `.env.example`. Os arquivos `.pem` são apagados no fim e o `.gitignore` ignora `*.pem` e o `.env`. Para trocar as chaves, apague as três linhas do `.env` e rode os comandos de novo; os tokens emitidos antes deixam de valer. Sem essas variáveis, a API não sobe e o `docker compose` para com a mensagem `Gere as chaves RS256 de funcionário conforme docs/local-setup.md`.
+
+> **Atenção**: em produção, as chaves não vêm do `.env`: as privadas vêm de secrets do environment `production` e a pública e o `kid`, de variables da organização (ver [Segurança › Chaves do token de funcionário](security.md#chaves-do-token-de-funcionário)). O `CUSTOMER_JWT_PUBLIC_KEY` padrão do `docker-compose.yml` é só um placeholder.
 
 ### `CUSTOMER_JWT_PUBLIC_KEY` é metade de um par
 
