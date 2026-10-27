@@ -149,7 +149,7 @@ OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta
 
 Os comandos do passo 2 geram dois pares RSA de 2048 bits com `openssl` (um para o access, outro para o refresh) e acrescentam ao `.env` `STAFF_JWT_PRIVATE_KEY`, `STAFF_JWT_REFRESH_PRIVATE_KEY` e `STAFF_JWT_PUBLIC_KEY`, cada PEM numa linha só, entre aspas e com `\n` literal; o `STAFF_JWT_KEY_ID=staff-local` já vem do `.env.example`. Os arquivos `.pem` são apagados no fim e o `.gitignore` ignora `*.pem` e o `.env`. Para trocar as chaves, apague as três linhas do `.env` e rode os comandos de novo; os tokens emitidos antes deixam de valer. Sem essas variáveis, a API não sobe e o `docker compose` para com a mensagem `Gere as chaves RS256 de funcionário conforme docs/local-setup.md`.
 
-> **Atenção**: em produção, as chaves não vêm do `.env`: as privadas vêm de secrets do environment `production` e a pública e o `kid`, de variables da organização (ver [Segurança › Chaves do token de funcionário](security.md#chaves-do-token-de-funcionário)). O `CUSTOMER_JWT_PUBLIC_KEY` padrão do `docker-compose.yml` é só um placeholder.
+> **Atenção**: em produção, as chaves não vêm do `.env`: as privadas vêm de secrets do environment `production` e a pública e o `kid`, de secrets da organização (ver [Segurança › Chaves do token de funcionário](security.md#chaves-do-token-de-funcionário)). O `CUSTOMER_JWT_PUBLIC_KEY` padrão do `docker-compose.yml` é só um placeholder.
 
 ### `CUSTOMER_JWT_PUBLIC_KEY` é metade de um par
 
