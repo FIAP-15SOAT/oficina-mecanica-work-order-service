@@ -87,7 +87,7 @@ jobs:
       # para um usuário já semeado — o mesmo papel que a Lambda desempenharia.
       - name: Sign an ephemeral customer JWT for the external scan pass
         run: |
-          user_id="$(docker compose exec -T postgres psql -U postgres -d techchallenge -tAc \
+          user_id="$(docker compose exec -T postgres psql -U postgres -d work_order -tAc \
             "SELECT id FROM users WHERE email = '${SEED_CUSTOMER_USER_EMAIL}';" | tr -d '[:space:]')"
           if [ -z "$user_id" ]; then
             echo "::error::Could not find the seeded customer user (${SEED_CUSTOMER_USER_EMAIL})."
