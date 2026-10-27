@@ -41,7 +41,7 @@ Relatórios de segurança da aplicação ficam versionados em [`reports/`](../re
 - A master password pertence ao RDS/Secrets Manager e não é armazenada em GitHub Secret, Variable ou Terraform State corrente.
 - `prepare-deploy` do CD lê `AWSCURRENT`, mascara senha, senha percent-encoded, URL e URL em base64 e aplica por stdin um manifesto do Secret `database-credentials`; nenhuma representação sensível segue para argumento de processo, output, artifact ou arquivo renderizado. Máscaras protegem logs, não command lines; base64 não é criptografia.
 - `cache-credentials` recebe `CACHE_URL` (`rediss://` com o auth token do ElastiCache) pelo mesmo transporte: token lido do Secrets Manager, URL mascarada e aplicada por stdin.
-- `jwt-private-keys` contém somente as chaves privadas `STAFF_JWT_PRIVATE_KEY` e `STAFF_JWT_REFRESH_PRIVATE_KEY`, e `jwt-public-keys` só material público (`CUSTOMER_JWT_PUBLIC_KEY`, `STAFF_JWT_PUBLIC_KEY` e `STAFF_JWT_KEY_ID`), evitando misturar lifecycles. As privadas vêm de secrets do repositório; a pública de funcionário e o `kid`, de variables da organização, que os outros serviços também leem. O `prepare-deploy` codifica os valores em base64, mascara o base64 das privadas e aplica por stdin.
+- `jwt-private-keys` contém somente as chaves privadas `STAFF_JWT_PRIVATE_KEY` e `STAFF_JWT_REFRESH_PRIVATE_KEY`, e `jwt-public-keys` só material público (`CUSTOMER_JWT_PUBLIC_KEY`, `STAFF_JWT_PUBLIC_KEY` e `STAFF_JWT_KEY_ID`), evitando misturar lifecycles. As privadas vêm de secrets do environment `production`; a pública de funcionário e o `kid`, de secrets da organização, que os outros serviços também leem. O `prepare-deploy` codifica os valores em base64, mascara o base64 das privadas e aplica por stdin.
 
 - O Deployment recebe `DATABASE_URL` e `CACHE_URL` pelos Secrets e o Job só `DATABASE_URL`. SNS e SQS são chamados com o papel do nó. Não há credencial AWS, IRSA, Pod Identity, ESO, CSI/ASCP ou chamada ao Secrets Manager nesses workloads.
 
@@ -53,10 +53,10 @@ O desenho e as alternativas estão no [ADR 0017](./adr/0017-materializacao-da-cr
 |---|---|---|
 | `STAFF_JWT_PRIVATE_KEY` (PKCS#8) | Secret do environment `production` → Secret k8s `jwt-private-keys` | Emissor (assina o access) |
 | `STAFF_JWT_REFRESH_PRIVATE_KEY` (PKCS#8) | Secret do environment `production` → Secret k8s `jwt-private-keys` | Emissor (assina e verifica o refresh; a pública é derivada da privada) |
-| `STAFF_JWT_PUBLIC_KEY` (SPKI) | Variable da organização `FIAP-15SOAT` → Secret k8s `jwt-public-keys` | Todo serviço que valida o token de funcionário |
-| `STAFF_JWT_KEY_ID` | Variable da organização → Secret k8s `jwt-public-keys` | Emissor (cabeçalho `kid`) e validadores (conferem o `kid`) |
+| `STAFF_JWT_PUBLIC_KEY` (SPKI) | Secret da organização `FIAP-15SOAT` → Secret k8s `jwt-public-keys` | Todo serviço que valida o token de funcionário |
+| `STAFF_JWT_KEY_ID` | Secret da organização → Secret k8s `jwt-public-keys` | Emissor (cabeçalho `kid`) e validadores (conferem o `kid`) |
 
-**Gerar ou trocar o par.** Gere os pares fora do repositório (`*.pem` está no `.gitignore`) e atualize os secrets e as variables juntos, com um `kid` novo:
+**Gerar ou trocar o par.** Gere os pares fora do repositório (`*.pem` está no `.gitignore`) e atualize os secrets juntos, com um `kid` novo:
 
 ```bash
 tmp="$(mktemp -d)"
@@ -65,8 +65,8 @@ openssl pkey -in "$tmp/staff.key" -pubout -out "$tmp/staff.pub"
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$tmp/refresh.key"
 gh secret set STAFF_JWT_PRIVATE_KEY --env production -R FIAP-15SOAT/oficina-mecanica-work-order-service < "$tmp/staff.key"
 gh secret set STAFF_JWT_REFRESH_PRIVATE_KEY --env production -R FIAP-15SOAT/oficina-mecanica-work-order-service < "$tmp/refresh.key"
-gh variable set STAFF_JWT_PUBLIC_KEY --org FIAP-15SOAT --visibility all < "$tmp/staff.pub"
-gh variable set STAFF_JWT_KEY_ID --org FIAP-15SOAT --visibility all --body "staff-$(date +%Y-%m-%d)"
+gh secret set STAFF_JWT_PUBLIC_KEY --org FIAP-15SOAT --visibility all < "$tmp/staff.pub"
+gh secret set STAFF_JWT_KEY_ID --org FIAP-15SOAT --visibility all --body "staff-$(date +%Y-%m-%d)"
 rm -rf "$tmp"
 ```
 
@@ -76,6 +76,8 @@ Atualizar um Secret não reinicia os pods: depois de rodar o CD, reinicie o Depl
 kubectl rollout restart deployment/work-order-service -n work-order
 kubectl rollout status deployment/work-order-service -n work-order --timeout=180s
 ```
+
+O valor de um secret não pode ser lido de volta: confira a troca pelo efeito, com o `kid` novo no cabeçalho do access token de um login e uma rota autenticada respondendo `200`.
 
 Há uma chave ativa por emissor, sem JWKS: depois da troca, os tokens antigos deixam de valer e basta um login novo.
 

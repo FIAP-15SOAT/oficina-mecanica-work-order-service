@@ -119,8 +119,8 @@ jobs:
           CUSTOMER_JWT_PUBLIC_KEY: ${{ secrets.CUSTOMER_JWT_PUBLIC_KEY }}
           STAFF_JWT_PRIVATE_KEY: ${{ secrets.STAFF_JWT_PRIVATE_KEY }}
           STAFF_JWT_REFRESH_PRIVATE_KEY: ${{ secrets.STAFF_JWT_REFRESH_PRIVATE_KEY }}
-          STAFF_JWT_PUBLIC_KEY: ${{ vars.STAFF_JWT_PUBLIC_KEY }}
-          STAFF_JWT_KEY_ID: ${{ vars.STAFF_JWT_KEY_ID }}
+          STAFF_JWT_PUBLIC_KEY: ${{ secrets.STAFF_JWT_PUBLIC_KEY }}
+          STAFF_JWT_KEY_ID: ${{ secrets.STAFF_JWT_KEY_ID }}
         run: |
           # require_pem <variable> <expected PEM block> <where it is registered>
           require_pem() {
@@ -136,9 +136,9 @@ jobs:
           require_pem CUSTOMER_JWT_PUBLIC_KEY 'PUBLIC KEY' 'secrets do repositório'
           require_pem STAFF_JWT_PRIVATE_KEY 'PRIVATE KEY' 'secrets do environment production'
           require_pem STAFF_JWT_REFRESH_PRIVATE_KEY 'PRIVATE KEY' 'secrets do environment production'
-          require_pem STAFF_JWT_PUBLIC_KEY 'PUBLIC KEY' 'variables da organização'
+          require_pem STAFF_JWT_PUBLIC_KEY 'PUBLIC KEY' 'secrets da organização'
           if [ -z "${STAFF_JWT_KEY_ID}" ]; then
-            echo "::error::STAFF_JWT_KEY_ID não está configurado nas variables da organização."
+            echo "::error::STAFF_JWT_KEY_ID não está configurado nos secrets da organização."
             exit 1
           fi
 
@@ -258,8 +258,8 @@ jobs:
           STAFF_JWT_PRIVATE_KEY: ${{ secrets.STAFF_JWT_PRIVATE_KEY }}
           STAFF_JWT_REFRESH_PRIVATE_KEY: ${{ secrets.STAFF_JWT_REFRESH_PRIVATE_KEY }}
           CUSTOMER_JWT_PUBLIC_KEY: ${{ secrets.CUSTOMER_JWT_PUBLIC_KEY }}
-          STAFF_JWT_PUBLIC_KEY: ${{ vars.STAFF_JWT_PUBLIC_KEY }}
-          STAFF_JWT_KEY_ID: ${{ vars.STAFF_JWT_KEY_ID }}
+          STAFF_JWT_PUBLIC_KEY: ${{ secrets.STAFF_JWT_PUBLIC_KEY }}
+          STAFF_JWT_KEY_ID: ${{ secrets.STAFF_JWT_KEY_ID }}
           OTEL_EXPORTER_OTLP_ENDPOINT: ${{ vars.OTEL_EXPORTER_OTLP_ENDPOINT }}
         # Base64 keeps the multiline PEM on one line, so envsubst cannot break the YAML.
         run: |
