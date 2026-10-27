@@ -1,15 +1,15 @@
 /**
- * Smoke do preload de telemetria — roda FORA do Jest, de propósito.
+ * Telemetry preload smoke — runs OUTSIDE Jest, on purpose.
  *
- * O `jest-runtime` tem registro de módulos próprio e não passa pelo carregador
- * do Node, que é onde `require-in-the-middle` engancha: nenhuma asserção sobre
- * o comportamento real do preload é possível lá dentro, e uma que tentasse
- * ficaria verde sem verificar nada.
+ * `jest-runtime` has its own module registry and does not go through Node's
+ * loader, which is where `require-in-the-middle` hooks in: no assertion about
+ * the preload's real behavior is possible in there, and one that tried would
+ * stay green without checking anything.
  *
- * O que este arquivo protege são as regressões que já aconteceram e que só
- * aparecem num processo de verdade: o interruptor carregando o SDK inteiro, uma
- * configuração inválida derrubando o boot, e o canal de diagnóstico do SDK
- * escrevendo texto cru em stdout.
+ * This file guards the regressions that already happened and only show up in a
+ * real process: the switch loading the whole SDK, an invalid configuration
+ * crashing the boot, and the SDK's diagnostic channel writing raw text to
+ * stdout.
  *
  *   node test/smoke/telemetry-preload.smoke.mjs
  */
@@ -24,7 +24,7 @@ const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PRELOAD = resolve(APP_ROOT, 'dist/src/otel.js');
 const MARKER = 'SMOKE_MAIN_STARTED';
 
-/** Endereço reservado para documentação (RFC 5737): nunca responde. */
+/** Address reserved for documentation (RFC 5737): never answers. */
 const UNREACHABLE_ENDPOINT = 'http://192.0.2.1:4318';
 
 const failures = [];
@@ -72,8 +72,8 @@ console.log('interruptor (OTEL_EXPORTER_OTLP_ENDPOINT vazio)');
   const parsed = JSON.parse(result.stdout.trim() || '{"otelModules":-1}');
 
   check('a aplicação sobe', result.status === 0, result.stderr);
-  // O `return` antecipado precisa vir ANTES dos imports do SDK: com `import` de
-  // topo, o modo desligado ainda pagava ~348 módulos e ~13,5 MiB de RSS por pod.
+  // The early `return` must come BEFORE the SDK imports: with top-level
+  // `import`, the off mode still paid ~348 modules and ~13.5 MiB of RSS per pod.
   check('nenhum módulo do SDK é carregado', parsed.otelModules === 0, `carregados: ${parsed.otelModules}`);
 }
 

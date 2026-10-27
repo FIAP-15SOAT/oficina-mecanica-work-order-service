@@ -10,24 +10,24 @@ import {
 } from './redaction/text-sanitizer';
 
 /**
- * Trecho contíguo de escapes percentuais bem formados, agrupado para que um
- * caractere multibyte (`%C3%A9`) seja decodificado de uma vez. Um `%ZZ` não casa
- * o padrão, então divide o trecho e sobrevive literal sem levar o resto junto.
+ * Contiguous run of well-formed percent escapes, grouped so a multibyte
+ * character (`%C3%A9`) is decoded at once. A `%ZZ` does not match the pattern,
+ * so it splits the run and survives literally without taking the rest along.
  */
 const PERCENT_SEQUENCE = /(?:%[0-9A-Fa-f]{2})+/g;
 
 /**
- * Passes de decodificação antes de varrer. Mais de um porque `%2540` decodifica
- * para `%40`, que ainda não tem forma de arroba: com uma passagem só, um e-mail
- * duplamente codificado atravessava o scrubber. O teto existe para que o
- * trabalho continue proporcional ao limite.
+ * Decoding passes before scanning. More than one because `%2540` decodes to
+ * `%40`, which still has no at-sign shape: with a single pass, a double-encoded
+ * e-mail crossed the scrubber. The cap keeps the work proportional to the
+ * limit.
  */
 const MAX_DECODE_PASSES = 3;
 
 export const ENCODED_MARKER = '[ENCODED]';
 
 /**
- * `fatal: false` é o que impede a decodificação de falhar aberta.
+ * `fatal: false` is what keeps the decoding from failing open.
  */
 const UTF8_DECODER = new TextDecoder('utf-8', { fatal: false });
 
@@ -73,11 +73,11 @@ export function buildQueryString(request: Request): string | undefined {
 }
 
 /**
- * A query precisa da mesma canonicalização do caminho, e não só ele: o Express
- * decodifica **uma vez**, então um valor duplamente codificado chega ao
- * classificador ainda sem forma reconhecível — `aaa%2Ebbb%2Eccc` não tem forma
- * de JWT — e o `encodeURIComponent` da saída o reintroduz no log. Aplicar aqui
- * mantém uma política de URL só, para caminho e query.
+ * The query needs the same canonicalization as the path, not only the path:
+ * Express decodes **once**, so a double-encoded value reaches the classifier
+ * still without a recognizable shape — `aaa%2Ebbb%2Eccc` has no JWT shape — and
+ * the output's `encodeURIComponent` puts it back into the log. Applying it here
+ * keeps a single URL policy for path and query.
  */
 function canonicalizeValue(value: unknown): unknown {
   if (typeof value === 'string') {
@@ -101,7 +101,7 @@ function canonicalizeValue(value: unknown): unknown {
 }
 
 /**
- * Decodifica até estabilizar e **falha fechada** se ainda estiver mudando no teto.
+ * Decodes until stable and **fails closed** if it is still changing at the cap.
  */
 function canonicalize(value: string): string {
   let current = value;
@@ -134,8 +134,8 @@ function decodePercentRun(run: string): string {
 }
 
 /**
- * Corta na fronteira entre parâmetros, para não deixar um escape percentual
- * pela metade no valor registrado.
+ * Cuts at a parameter boundary, so no percent escape is left half-cut in the
+ * logged value.
  */
 function fitQueryString(query: string): string {
   if (query.length <= MAX_URL_QUERY_LENGTH) {

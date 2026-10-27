@@ -13,9 +13,9 @@ describe('isIgnoredIncomingRequest', () => {
     expect(isIgnoredIncomingRequest(buildRequest(READINESS_PATH))).toBe(true);
   });
 
-  // O hook recebe um `IncomingMessage` cru, em que `req.path` ainda não existe:
-  // sem separar a query string, a probe com qualquer parâmetro deixaria de ser
-  // excluída e voltaria a produzir volume.
+  // The hook receives a raw `IncomingMessage`, where `req.path` does not exist
+  // yet: without splitting off the query string, a probe with any parameter
+  // would no longer be excluded and would produce volume again.
   it('should strip the query string before consulting the predicate', () => {
     expect(isIgnoredIncomingRequest(buildRequest(`${READINESS_PATH}?verbose=1`))).toBe(true);
     expect(isIgnoredIncomingRequest(buildRequest(`${LIVENESS_PATH}?`))).toBe(true);

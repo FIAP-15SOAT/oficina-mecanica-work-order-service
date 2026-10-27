@@ -17,9 +17,9 @@ describe('buildTraceCorrelation', () => {
   });
 
   /**
-   * Ausência é o contrato: um identificador vazio ou sintético é pior que a
-   * falta do campo, porque leva o destino a correlacionar com um trace que não
-   * existe. É o caso das linhas de bootstrap e de encerramento.
+   * Absence is the contract: an empty or synthetic identifier is worse than a
+   * missing field, because it leads the destination to correlate with a trace
+   * that does not exist. That is the case of the bootstrap and shutdown lines.
    */
   it('should return an empty object when there is no active span', () => {
     withSpanContext(undefined);
@@ -48,9 +48,9 @@ describe('buildTraceCorrelation', () => {
   });
 
   /**
-   * `trace_flags` é **string** de dois dígitos hexadecimais, e não número: o
-   * dicionário de campos declara `string`, e emitir o valor cru quebraria a
-   * asserção de tipo do E2E.
+   * `trace_flags` is a two-hex-digit **string**, not a number: the field
+   * dictionary declares `string`, and emitting the raw value would break the
+   * E2E type assertion.
    */
   it('should emit trace_flags as a two-digit hexadecimal string', () => {
     withSpanContext({ traceId: TRACE_ID, spanId: SPAN_ID, traceFlags: TraceFlags.NONE });

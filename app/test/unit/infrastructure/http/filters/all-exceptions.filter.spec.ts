@@ -161,13 +161,13 @@ describe('AllExceptionsFilter', () => {
   });
 
   /**
-   * O `body-parser` roda antes do pipeline do Nest e lança instâncias de
-   * `http-errors`: carregam `status`/`statusCode`, mas não são `HttpException`.
-   * Sem reconhecê-las, um corpo acima de 100 kB virava `500` — o cliente recebia
-   * "erro inesperado" por um erro dele, e o filtro ainda emitia uma linha
-   * `ERROR` com stack, sem autenticação e sem access log irmão.
+   * `body-parser` runs before the Nest pipeline and throws `http-errors`
+   * instances: they carry `status`/`statusCode`, but are not `HttpException`.
+   * Without recognizing them, a body above 100 kB became `500` — the client got
+   * "unexpected error" for its own mistake, and the filter still emitted an
+   * `ERROR` line with a stack, unauthenticated and without a sibling access log.
    */
-  describe('erros do body parser (http-errors, não HttpException)', () => {
+  describe('body parser errors (http-errors, not HttpException)', () => {
     function createPayloadTooLarge(): Error {
       return Object.assign(new Error('request entity too large'), {
         status: 413,

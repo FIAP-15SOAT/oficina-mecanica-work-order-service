@@ -12,10 +12,11 @@ import {
 import { captureDiagnostics, DiagnosticsCapture } from '../../../helpers/diagnostics-capture';
 
 /**
- * `terminationGracePeriodSeconds` do Deployment. Não é lido do manifesto de
- * propósito — o que este spec protege é a **relação** entre os prazos do
- * código; o número do orquestrador entra como referência declarada, e um ajuste
- * lá que quebre a aritmética aparece aqui como falha, e não em produção.
+ * The Deployment's `terminationGracePeriodSeconds`. It is not read from the
+ * manifest on purpose — what this spec guards is the **relation** between the
+ * code's deadlines; the orchestrator's number comes in as a declared reference,
+ * and a change there that breaks the arithmetic shows up here as a failure, not
+ * in production.
  */
 const TERMINATION_GRACE_PERIOD_MS = 40_000;
 
@@ -26,9 +27,9 @@ describe('resolveTimeoutMs', () => {
   });
 
   /**
-   * Falha para o padrão declarado, nunca para `0` ou `NaN`: um prazo zerado
-   * abortaria toda exportação, e um `NaN` faria o SDK lançar na construção do
-   * leitor — telemetria derrubando o boot é exatamente o que não pode acontecer.
+   * Falls back to the declared default, never to `0` or `NaN`: a zero deadline
+   * would abort every export, and a `NaN` would make the SDK throw while building
+   * the reader — telemetry crashing the boot is exactly what must not happen.
    */
   it.each([undefined, '', '   ', 'abc', '0', '-1', 'Infinity'])(
     'should fall back to the default for the value %p',
@@ -40,10 +41,10 @@ describe('resolveTimeoutMs', () => {
 
 describe('shutdown budget', () => {
   /**
-   * A conta de D19: o que sobra da janela do orquestrador depois da drenagem
-   * precisa acomodar o descarregamento **e** o `$disconnect()` do Prisma. Os
-   * padrões do SDK (10 s no OTLP, 30 s no leitor de métricas) não cabem — é por
-   * isso que estes números existem.
+   * The budget arithmetic: what is left of the orchestrator's window after the
+   * drain must fit the flush **and** Prisma's `$disconnect()`. The SDK defaults
+   * (10 s for OTLP, 30 s for the metric reader) do not fit — that is why these
+   * numbers exist.
    */
   it('should fit in what is left of the orchestrator window after the drain', () => {
     const remaining = TERMINATION_GRACE_PERIOD_MS - DRAIN_WINDOW_MS;
@@ -53,9 +54,9 @@ describe('shutdown budget', () => {
   });
 
   /**
-   * O teto do hook é rede de segurança: quem de fato **cancela** a exportação
-   * são os prazos dos exportadores. Se eles fossem maiores, o hook abandonaria
-   * a espera com o handle ainda vivo e o processo seguiria preso.
+   * The hook cap is a safety net: what actually **cancels** the export is the
+   * exporters' deadlines. If they were longer, the hook would abandon the wait
+   * with the handle still alive and the process would stay stuck.
    */
   it('should keep the exporter timeouts below the hook ceiling', () => {
     expect(DEFAULT_EXPORT_TIMEOUT_MS).toBeLessThan(TELEMETRY_SHUTDOWN_TIMEOUT_MS);
@@ -63,7 +64,7 @@ describe('shutdown budget', () => {
   });
 
   /**
-   * O leitor periódico recusa um intervalo menor que o prazo de exportação.
+   * The periodic reader refuses an interval shorter than the export deadline.
    */
   it('should keep the collection interval above the export timeout', () => {
     expect(DEFAULT_METRIC_EXPORT_INTERVAL_MS).toBeGreaterThan(DEFAULT_METRIC_EXPORT_TIMEOUT_MS);
@@ -89,8 +90,9 @@ describe('resolveMetricExportTiming', () => {
   });
 
   /**
-   * O preload chama sem argumento: é `process.env` que a implantação configura,
-   * e um parâmetro obrigatório só existiria para o teste.
+   * The preload calls it without an argument: `process.env` is what the
+   * deployment configures, and a required parameter would exist only for the
+   * test.
    */
   it('should read the process environment when no environment is given', () => {
     process.env.OTEL_METRIC_EXPORT_INTERVAL = '30000';
@@ -106,11 +108,11 @@ describe('resolveMetricExportTiming', () => {
   });
 
   /**
-   * O construtor do leitor periódico **lança** quando o intervalo é menor que o
-   * prazo, e num preload isso é fatal: medido antes da correção, qualquer
-   * `OTEL_METRIC_EXPORT_INTERVAL` abaixo dos 5 s padrão — `1000` inclusive —
-   * derrubava o processo com código 1, sem uma linha em stdout, e a réplica
-   * entrava em CrashLoop. Resolver as duas variáveis isoladamente era o buraco.
+   * The periodic reader's constructor **throws** when the interval is shorter
+   * than the deadline, and in a preload that is fatal: measured before the fix,
+   * any `OTEL_METRIC_EXPORT_INTERVAL` below the 5 s default — `1000` included —
+   * crashed the process with code 1, without a line on stdout, and the replica
+   * went into CrashLoop. Resolving the two variables separately was the hole.
    */
   it('should shrink the timeout down to the requested interval instead of letting the constructor throw', () => {
     expect(resolveMetricExportTiming({ OTEL_METRIC_EXPORT_INTERVAL: '1000' })).toEqual({
@@ -121,10 +123,11 @@ describe('resolveMetricExportTiming', () => {
   });
 
   /**
-   * Abaixo do piso o prazo é encolhido junto com o intervalo, e a exportação
-   * seguinte começa antes de o socket da anterior ser liberado: sempre sobra um
-   * handle vivo e o processo **nunca encerra**. Medido contra destino
-   * inalcançável — 25 s sem exit em `1`, `10`, `100` e `500`; exit 0 em `1000`.
+   * Below the floor the deadline shrinks along with the interval, and the next
+   * export starts before the previous socket is released: a live handle is
+   * always left and the process **never ends**. Measured against an unreachable
+   * destination — 25 s without exit at `1`, `10`, `100` and `500`; exit 0 at
+   * `1000`.
    */
   it.each(['1', '10', '100', '500'])(
     'should raise to the floor the interval %p, which prevents the process from exiting',
@@ -165,9 +168,9 @@ describe('resolveExportTimeoutMs', () => {
   });
 
   /**
-   * Um prazo maior que o teto do hook derrota o teto: o `Promise.race` abandona
-   * a espera, o handle da exportação continua vivo, o processo não encerra e o
-   * `SIGKILL` corta os hooks seguintes junto.
+   * A deadline longer than the hook cap defeats the cap: `Promise.race` abandons
+   * the wait, the export handle stays alive, the process does not end and
+   * `SIGKILL` cuts the following hooks along with it.
    */
   it('should reduce an override that would overrun the shutdown window', () => {
     expect(resolveExportTimeoutMs('600000', DEFAULT_EXPORT_TIMEOUT_MS)).toBe(

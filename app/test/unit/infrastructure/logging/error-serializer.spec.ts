@@ -20,9 +20,8 @@ describe('resolveErrorType', () => {
   });
 
   /**
-   * Quando uma biblioteca embrulha o erro real num `Error` genérico, o nome útil
-   * está mais abaixo na cadeia — reportar `"Error"` esconderia qual camada
-   * quebrou.
+   * When a library wraps the real error in a generic `Error`, the useful name is
+   * further down the chain — reporting `"Error"` would hide which layer broke.
    */
   it('should prefer the specific name found deeper in the cause chain', () => {
     const wrapped = new Error('falha ao aprovar', {
@@ -103,8 +102,8 @@ describe('describeError', () => {
   });
 
   /**
-   * `cause` pode formar ciclo e a cadeia pode ser arbitrariamente longa; sem
-   * limite e sem detecção, serializar o erro trava o processo.
+   * `cause` can form a cycle and the chain can be arbitrarily long; without a
+   * bound and detection, serializing the error hangs the process.
    */
   it('should stop at a cycle in the cause chain', () => {
     const first = new Error('primeiro');

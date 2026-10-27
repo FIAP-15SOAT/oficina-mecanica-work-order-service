@@ -50,12 +50,13 @@ describe('recordHttpFailure', () => {
   });
 
   /**
-   * O enriquecimento é chamado de dentro do exception filter, **antes** de a
-   * resposta ser escrita, e lê `name`, `stack`, `cause` e `getResponse()` de um
-   * objeto que a aplicação não construiu. Fora da fronteira não-lançante, um
-   * getter hostil fazia o logging alterar a resposta que ele só deveria observar.
+   * The enrichment is called from inside the exception filter, **before** the
+   * response is written, and reads `name`, `stack`, `cause` and `getResponse()`
+   * from an object the application did not build. Outside the non-throwing
+   * boundary, a hostile getter made logging change the response it should only
+   * observe.
    */
-  describe('erro com getter hostil', () => {
+  describe('error with a hostile getter', () => {
     function createHostileError(): Error {
       const hostile = new Error('hostil');
 

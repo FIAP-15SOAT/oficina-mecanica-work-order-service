@@ -1,39 +1,39 @@
 export type FieldClassification = 'secret' | 'pii' | 'clear';
 
 /**
- * Qualquer sequência de caracteres que não seja letra nem dígito (`_`, `-`, `.`,
- * espaço, `/`). Vira separador, então `api_key`, `api-key`, `api.key` e
- * `api key` produzem exatamente os mesmos tokens.
+ * Any run of characters that is neither a letter nor a digit (`_`, `-`, `.`,
+ * space, `/`). It becomes a separator, so `api_key`, `api-key`, `api.key` and
+ * `api key` produce exactly the same tokens.
  */
 const NON_ALPHANUMERIC = /[^\p{L}\p{N}]+/gu;
 
 /**
- * Fronteira camelCase: minúscula ou dígito seguida de maiúscula.
- * O `$1 $2` reinsere os dois grupos capturados com um espaço entre eles,
- * então `userId` → `user Id` e `zipCode2` continua intacto até o próximo par.
+ * camelCase boundary: a lowercase letter or digit followed by an uppercase one.
+ * `$1 $2` reinserts both captured groups with a space between them,
+ * so `userId` → `user Id` and `zipCode2` stays intact until the next pair.
  */
 const CAMEL_BOUNDARY = /([\p{Ll}\p{N}])(\p{Lu})/gu;
 
 /**
- * Fronteira de acrônimo: a última maiúscula seguida de maiúscula+minúscula.
- * Sem ela, `APIKey` viraria o token único `apikey` e escaparia da regra
- * `['api', 'key']`. Com ela, `APIKey` → `API Key` → `['api', 'key']`.
+ * Acronym boundary: the last uppercase letter followed by uppercase+lowercase.
+ * Without it, `APIKey` would become the single token `apikey` and escape the
+ * `['api', 'key']` rule. With it, `APIKey` → `API Key` → `['api', 'key']`.
  */
 const ACRONYM_BOUNDARY = /(\p{Lu})(\p{Lu}\p{Ll})/gu;
 
 export const MAX_FIELD_NAME_LENGTH = 128;
 
 /**
- * Quebra um nome de campo na sequência de tokens usada pelas regras abaixo.
+ * Splits a field name into the token sequence used by the rules below.
  *
- * A classificação é por **sequência de tokens**, nunca por substring — é isso
- * que mantém `monkey` e `passenger` fora das regras `['key']`/`['password']`,
- * e ao mesmo tempo pega `apiKey`, `API_KEY` e `api-key` com uma regra só.
+ * Classification is by **token sequence**, never by substring — that is what
+ * keeps `monkey` and `passenger` out of the `['key']`/`['password']` rules,
+ * while catching `apiKey`, `API_KEY` and `api-key` with a single rule.
  *
- * O `normalize('NFKC')` (Unicode Normalization Form KC — compatibilidade +
- * composição) roda primeiro para fechar as variantes de **compatibilidade**:
- * sem ele, `ｐａｓｓｗｏｒｄ` em largura total não casaria com `password` e o
- * valor secreto passaria em claro.
+ * `normalize('NFKC')` (Unicode Normalization Form KC — compatibility +
+ * composition) runs first to close the **compatibility** variants: without it,
+ * full-width `ｐａｓｓｗｏｒｄ` would not match `password` and the secret value
+ * would go out in the clear.
  */
 export function tokenize(name: string): string[] {
   return splitTokens(boundFieldName(name));
@@ -44,8 +44,8 @@ function boundFieldName(name: string): string {
 }
 
 /**
- * O corte fica **aqui**, e não em quem chama, para que nenhum caminho futuro o
- * contorne — os dois pontos de entrada da tokenização passam por esta função.
+ * The cut lives **here**, not in the callers, so no future path can bypass it —
+ * both tokenization entry points go through this function.
  */
 function splitTokens(name: string): string[] {
   const bounded = name.slice(0, MAX_FIELD_NAME_LENGTH);
@@ -65,9 +65,9 @@ function splitTokens(name: string): string[] {
 }
 
 /**
- * Sequências que marcam segredo. Casam em **qualquer posição** do nome, porque
- * `userPasswordHash` e `dbConnectionStringValue` continuam sendo segredo, e o
- * valor é **removido** do log, não mascarado.
+ * Sequences that mark a secret. They match at **any position** of the name,
+ * because `userPasswordHash` and `dbConnectionStringValue` are still secrets,
+ * and the value is **removed** from the log, not masked.
  */
 export const SECRET_SEQUENCES: readonly (readonly string[])[] = [
   ['password'],
@@ -80,9 +80,9 @@ export const SECRET_SEQUENCES: readonly (readonly string[])[] = [
 ];
 
 /**
- * Sequências que marcam dado pessoal. Casam apenas como **sufixo terminal**,
- * para que `customerName` seja PII mas `nameFormatter` não seja. O valor é
- * mascarado preservando a forma, não removido.
+ * Sequences that mark personal data. They match only as a **terminal suffix**,
+ * so `customerName` is PII but `nameFormatter` is not. The value is masked
+ * preserving its shape, not removed.
  */
 export const PII_SEQUENCES: readonly (readonly string[])[] = [
   ['document'],
@@ -99,23 +99,23 @@ export const PII_SEQUENCES: readonly (readonly string[])[] = [
 ];
 
 /**
- * Qualificadores neutros que só descrevem a **forma** do valor, nunca o que ele
- * é. Como a regra de dado pessoal casa apenas como sufixo terminal, um deles no
- * fim do nome derrubava a classificação inteira: `phoneNumber` — o nome
- * canônico do campo em inglês — tokeniza em `['phone','number']`, cujo terminal
- * é `number`, e passava em claro. O mesmo valia para `documentNumber`,
- * `plateNumber` e `zipCodeValue`.
+ * Neutral qualifiers that only describe the **shape** of the value, never what
+ * it is. Because the personal-data rule matches only as a terminal suffix, one
+ * of them at the end of the name defeated the whole classification:
+ * `phoneNumber` — the canonical English field name — tokenizes into
+ * `['phone','number']`, whose terminal is `number`, and went out in the clear.
+ * The same held for `documentNumber`, `plateNumber` and `zipCodeValue`.
  *
- * São removidos do fim antes do teste de sufixo, nunca do início e nunca até
- * esvaziar a lista: `partNumber` continua `['part']` (não é regra de PII) e um
- * campo chamado só `number` continua `['number']`.
+ * They are stripped from the end before the suffix test, never from the start
+ * and never down to an empty list: `partNumber` stays `['part']` (not a PII
+ * rule) and a field named just `number` stays `['number']`.
  */
 export const NEUTRAL_TERMINAL_TOKENS: readonly string[] = ['number', 'value', 'str'];
 
 /**
- * Recursos cujo `name` na raiz do payload é nome de catálogo (peça, serviço), e
- * não nome de pessoa. A isenção é posicional de propósito: vale só na raiz e só
- * nessas rotas, então `customer.name` aninhado continua sendo mascarado.
+ * Resources whose root-level `name` is a catalog name (part, service), not a
+ * person's name. The exemption is positional on purpose: it applies only at the
+ * root and only on these routes, so a nested `customer.name` is still masked.
  */
 export const CATALOG_NAME_EXEMPT_RESOURCES: readonly string[] = ['services', 'parts-supplies'];
 

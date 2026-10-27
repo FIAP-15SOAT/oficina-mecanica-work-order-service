@@ -13,9 +13,10 @@ describe('ProcessLifecycleService', () => {
   });
 
   /**
-   * Encerramento do processo é evento próprio, distinto da desconexão do banco.
-   * Com o destino síncrono a garantia é simples: o registro é escrito antes de o
-   * hook retornar — nada de `flush()`, que só existe para destino assíncrono.
+   * Process shutdown is an event of its own, distinct from the database
+   * disconnect. With the synchronous destination the guarantee is simple: the
+   * record is written before the hook returns — no `flush()`, which only exists
+   * for an asynchronous destination.
    */
   it('should emit the shutdown event carrying the signal', () => {
     const logger = createMockLogger();

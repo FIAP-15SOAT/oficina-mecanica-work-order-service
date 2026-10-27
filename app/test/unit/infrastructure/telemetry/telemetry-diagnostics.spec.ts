@@ -23,9 +23,9 @@ describe('reportTelemetryFailure', () => {
   });
 
   /**
-   * O canal é o mesmo do logging — stderr, com o mesmo envelope e os mesmos
-   * atributos de recurso. Uma linha destas em **stdout** quebraria o contrato de
-   * um objeto JSON por linha com todas as chaves declaradas.
+   * The channel is the same as logging's — stderr, with the same envelope and
+   * the same resource attributes. One of these lines on **stdout** would break
+   * the contract of one JSON object per line with every key declared.
    */
   it('should write to the error channel with the envelope and resource attributes', () => {
     reportTelemetryFailure('shutdown');
@@ -82,9 +82,9 @@ describe('createTelemetryDiagLogger', () => {
   });
 
   /**
-   * Medido: o `globalErrorHandler` do OTel entrega ao `diag` o erro
-   * **serializado com o stack inteiro** — ~2 KB de caminhos absolutos por
-   * ocorrência, repetidos a cada intervalo do leitor periódico.
+   * Measured: OTel's `globalErrorHandler` hands `diag` the error **serialized
+   * with the whole stack** — ~2 KB of absolute paths per occurrence, repeated on
+   * every periodic reader interval.
    */
   it('should cut the detail at its own limit, well below the log free text limit', () => {
     expect(MAX_TELEMETRY_DETAIL_LENGTH).toBeLessThan(MAX_TEXT_LENGTH);
@@ -99,9 +99,9 @@ describe('createTelemetryDiagLogger', () => {
   });
 
   /**
-   * O texto vem da biblioteca e pode carregar endpoint, cabeçalho ou mensagem
-   * de driver: o canal de diagnóstico não pode virar a via de vazamento que a
-   * redação existe para fechar.
+   * The text comes from the library and may carry an endpoint, a header or a
+   * driver message: the diagnostic channel must not become the leak path
+   * redaction exists to close.
    */
   it('should scrub the library text with the same scrubber the log uses', () => {
     createTelemetryDiagLogger().error('falha ao exportar', new Error(`token=${JWT}`));
@@ -123,10 +123,10 @@ describe('reportTelemetryFailure — severity and repetition', () => {
   });
 
   /**
-   * O descarte de span por fila cheia chega como `diag.warn` e é comportamento
-   * **declarado como aceito**. Achatá-lo em `error` — como o canal fazia — torna
-   * inútil qualquer alerta sobre este stream: o caminho degradado normal fica
-   * indistinguível de uma falha real.
+   * Dropping a span because the queue is full arrives as `diag.warn` and is
+   * behavior **declared as accepted**. Flattening it into `error` — as the
+   * channel did — makes any alert on this stream useless: the normal degraded
+   * path becomes indistinguishable from a real failure.
    */
   it('should preserve the severity of the reporter', () => {
     reportTelemetryFailure('diagnostic', 'fila cheia', 'warn');
@@ -136,9 +136,9 @@ describe('reportTelemetryFailure — severity and repetition', () => {
   });
 
   /**
-   * Medido no smoke: 60 s contra um destino inalcançável produziram 78 linhas
-   * idênticas. Sem teto, a falha da observabilidade passa a dominar o canal de
-   * erro da própria aplicação e esconde o resto.
+   * Measured in the smoke: 60 s against an unreachable destination produced 78
+   * identical lines. Without a cap, the observability failure takes over the
+   * application's own error channel and hides everything else.
    */
   it('should emit the first occurrence and aggregate repetitions of the same cause', () => {
     for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -156,9 +156,9 @@ describe('reportTelemetryFailure — severity and repetition', () => {
   });
 
   /**
-   * O mapa de causas é estado de módulo e vive tanto quanto o processo: sem
-   * teto, um detalhe com parte variável (porta efêmera, id de tentativa) cria
-   * uma entrada por ocorrência e o canal de diagnóstico passa a vazar memória.
+   * The cause map is module state and lives as long as the process: without a
+   * cap, a detail with a variable part (ephemeral port, attempt id) creates one
+   * entry per occurrence and the diagnostic channel starts leaking memory.
    */
   it('should drop the tracked causes once the ceiling is reached', () => {
     for (let cause = 0; cause < MAX_TRACKED_CAUSES; cause += 1) {

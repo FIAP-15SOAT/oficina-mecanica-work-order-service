@@ -70,12 +70,12 @@ describe('configureApp', () => {
   });
 
   /**
-   * A ordem é o contrato desta função, não um detalhe. `use()` e `enableCors()`
-   * registram middleware do Express na hora da chamada, e o Swagger registra
-   * rotas direto no adaptador — a cadeia efetiva (`helmet → cors → swagger →
-   * body parser → middleware do LoggerModule → router`) é o que decide a
-   * fronteira de cobertura declarada do access log. Trocar duas linhas aqui
-   * regride a fronteira em silêncio.
+   * Order is this function's contract, not a detail. `use()` and `enableCors()`
+   * register Express middleware at call time, and Swagger registers routes
+   * directly on the adapter — the effective chain (`helmet → cors → swagger →
+   * body parser → LoggerModule middleware → router`) is what decides the access
+   * log's declared coverage boundary. Swapping two lines here silently regresses
+   * the boundary.
    */
   it('should register the express middleware in the declared order', () => {
     const { app, calls } = createFakeApp();
@@ -183,9 +183,9 @@ describe('configureApp', () => {
 });
 
 /**
- * `app.listen()` roda o `init()` antes de abrir o socket, então uma porta
- * inválida só falha depois de o Prisma ter conectado. Resolver antes é o que
- * mantém o caminho fatal sem handle aberto.
+ * `app.listen()` runs `init()` before opening the socket, so an invalid port
+ * only fails after Prisma has connected. Resolving it first is what keeps the
+ * fatal path without an open handle.
  */
 describe('resolvePort', () => {
   it.each([undefined, '', '   '])('should fall back to the default port for %p', (value) => {

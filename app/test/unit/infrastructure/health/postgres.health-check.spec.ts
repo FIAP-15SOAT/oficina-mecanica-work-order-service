@@ -14,9 +14,9 @@ function withCode(message: string, code: string, extra: Record<string, unknown> 
 }
 
 /**
- * A forma que o `pg` entrega para um erro do servidor: SQLSTATE em `code`, mais
- * `severity` e `routine`. A verificação fala com o driver diretamente, então é
- * esta a forma que chega — sem o embrulho `P2010` do Prisma.
+ * The shape `pg` delivers for a server error: SQLSTATE in `code`, plus
+ * `severity` and `routine`. The check talks to the driver directly, so this is
+ * the shape that arrives — without Prisma's `P2010` wrapper.
  */
 function serverError(code: string, message = 'erro do servidor'): Error {
   return Object.assign(new Error(message), { code, severity: 'FATAL', routine: 'auth_failed' });
@@ -39,9 +39,10 @@ describe('PostgresHealthCheck', () => {
   });
 
   /**
-   * O único prazo que **encerra** a operação: o `pg` rejeita a promessa, o pool
-   * remove o client e o socket é destruído. É ele que libera o slot único de
-   * `ReadinessState`. Aplicado por consulta, nenhuma rota de negócio herda teto.
+   * The only deadline that **ends** the operation: `pg` rejects the promise, the
+   * pool removes the client and the socket is destroyed. It is what frees the
+   * single `ReadinessState` slot. Applied per query, no business route inherits
+   * a cap.
    */
   it('should bound the verification query itself, not only the caller wait', async () => {
     prisma.pool.query.mockResolvedValue({ rows: [] });
@@ -55,9 +56,9 @@ describe('PostgresHealthCheck', () => {
   });
 
   /**
-   * A categoria é derivada da **forma** da falha — um SQLSTATE ou um código do
-   * `libuv`. O único par comparado por mensagem é a igualdade exata contra as
-   * constantes do `pg`, que chegam sem `code`.
+   * The category derives from the failure's **shape** — a SQLSTATE or a `libuv`
+   * code. The only pair compared by message is the exact equality against the
+   * `pg` constants, which arrive without a `code`.
    */
   it.each<[string, unknown, HealthFailureCategory]>([
     ['a refused socket', withCode('connect ECONNREFUSED', 'ECONNREFUSED'), 'connection'],
@@ -97,7 +98,7 @@ describe('PostgresHealthCheck', () => {
       new Error('Cannot use a pool after calling end on the pool'),
       'connection',
     ],
-    // A mensagem que o proprio `query_timeout` produz (`pg/lib/client.js`).
+    // The message `query_timeout` itself produces (`pg/lib/client.js`).
     ['an expired per-query deadline', new Error('Query read timeout'), 'timeout'],
     ['an expired query timer', new Error('timeout expired'), 'timeout'],
     [
@@ -105,9 +106,10 @@ describe('PostgresHealthCheck', () => {
       Object.assign(new Error('outer'), { cause: withCode('inner', 'ECONNREFUSED') }),
       'connection',
     ],
-    // `localhost` resolve para ::1 e 127.0.0.1, e o `net.connect` do Node agrega
-    // as tentativas por familia de endereco. Sem visitar os agregados isto sairia
-    // `unknown` — que foi como o E2E se comportou antes da cadeia cobrir `errors`.
+    // `localhost` resolves to ::1 and 127.0.0.1, and Node's `net.connect`
+    // aggregates the attempts per address family. Without visiting the aggregates
+    // this would come out `unknown` — which is how the E2E behaved before the
+    // chain covered `errors`.
     [
       'an aggregate of per-family connection attempts',
       Object.assign(new Error('connect ECONNREFUSED ::1:5432'), {
@@ -150,8 +152,8 @@ describe('PostgresHealthCheck', () => {
   });
 
   /**
-   * Numa rota pública a mensagem do driver nomeia host e porta. O resultado
-   * carrega **apenas** a categoria, e é o corpo `503` que ele alimenta.
+   * On a public route the driver message names host and port. The result
+   * carries **only** the category, and it is what feeds the `503` body.
    */
   it('should never carry driver-originated text in the result', async () => {
     prisma.pool.query.mockRejectedValue(
@@ -172,9 +174,9 @@ describe('withDeadline', () => {
   });
 
   /**
-   * Maior que o `connectionTimeoutMillis` do pool (3 s): um prazo menor
-   * responderia antes de a falha de aquisição se manifestar e a classificaria
-   * como `timeout`, apagando a categoria `pool`.
+   * Longer than the pool's `connectionTimeoutMillis` (3 s): a shorter deadline
+   * would answer before the acquisition failure shows up and classify it as
+   * `timeout`, erasing the `pool` category.
    */
   it('should outlast the pool acquisition timeout', () => {
     expect(HEALTH_CHECK_DEADLINE_MS).toBeGreaterThan(3_000);

@@ -17,12 +17,11 @@ describe('TelemetryLifecycleService', () => {
   });
 
   /**
-   * A regressão que este teste impede é exatamente a que aconteceu com o
-   * `$disconnect()` do Prisma, e é **silenciosa**: o Nest executa
+   * The regression this test prevents is exactly the one that happened with
+   * Prisma's `$disconnect()`, and it is **silent**: Nest runs
    * `callDestroyHook -> callBeforeShutdownHook -> dispose -> callShutdownHook`,
-   * então descarregar em `onModuleDestroy` exportaria os spans das requisições
-   * ainda em voo. Nenhum teste de comportamento pegaria isso — os dois jeitos
-   * "funcionam".
+   * so flushing in `onModuleDestroy` would export the spans of requests still in
+   * flight. No behavior test would catch it — both ways "work".
    */
   it('should flush on onApplicationShutdown, not on onModuleDestroy', () => {
     expect(typeof service.onApplicationShutdown).toBe('function');
@@ -57,8 +56,8 @@ describe('TelemetryLifecycleService', () => {
   });
 
   /**
-   * Um destino que aceita a conexão e nunca responde não pode consumir a janela
-   * de encerramento inteira: o `SIGKILL` cortaria os hooks seguintes junto.
+   * A destination that accepts the connection and never answers must not eat the
+   * whole shutdown window: `SIGKILL` would cut the following hooks along with it.
    */
   it('should give up waiting when the flush never completes', async () => {
     jest.useFakeTimers();

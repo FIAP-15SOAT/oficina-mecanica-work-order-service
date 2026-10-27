@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-require-imports --
- * `jest.isolateModules` recebe um callback **síncrono**: o registro de módulos
- * precisa ser trocado e restaurado dentro dele, e um `import()` dinâmico só
- * resolveria depois que o isolamento já terminou. Este é o único lugar do
- * projeto que carrega o preload de propósito, e ele precisa de um registro
- * limpo por caso de teste.
+ * `jest.isolateModules` takes a **synchronous** callback: the module registry
+ * must be swapped and restored inside it, and a dynamic `import()` would only
+ * resolve after the isolation had ended. This is the only place in the project
+ * that loads the preload on purpose, and it needs a clean registry per test
+ * case.
  */
 import { metrics, trace } from '@opentelemetry/api';
 
@@ -13,11 +13,11 @@ import {
 } from '@infrastructure/telemetry/telemetry-sdk.registry';
 
 /**
- * O interruptor é a **ausência** de endereço de destino, e não uma variável
- * dedicada de habilitação — que seria uma segunda verdade sobre o mesmo estado.
- * É o que mantém as suítes E2E e o desenvolvimento local sem exportador de
- * fundo, e o que torna "observabilidade fora ⇒ aplicação fora" impossível por
- * construção.
+ * The switch is the **absence** of a destination address, not a dedicated
+ * enable variable — which would be a second truth about the same state. It is
+ * what keeps the E2E suites and local development without a background
+ * exporter, and what makes "observability down ⇒ application down" impossible
+ * by construction.
  */
 describe('otel — disabled when no endpoint is configured', () => {
   const OTEL_KEYS = [
@@ -61,8 +61,8 @@ describe('otel — disabled when no endpoint is configured', () => {
   });
 
   /**
-   * `applyPipelineDefaults` só roda depois do interruptor. As variáveis
-   * intactas são a prova observável de que nada foi construído.
+   * `applyPipelineDefaults` only runs after the switch. The untouched variables
+   * are the observable proof that nothing was built.
    */
   it('should not apply any pipeline configuration', () => {
     jest.isolateModules(() => {

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports --
- * Os módulos do SDK são carregados **dentro** de `startTelemetry`, depois do
- * interruptor. Com `import` de topo, o preload pagava o SDK inteiro mesmo com a telemetria desligada
+ * The SDK modules are loaded **inside** `startTelemetry`, after the switch.
+ * With top-level `import`, the preload paid for the whole SDK even with telemetry off
  */
 import { isMainThread } from 'node:worker_threads';
 import type { DiagLogLevel } from '@opentelemetry/api';
@@ -23,10 +23,10 @@ const METRICS_TEMPORALITY_DELTA = 'delta';
 export const telemetrySdk = startTelemetry();
 
 function startTelemetry(): NodeSDK | undefined {
-  // Sem endereço de destino, nada é registrado: nenhuma instrumentação, nenhum
-  // exportador, nenhuma conexão, nenhum módulo do SDK carregado. É o
-  // interruptor — e o que mantém as suítes E2E e o desenvolvimento local sem
-  // exportador de fundo.
+  // Without a destination address, nothing is registered: no instrumentation,
+  // no exporter, no connection, no SDK module loaded. This is the switch — and
+  // what keeps the E2E suites and local development free of a background
+  // exporter.
   if (!process.env.OTEL_EXPORTER_OTLP_ENDPOINT?.trim()) {
     return undefined;
   }
@@ -47,10 +47,10 @@ function startTelemetry(): NodeSDK | undefined {
     // wrapping modules for instrumentations that never start.
     registerEsmInstrumentationHook();
 
-    // Só o encerramento precisa da instância, e ele vive num hook do Nest: o
-    // registro é a ponte, para que o contêiner não importe este módulo. Antes
-    // do `start()` de propósito — se ele falhar no meio, o que já subiu ainda
-    // precisa ser descarregado.
+    // Only the shutdown needs the instance, and it lives in a Nest hook: the
+    // registry is the bridge, so the container does not import this module.
+    // Before `start()` on purpose — if it fails halfway, what already started
+    // still has to be flushed.
     registerTelemetrySdk(sdk);
 
     sdk.start();
@@ -120,15 +120,16 @@ function createTelemetrySdk(): NodeSDK {
 }
 
 /**
- * Instalado **antes** do construtor do `NodeSDK`, e com `OTEL_LOG_LEVEL` tirada
- * do caminho dele. O construtor instala um `DiagConsoleLogger` por conta própria
- * quando a variável está definida, e a própria chamada de instalação já **emite**
- * — medido, `@opentelemetry/api: Registered a global for diag` em **stdout**,
- * que aqui é contrato fechado, um objeto JSON por linha. Instalar o nosso depois
- * chegava tarde; instalar antes sem remover a variável seria sobrescrito.
+ * Installed **before** the `NodeSDK` constructor, with `OTEL_LOG_LEVEL` taken
+ * out of its way. The constructor installs a `DiagConsoleLogger` on its own
+ * when the variable is set, and the install call itself already **emits**
+ * — measured, `@opentelemetry/api: Registered a global for diag` on **stdout**,
+ * which here is a closed contract, one JSON object per line. Installing ours
+ * afterwards came too late; installing it before without removing the variable
+ * would be overwritten.
  *
- * A intenção do operador não se perde: a variável é lida aqui e passa a controlar
- * o nível deste canal, com teto em `WARN` porque ele nunca emite abaixo disso.
+ * The operator's intent is not lost: the variable is read here and controls the
+ * level of this channel, capped at `WARN` because it never emits below that.
  */
 function installDiagLogger(api: typeof import('@opentelemetry/api')): void {
   const level = resolveDiagLogLevel(api.DiagLogLevel);
@@ -151,11 +152,11 @@ function resolveDiagLogLevel(
 }
 
 /**
- * Pipelines declarados, nunca herdados. A **ausência** de `OTEL_LOGS_EXPORTER`
- * faz o `NodeSDK` instanciar um `LoggerProvider` com exportador OTLP de rede:
- * nada o alimentaria — os logs têm um caminho único, stdout —, mas manter um
- * exportador vivo deixa a porta aberta para que uma configuração futura passe a
- * alimentá-lo sem que ninguém decida isso.
+ * Pipelines are declared, never inherited. The **absence** of `OTEL_LOGS_EXPORTER`
+ * makes `NodeSDK` build a `LoggerProvider` with a network OTLP exporter:
+ * nothing would feed it — logs have a single path, stdout —, but keeping an
+ * exporter alive leaves the door open for a future configuration to start
+ * feeding it without anyone deciding so.
  *
  */
 function applyPipelineDefaults(): void {
@@ -169,13 +170,13 @@ function applyPipelineDefaults(): void {
 }
 
 /**
- * Lista explícita, nunca o metapacote: `auto-instrumentations-node` liga ~40
- * instrumentações e paga superfície de runtime e volume por bibliotecas que o
- * projeto não usa.
+ * Explicit list, never the metapackage: `auto-instrumentations-node` turns on
+ * ~40 instrumentations and pays runtime surface and volume for libraries the
+ * project does not use.
  *
- * `instrumentation-pino` fica fora porque a correlação é nossa (ver
- * `trace-correlation`), e `@prisma/instrumentation` porque o `PrismaService`
- * entrega um `pg.Pool` explícito: o driver é onde a consulta de fato acontece.
+ * `instrumentation-pino` stays out because the correlation is ours (see
+ * `trace-correlation`), and `@prisma/instrumentation` because `PrismaService`
+ * hands over an explicit `pg.Pool`: the driver is where the query actually runs.
  */
 function buildInstrumentations() {
   const { AwsInstrumentation } =

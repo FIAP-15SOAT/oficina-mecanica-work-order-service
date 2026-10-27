@@ -67,9 +67,9 @@ describe('PrismaService', () => {
   });
 
   /**
-   * A prontidão precisa de um prazo **por consulta**, que o Prisma não repassa,
-   * e precisa medir o mesmo pool das rotas de negócio — um pool próprio para a
-   * probe mediria outra coisa.
+   * Readiness needs a **per-query** deadline, which Prisma does not pass along,
+   * and must measure the same pool as the business routes — a pool of its own
+   * for the probe would measure something else.
    */
   it('should expose the very pool it handed to the adapter', () => {
     const service = createService();
@@ -79,8 +79,8 @@ describe('PrismaService', () => {
   });
 
   /**
-   * Sem `disposeExternalPool` o `$disconnect()` deixaria o pool aberto e o
-   * encerramento passaria a exigir um segundo ponto de liberação.
+   * Without `disposeExternalPool`, `$disconnect()` would leave the pool open and
+   * the shutdown would need a second release point.
    */
   it('should delegate the pool shutdown to the adapter', () => {
     createService();

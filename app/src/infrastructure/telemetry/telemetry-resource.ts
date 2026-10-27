@@ -4,21 +4,21 @@ import type { Resource } from '@opentelemetry/resources';
 import { resolveLoggerConfig } from '@infrastructure/logging/logger.config';
 
 /**
- * Origem única dos atributos de recurso: os cinco que identificam o serviço —
- * nome, namespace, versão, instância e ambiente — vêm da **mesma** resolução
- * que o log usa, e portanto são idênticos entre log, trace e métrica por
- * construção, não por convenção.
+ * Single source of the resource attributes: the five that identify the service
+ * — name, namespace, version, instance and environment — come from the **same**
+ * resolution the log uses, so they are identical across log, trace and metric
+ * by construction, not by convention.
  *
- * ⚠️ O `defaultResource()` é a base, e não um detalhe: o `NodeSDK` resolve o
- * recurso como `configuration.resource ?? defaultResource()`, então **passar um
- * recurso próprio descarta o padrão inteiro** — e com ele `telemetry.sdk.name`,
- * `telemetry.sdk.language` e `telemetry.sdk.version`, que a especificação exige
- * e que identificam qual SDK produziu o dado. Medido: sem esta mescla os três
- * não saem em span nem em métrica.
+ * ⚠️ `defaultResource()` is the base, not a detail: `NodeSDK` resolves the
+ * resource as `configuration.resource ?? defaultResource()`, so **passing our
+ * own resource drops the whole default** — and with it `telemetry.sdk.name`,
+ * `telemetry.sdk.language` and `telemetry.sdk.version`, which the specification
+ * requires and which identify the SDK that produced the data. Measured: without
+ * this merge the three go out in neither span nor metric.
  *
- * A ordem importa. `merge()` faz o **argumento vencer** a colisão, então os
- * cinco compartilhados sobrescrevem o `service.name: 'unknown_service:node'`
- * que o padrão traz. Inverter os lados devolveria o serviço anônimo.
+ * Order matters. `merge()` makes the **argument win** the collision, so the
+ * five shared ones overwrite the `service.name: 'unknown_service:node'` the
+ * default brings. Swapping the sides would bring back the anonymous service.
  */
 export function buildTelemetryResource(): Resource {
   return defaultResource().merge(resourceFromAttributes({ ...resolveLoggerConfig().resource }));

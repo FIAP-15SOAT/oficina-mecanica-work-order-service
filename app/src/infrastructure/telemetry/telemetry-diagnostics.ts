@@ -28,18 +28,18 @@ interface CauseState {
 const causes = new Map<string, CauseState>();
 
 /**
- * Costura de teste: a janela de repetição é estado de módulo, então dois casos
- * que provoquem a **mesma** causa veriam o segundo suprimido. `captureDiagnostics`
- * chama isto ao começar a observar o canal.
+ * Test seam: the repetition window is module state, so two cases triggering the
+ * **same** cause would see the second one suppressed. `captureDiagnostics`
+ * calls this when it starts observing the channel.
  */
 export function resetTelemetryDiagnostics(): void {
   causes.clear();
 }
 
 /**
- * O `diag` do OTel escreve no console por padrão, e uma falha de exportação
- * imprimiria texto livre em **stdout** — que aqui é contrato fechado: um objeto
- * JSON por linha, todas as chaves declaradas.
+ * OTel's `diag` writes to the console by default, and an export failure would
+ * print free text on **stdout** — which here is a closed contract: one JSON
+ * object per line, every key declared.
  */
 export function reportTelemetryFailure(
   stage: TelemetryFailureStage,
@@ -65,10 +65,10 @@ export function reportTelemetryFailure(
 }
 
 /**
- * Devolve quantas ocorrências foram suprimidas desde a última linha desta causa,
- * ou `undefined` quando esta ocorrência deve ser suprimida. A primeira sempre
- * sai — o que a janela limita é a repetição, nunca o primeiro sinal de uma causa
- * nova.
+ * Returns how many occurrences were suppressed since the last line of this
+ * cause, or `undefined` when this occurrence must be suppressed. The first one
+ * always goes out — the window limits repetition, never the first signal of a
+ * new cause.
  */
 function registerCause(fingerprint: string): number | undefined {
   const now = Date.now();
@@ -90,11 +90,11 @@ function registerCause(fingerprint: string): number | undefined {
 }
 
 /**
- * Precisa ser instalado **antes** de `new NodeSDK(...)`: o construtor instala um
- * `DiagConsoleLogger` por conta própria quando `OTEL_LOG_LEVEL` está definida, e
- * ele já **emite** durante a construção — medido, uma linha crua
- * (`@opentelemetry/api: Registered a global for diag`) em stdout, antes de
- * qualquer chance de sobrescrever o canal.
+ * Must be installed **before** `new NodeSDK(...)`: the constructor installs a
+ * `DiagConsoleLogger` on its own when `OTEL_LOG_LEVEL` is set, and it already
+ * **emits** during construction — measured, a raw line
+ * (`@opentelemetry/api: Registered a global for diag`) on stdout, before any
+ * chance to overwrite the channel.
  */
 export function createTelemetryDiagLogger(): DiagLogger {
   const report =

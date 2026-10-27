@@ -20,32 +20,32 @@ interface NamedPattern {
 }
 
 const SECRET_PATTERNS: readonly NamedPattern[] = [
-  // JWT: três segmentos base64url separados por ponto. Pega o token de decisão
-  // do orçamento, que viaja na query string do link enviado por e-mail.
+  // JWT: three base64url segments separated by dots. Catches the quote decision
+  // token, which travels in the query string of the link sent by e-mail.
   {
     name: 'jwt',
     pattern:
       /(?<![A-Za-z0-9_-])(?=([A-Za-z0-9_-]{10,}))\1\.(?=([A-Za-z0-9_-]{10,}))\2\.(?=([A-Za-z0-9_-]{10,}))\3/g,
   },
-  // Credencial precedida do esquema de autenticação HTTP, como aparece quando um
-  // header inteiro vaza dentro de uma mensagem de erro ou stack trace.
+  // Credential preceded by the HTTP authentication scheme, as it appears when a
+  // whole header leaks into an error message or stack trace.
   {
     name: 'auth-scheme',
     pattern: /\b(?:Bearer|Basic|Digest|Token|ApiKey)\s+[a-z0-9._~+/=-]{8,}/gi,
   },
-  // URL com usuário:senha embutidos — o caso concreto é o DATABASE_URL
-  // (`postgresql://user:senha@host/db`) aparecendo num erro do Prisma.
+  // URL with embedded user:password — the concrete case is DATABASE_URL
+  // (`postgresql://user:password@host/db`) showing up in a Prisma error.
   //
-  // A senha exclui `/`, `?` e `#` porque a RFC 3986 exige que eles venham
-  // percent-encoded dentro do userinfo. Sem essa exclusão o quantificador
-  // varria até o fim do texto procurando um `@` que não vinha, e um trecho como
-  // `a://b:` repetido custava O(n²) — 12,6 ms em 8 KB. Com ela, o `://` do
-  // próximo trecho encerra a varredura do anterior, e o custo vira linear.
+  // The password excludes `/`, `?` and `#` because RFC 3986 requires them to be
+  // percent-encoded inside userinfo. Without that exclusion the quantifier
+  // scanned to the end of the text looking for an `@` that never came, and a
+  // repeated run like `a://b:` cost O(n²) — 12.6 ms at 8 KB. With it, the next
+  // run's `://` ends the previous scan, and the cost becomes linear.
   {
     name: 'url-credentials',
     pattern: /(?<![A-Za-z0-9+.-])[a-zA-Z](?=([a-zA-Z0-9+.-]*))\1:\/\/[^\s:/@]+:[^\s@/?#]+@\S+/g,
   },
-  // Par chave=valor sensível em query string ou connection string.
+  // Sensitive key=value pair in a query string or connection string.
   { name: 'key-value', pattern: /\b(?:password|pwd|secret|api[_-]?key)=[^;&\s]+/gi },
 ];
 
@@ -68,9 +68,9 @@ export function truncateText(value: string, maxLength: number = MAX_TEXT_LENGTH)
 }
 
 /**
- * Varre texto livre atrás de conteúdo sensível que não foi capturado pelo nome do
- * campo — mensagem de exceção, stack trace, user-agent. Segredo é removido;
- * PII é mascarada preservando a forma.
+ * Scans free text for sensitive content the field name did not catch — exception
+ * message, stack trace, user-agent. A secret is removed; PII is masked
+ * preserving its shape.
  */
 export function sanitizeText(value: string, maxLength: number = MAX_TEXT_LENGTH): string {
   const bounded = truncateText(value, maxLength);

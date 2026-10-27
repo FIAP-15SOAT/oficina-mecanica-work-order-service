@@ -5,13 +5,14 @@ import { reportLoggingFailure } from './logging-diagnostics';
 const LIBRARY_ERROR_KEYS = new Set(['err', 'error']);
 
 /**
- * Último portão antes da linha sair: converte o objeto de erro que as bibliotecas
- * anexam (`err`/`error`) nos atributos `exception.*` e descarta qualquer chave
- * não declarada no registro de campos.
+ * Last gate before the line goes out: converts the error object libraries attach
+ * (`err`/`error`) into the `exception.*` attributes and drops any key not
+ * declared in the field registry.
  *
- * É o que garante que a saída é um esquema fechado. Um atributo novo que escape
- * sem declaração chega ao backend com tipo indefinido — e um campo cujo tipo
- * varia entre registros faz o índice derrubar o evento inteiro, não só o campo.
+ * This is what guarantees a closed schema. A new attribute that escapes
+ * undeclared reaches the backend with an undefined type — and a field whose
+ * type varies across records makes the index drop the whole event, not just
+ * the field.
  */
 export function normalizeLogRecord(record: Record<string, unknown>): Record<string, unknown> {
   const normalized: Record<string, unknown> = {};

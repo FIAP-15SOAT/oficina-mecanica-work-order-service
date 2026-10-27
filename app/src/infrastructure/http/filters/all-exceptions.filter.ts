@@ -99,8 +99,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return HttpStatus.BAD_REQUEST;
     }
 
-    // O `body-parser` roda antes do pipeline do Nest e lança instâncias de
-    // `http-errors`, que carregam `status`/`statusCode` mas **não** são
+    // `body-parser` runs before the Nest pipeline and throws `http-errors`
+    // instances, which carry `status`/`statusCode` but are **not**
     // `HttpException`.
     return this.resolveCarriedStatus(exception) ?? HttpStatus.INTERNAL_SERVER_ERROR;
   }

@@ -3,8 +3,8 @@ import { sanitizeStackTrace, sanitizeText } from './redaction/text-sanitizer';
 const MAX_CAUSE_DEPTH = 3;
 
 /**
- * Nomes que não identificam nada: quando um erro embrulha outro, o wrapper
- * costuma ser um `Error` genérico e o nome útil está mais abaixo na cadeia.
+ * Names that identify nothing: when an error wraps another, the wrapper is
+ * usually a generic `Error` and the useful name is further down the chain.
  */
 const GENERIC_ERROR_NAMES = new Set(['Error', 'Object']);
 
@@ -53,11 +53,11 @@ interface ErrorChainEntry {
 }
 
 /**
- * Percorre a cadeia `error.cause` (ES2022), em que um erro embrulha o anterior.
- * Sem ela, um erro relançado por biblioteca (Prisma, nodemailer) apareceria como
- * `exception.type: "Error"` e com o stack do wrapper — perdendo a linha que de
- * fato quebrou. A profundidade é limitada e os erros já vistos são registrados
- * porque `cause` pode formar ciclo.
+ * Walks the `error.cause` chain (ES2022), in which an error wraps the previous
+ * one. Without it, an error rethrown by a library (Prisma, nodemailer) would
+ * show up as `exception.type: "Error"` with the wrapper's stack — losing the
+ * line that actually broke. Depth is bounded and seen errors are tracked
+ * because `cause` can form a cycle.
  */
 function collectCauseChain(error: unknown): ErrorChainEntry[] {
   const chain: ErrorChainEntry[] = [];

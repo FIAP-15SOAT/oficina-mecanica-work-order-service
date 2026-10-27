@@ -5,12 +5,12 @@ export interface TelemetrySdk {
 let registered: TelemetrySdk | undefined;
 
 /**
- * Ponte entre o preload e o contêiner de injeção: `src/otel.ts` é carregado por
- * `--require`, muito antes de o Nest existir, e registra aqui a instância que
- * criou. O hook de encerramento a recupera pelo require cache, sem importar o
- * preload — que, importado, arrastaria o SDK inteiro para dentro de todo
- * processo, inclusive as suítes E2E, onde a telemetria está desligada e nada
- * disso precisa ser carregado.
+ * Bridge between the preload and the injection container: `src/otel.ts` is
+ * loaded by `--require`, long before Nest exists, and registers here the
+ * instance it created. The shutdown hook gets it back through the require
+ * cache, without importing the preload — which, if imported, would drag the
+ * whole SDK into every process, including the E2E suites, where telemetry is
+ * off and none of it needs to load.
  */
 export function registerTelemetrySdk(sdk: TelemetrySdk | undefined): void {
   registered = sdk;

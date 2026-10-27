@@ -54,11 +54,11 @@ export interface SetupTestAppOptions {
   captureBootstrap?: boolean;
   withSwagger?: boolean;
   /**
-   * Ponto de extensão executado **antes** de `init()`, que é quando o Nest
-   * instala o roteador. Existe para a suíte de correlação log↔trace: a
-   * instrumentação automática não roda sob Jest, então o span de servidor é
-   * aberto por um middleware do próprio teste — e ele precisa ser registrado
-   * antes do `pino-http`, que é quem registra o ouvinte de conclusão.
+   * Extension point run **before** `init()`, which is when Nest installs the
+   * router. It exists for the log↔trace correlation suite: auto-instrumentation
+   * does not run under Jest, so the server span is opened by a middleware of the
+   * test itself — and it must be registered before `pino-http`, which registers
+   * the completion listener.
    */
   configure?: (app: NestExpressApplication) => void;
   /** Extra controllers mounted next to AppModule, for routes that exist only in the test. */

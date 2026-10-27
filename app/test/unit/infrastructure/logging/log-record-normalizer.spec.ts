@@ -9,9 +9,9 @@ describe('normalizeLogRecord', () => {
   });
 
   /**
-   * Último portão antes da linha sair. Um atributo novo que escapasse sem
-   * declaração chega ao backend com tipo indefinido — e um campo cujo tipo varia
-   * entre registros faz o índice derrubar o evento inteiro, não só o campo.
+   * Last gate before the line goes out. A new attribute that escaped undeclared
+   * reaches the backend with an undefined type — and a field whose type varies
+   * across records makes the index drop the whole event, not just the field.
    */
   it('should drop an attribute the registry does not declare', () => {
     expect(normalizeLogRecord({ 'http.route': '/x', customerName: 'Maria Silva' })).toEqual({

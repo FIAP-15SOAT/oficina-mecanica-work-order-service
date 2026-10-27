@@ -21,10 +21,10 @@ export interface SerializedBody {
 }
 
 /**
- * `descend` devolve um objeto de estado **novo** por spread, então um campo
- * escalar marcado num nó filho nunca chegaria ao pai. `budget` e `truncation`
- * são objetos compartilhados de propósito: é por eles que o corte aplicado no
- * fundo da árvore alcança quem monta o registro.
+ * `descend` returns a **new** state object by spread, so a scalar field marked
+ * in a child node would never reach the parent. `budget` and `truncation` are
+ * shared objects on purpose: they are how a cut applied deep in the tree reaches
+ * whoever builds the record.
  */
 interface SanitizeState {
   depth: number;
@@ -62,11 +62,11 @@ function sanitizeWithBounds(value: unknown, options: SanitizePayloadOptions): Sa
 }
 
 /**
- * `truncated` cobre **todos** os limites, não só o orçamento final de bytes.
- * Profundidade, tamanho de array, orçamento de entradas e corte de string
- * também descartam conteúdo — e o corte de string é o único que não deixa nem
- * marcador em banda, então sem este flag uma `description` de 9 KB virava 2048
- * caracteres sem sinal nenhum de que faltava algo.
+ * `truncated` covers **every** bound, not just the final byte budget. Depth,
+ * array length, entry budget and string cut also drop content — and the string
+ * cut is the only one that leaves no in-band marker, so without this flag a
+ * 9 KB `description` became 2048 characters with no sign that anything was
+ * missing.
  */
 export function serializeBody(
   value: unknown,
@@ -87,14 +87,14 @@ export function serializeBody(
 }
 
 /**
- * Acha, por busca binária, o maior prefixo do JSON que ainda cabe no orçamento
- * de bytes **depois de embrulhado** no envelope de truncamento.
+ * Finds, by binary search, the longest JSON prefix that still fits the byte
+ * budget **after being wrapped** in the truncation envelope.
  *
- * Um `slice(0, MAX_BODY_JSON_BYTES)` não serve por dois motivos: em UTF-8 um
- * caractere pode ocupar até 4 bytes, e o `JSON.stringify` do envelope re-escapa
- * o conteúdo, então cada `"` ou `\` do prefixo pode dobrar de tamanho. O
- * tamanho final não é função linear do corte, e a busca binária converge em
- * ~12 iterações.
+ * A `slice(0, MAX_BODY_JSON_BYTES)` does not work for two reasons: in UTF-8 a
+ * character can take up to 4 bytes, and the envelope's `JSON.stringify`
+ * re-escapes the content, so every `"` or `\` in the prefix can double in size.
+ * The final size is not a linear function of the cut, and the binary search
+ * converges in ~12 iterations.
  */
 function fitToByteBudget(json: string): string {
   let low = 0;
@@ -121,14 +121,14 @@ function envelope(content: string): string {
 }
 
 /**
- * Percurso em profundidade, limitado, sobre o valor a ser logado. Em cada nó:
- * classifica a chave (segredo é removido, PII é mascarada), propaga a marca de
- * PII do container para todo descendente escalar, e passa strings pelo scrubber
- * de conteúdo.
+ * Bounded depth-first walk over the value to be logged. At each node: classifies
+ * the key (a secret is removed, PII is masked), propagates the container's PII
+ * mark to every scalar descendant, and runs strings through the content
+ * scrubber.
  *
- * Os limites — profundidade, orçamento de entradas, tamanho de array, tamanho
- * de string e detecção de ciclo — existem para que um payload hostil não
- * transforme a sanitização em negação de serviço.
+ * The bounds — depth, entry budget, array length, string length and cycle
+ * detection — exist so a hostile payload cannot turn sanitization into a denial
+ * of service.
  */
 function sanitizeNode(value: unknown, state: SanitizeState): unknown {
   if (value === null || value === undefined) {
@@ -237,9 +237,9 @@ function sanitizeObject(value: object, state: SanitizeState): Record<string, unk
 }
 
 /**
- * A chave é classificada pelo nome **original** e só depois sanitizada pela
- * forma do conteúdo. O nome de propriedade é conteúdo controlado pelo cliente:
- * um payload em forma de mapa (`{ "maria@x.com": … }`) atravessaria a redação inteira.
+ * The key is classified by its **original** name and only then sanitized by the
+ * content shape. The property name is client-controlled content: a map-shaped
+ * payload (`{ "maria@x.com": … }`) would cross the whole redaction.
  */
 function assignSanitized(
   result: Record<string, unknown>,
@@ -251,20 +251,21 @@ function assignSanitized(
 }
 
 /**
- * Truncar e mascarar colapsam chaves distintas na mesma string. Sobrescrever em
- * silêncio perderia um campo exatamente no log que existe para explicar a
- * rejeição, então a colisão vira um sufixo determinístico.
+ * Truncating and masking collapse distinct keys into the same string.
+ * Overwriting silently would lose a field in exactly the log that exists to
+ * explain the rejection, so the collision becomes a deterministic suffix.
  *
- * O contador **por chave-base** é o que mantém isso linear. Reiniciar a busca em
- * `~2` a cada colisão custava O(n²): mil e-mails distintos que mascaram para a
- * mesma string — alcançáveis sem autenticação em `POST /api/auth/login`, que
- * responde `400` e cai na lista de captura de corpo — davam ~500 mil consultas e
- * 176 ms de event loop por requisição, 14x um corpo do mesmo tamanho sem
- * colisão. Com o contador cada sufixo é testado no máximo uma vez.
+ * The **per-base-key** counter is what keeps this linear. Restarting the search
+ * at `~2` on every collision cost O(n²): a thousand distinct e-mails that mask
+ * to the same string — reachable without authentication on `POST
+ * /api/auth/login`, which answers `400` and falls in the body-capture list —
+ * took ~500 thousand lookups and 176 ms of event loop per request, 14x a body of
+ * the same size without collisions. With the counter each suffix is tried at
+ * most once.
  *
- * O laço que sobrou existe só para a colisão artificial: um `foo~2` legítimo já
- * presente no payload. Ele também avança o contador, então não reintroduz o
- * custo quadrático.
+ * The remaining loop exists only for the artificial collision: a legitimate
+ * `foo~2` already present in the payload. It also advances the counter, so it
+ * does not bring back the quadratic cost.
  */
 function resolveUniqueKey(
   result: Record<string, unknown>,

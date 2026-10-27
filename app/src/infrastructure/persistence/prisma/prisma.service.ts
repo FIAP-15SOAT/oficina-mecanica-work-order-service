@@ -7,10 +7,10 @@ import { ILogger } from '@application/ports/output/logger.service.interface';
 import { TECHNICAL_EVENTS } from '@infrastructure/logging/technical-event.catalog';
 
 /**
- * Limita a **aquisição** de conexão, que é o único trecho que a verificação de
- * prontidão não consegue limitar por consulta. Sem ele o default é `0` — esperar
- * para sempre —, e o slot único da prontidão, liberado só quando a operação
- * assenta, deixaria a réplica não-pronta até o TCP desistir.
+ * Bounds connection **acquisition**, the only part the readiness check cannot
+ * bound per query. Without it the default is `0` — wait forever —, and the
+ * single readiness slot, released only when the operation settles, would keep
+ * the replica not-ready until TCP gives up.
  */
 const CONNECTION_TIMEOUT_MS = 3_000;
 
@@ -19,11 +19,11 @@ const KEEP_ALIVE_INITIAL_DELAY_MS = 10_000;
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnApplicationShutdown {
   /**
-   * O pool é construído aqui e exposto de propósito: a verificação de prontidão
-   * precisa de um prazo **por consulta** (`query_timeout`), que o Prisma não
-   * repassa, e precisa medir **este** pool — o mesmo das rotas de negócio — para
-   * que a saturação por-réplica continue sendo detectável. Um pool separado só
-   * para a probe mediria outra coisa.
+   * The pool is built here and exposed on purpose: the readiness check needs a
+   * **per-query** deadline (`query_timeout`), which Prisma does not pass along,
+   * and must measure **this** pool — the same one the business routes use — so
+   * per-replica saturation stays detectable. A separate pool just for the probe
+   * would measure something else.
    */
   readonly pool: Pool;
 
@@ -37,8 +37,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnAppli
       keepAliveInitialDelayMillis: KEEP_ALIVE_INITIAL_DELAY_MS,
     });
 
-    // `disposeExternalPool` faz o `dispose()` do adapter chamar `pool.end()`,
-    // então o `$disconnect()` continua sendo o único ponto de encerramento.
+    // `disposeExternalPool` makes the adapter's `dispose()` call `pool.end()`,
+    // so `$disconnect()` remains the single shutdown point.
     super({ adapter: new PrismaPg(pool, { disposeExternalPool: true }) });
 
     this.pool = pool;
@@ -58,14 +58,14 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnAppli
   }
 
   /**
-   * `onApplicationShutdown`, e **não** `onModuleDestroy`. O `close()` do Nest
-   * executa `callDestroyHook` → `callBeforeShutdownHook` → `dispose` →
-   * `callShutdownHook`, ou seja: `onModuleDestroy` roda antes da janela de
-   * drain e antes de o servidor HTTP parar de aceitar conexões. Desconectar ali
-   * deixaria o pod aceitando tráfego com o pool já encerrado, o que converte
-   * "descartar requisição em voo" em "responder erro" — pior do que não ter
-   * drain. Aqui o disconnect acontece depois de o servidor fechar, quando não
-   * há mais requisição para atender.
+   * `onApplicationShutdown`, **not** `onModuleDestroy`. Nest's `close()` runs
+   * `callDestroyHook` → `callBeforeShutdownHook` → `dispose` →
+   * `callShutdownHook`, that is: `onModuleDestroy` runs before the drain window
+   * and before the HTTP server stops accepting connections. Disconnecting there
+   * would leave the pod accepting traffic with the pool already closed, turning
+   * "drop an in-flight request" into "answer an error" — worse than no drain.
+   * Here the disconnect happens after the server closes, when there is no
+   * request left to serve.
    */
   async onApplicationShutdown(): Promise<void> {
     await this.$disconnect();

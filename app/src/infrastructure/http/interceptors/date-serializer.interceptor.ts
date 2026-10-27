@@ -3,11 +3,11 @@ import { Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 
 /**
- * Interceptor global que converte todos os objetos Date nas respostas
- * para o formato ISO 8601 com offset de Brasília (UTC-3).
+ * Global interceptor that converts every Date object in the responses to
+ * ISO 8601 with the Brasília offset (UTC-3).
  *
- * O Brasil não adota horário de verão desde 2019, portanto o offset
- * é fixo em -03:00.
+ * Brazil has had no daylight saving time since 2019, so the offset is fixed
+ * at -03:00.
  */
 @Injectable()
 export class DateSerializerInterceptor implements NestInterceptor {

@@ -20,8 +20,8 @@ interface RequestOptions {
 }
 
 /**
- * `IncomingMessage` sintético: o hook roda **antes** do Express, então é isto
- * que ele de fato recebe em produção — sem `path`, sem `query`, sem `ip`.
+ * Synthetic `IncomingMessage`: the hook runs **before** Express, so this is what
+ * it really receives in production — no `path`, no `query`, no `ip`.
  */
 function createRequest({ url = '/api/work-orders', headers = {}, remoteAddress }: RequestOptions) {
   return {
@@ -70,8 +70,8 @@ describe('buildIncomingSpanAttributes — url.path', () => {
     expect(attributes['url.path']).toBe('/api/users/ma***va@gmail.com');
   });
 
-  // `%2540` decodifica para `%40`, que ainda não tem forma de arroba: uma
-  // passagem só deixaria o valor duplamente codificado atravessar.
+  // `%2540` decodes to `%40`, which still has no at-sign shape: a single pass
+  // would let the double-encoded value through.
   it('should decode until stable before scrubbing', () => {
     const attributes = buildIncomingSpanAttributes(
       createRequest({ url: '/api/users/maria%2540gmail.com' }),
@@ -100,10 +100,10 @@ describe('buildIncomingSpanAttributes — url.path', () => {
 
 describe('buildIncomingSpanAttributes — url.query', () => {
   /**
-   * A proteção da query no log é por **nome de parâmetro** sobre a query já
-   * decomposta; aqui só existe o texto bruto, e um token opaco não tem forma
-   * que um scrubber reconheça. Emitir "o que dá para sanitizar" seria
-   * fail-open, então a chave sai `undefined` — e o span descarta atributo nulo.
+   * The log protects the query by **parameter name** over the already split
+   * query; here only the raw text exists, and an opaque token has no shape a
+   * scrubber recognizes. Emitting "whatever can be sanitized" would fail open,
+   * so the key goes out `undefined` — and the span drops a null attribute.
    */
   it('should never emit the query, not even sanitized', () => {
     const attributes = buildIncomingSpanAttributes(
@@ -133,10 +133,10 @@ describe('buildIncomingSpanAttributes — client.address', () => {
   });
 
   /**
-   * A linha de acesso usa `request.ip`, que respeita o `trust proxy`. Sem essa
-   * simetria, com a configuração **entregue** (nenhum proxy confiável) o
-   * chamador forjava o endereço no span enquanto o log guardava o real — dois
-   * valores para a mesma requisição, e o do span vindo de quem se investiga.
+   * The access line uses `request.ip`, which honors `trust proxy`. Without this
+   * symmetry, with the **shipped** configuration (no trusted proxy) the caller
+   * forged the address in the span while the log kept the real one — two values
+   * for the same request, the span's coming from whoever is being investigated.
    */
   it('should ignore the forwarded header when no proxy is trusted', () => {
     const attributes = buildIncomingSpanAttributes(
@@ -150,10 +150,10 @@ describe('buildIncomingSpanAttributes — client.address', () => {
   });
 
   /**
-   * O salto mais à esquerda é texto do chamador: atrás de um balanceador que
-   * apenas acrescenta o seu, quem chama escolhe o que vai ali. Confiar só em
-   * `10.0.0.0/8` significa acreditar em **um** salto para trás — o que
-   * `10.0.0.4` reportou —, e `203.0.113.7` fica sem verificação possível.
+   * The leftmost hop is the caller's text: behind a load balancer that only
+   * appends its own, the caller chooses what goes there. Trusting only
+   * `10.0.0.0/8` means believing **one** hop back — what `10.0.0.4` reported —,
+   * and `203.0.113.7` cannot be verified.
    */
   it('should stop at the first untrusted hop, never at the caller-supplied one', () => {
     process.env.TRUSTED_PROXY_CIDRS = '10.0.0.0/8';
@@ -173,10 +173,10 @@ describe('buildIncomingSpanAttributes — client.address', () => {
   });
 
   /**
-   * Configurar proxies confiáveis não autoriza o cabeçalho de **qualquer** par:
-   * um peer fora da faixa é conexão direta, e o cabeçalho que ele mandou não
-   * vale nada. Antes desta correção o span aceitava o cabeçalho sempre que
-   * houvesse alguma faixa configurada, sem olhar de quem a conexão vinha.
+   * Configuring trusted proxies does not authorize the header from **any** peer:
+   * a peer outside the range is a direct connection, and the header it sent is
+   * worth nothing. Before this fix the span accepted the header whenever some
+   * range was configured, without looking at where the connection came from.
    */
   it('should ignore the forwarded header when the peer is outside the trusted range', () => {
     process.env.TRUSTED_PROXY_CIDRS = '10.0.0.0/8';
@@ -196,8 +196,8 @@ describe('buildIncomingSpanAttributes — client.address', () => {
   });
 
   /**
-   * Falha fechada, como `applyTrustProxy` do outro lado: uma lista que o
-   * `proxy-addr` recusa vira "nenhum salto confiável", nunca "todos".
+   * Fails closed, like `applyTrustProxy` on the other side: a list `proxy-addr`
+   * refuses becomes "no trusted hop", never "all".
    */
   it('should trust no hop when the configured list is invalid', () => {
     process.env.TRUSTED_PROXY_CIDRS = 'faixa-invalida';
@@ -257,12 +257,12 @@ describe('buildIncomingSpanAttributes — user_agent.original', () => {
 
 describe('buildIncomingSpanAttributes — server.address', () => {
   /**
-   * A instrumentação deriva `server.address` e `server.port` de
-   * `Forwarded`/`X-Forwarded-Host`/`Host`, sem validar, sem truncar e sem
-   * recorrer ao socket. Medido antes da correção: um `Host` de 322 caracteres
-   * com um e-mail dentro saía inteiro no span — e a linha de acesso não carrega
-   * esse atributo em forma nenhuma, então não há sanitização equivalente a
-   * reaproveitar. Removidos por subtração, como a query.
+   * The instrumentation derives `server.address` and `server.port` from
+   * `Forwarded`/`X-Forwarded-Host`/`Host`, without validating, truncating or
+   * falling back to the socket. Measured before the fix: a 322-character `Host`
+   * with an e-mail inside went out whole in the span — and the access line does
+   * not carry this attribute in any form, so there is no equivalent sanitization
+   * to reuse. Removed by subtraction, like the query.
    */
   it.each(['host', 'x-forwarded-host'])('should not emit a server address from %s', (header) => {
     const attributes = buildIncomingSpanAttributes(
@@ -277,8 +277,9 @@ describe('buildIncomingSpanAttributes — server.address', () => {
 
 describe('buildIncomingSpanAttributes — surface', () => {
   /**
-   * O hook é de **subtração**: só sobrescreve o que a instrumentação emitiria
-   * cru. Qualquer chave nova aqui seria um atributo fora da cadeia de redação.
+   * The hook only **subtracts**: it overwrites only what the instrumentation
+   * would emit raw. Any new key here would be an attribute outside the redaction
+   * chain.
    */
   it('should not introduce any attribute beyond the overridden ones', () => {
     const attributes = buildIncomingSpanAttributes(
@@ -299,10 +300,10 @@ describe('buildIncomingSpanAttributes — surface', () => {
 
 describe('buildIncomingSpanAttributes — non-throwing boundary', () => {
   /**
-   * Um throw aqui seria fail-**open**: a instrumentação embrulha o hook em
-   * `safeExecuteInTheMiddle` com `rethrow: false`, e um retorno `undefined`
-   * deixa intactos os atributos crus dela — incluindo a `url.query` que este
-   * hook existe para remover. O fallback precisa ser o conjunto **fechado**.
+   * A throw here would fail **open**: the instrumentation wraps the hook in
+   * `safeExecuteInTheMiddle` with `rethrow: false`, and an `undefined` return
+   * leaves its raw attributes untouched — including the `url.query` this hook
+   * exists to remove. The fallback must be the **closed** set.
    */
   it('should return the closed set when sanitization fails', () => {
     const diagnostics = captureDiagnostics();

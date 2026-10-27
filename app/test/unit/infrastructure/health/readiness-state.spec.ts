@@ -63,10 +63,10 @@ describe('ReadinessState — exclusivity of verification', () => {
   });
 
   /**
-   * O teste que prova o slot da **promessa bruta**: o prazo é por chamador e só
-   * abandona a espera, então liberar o slot nele faria cada verificação seguinte
-   * disparar uma consulta nova sobre as anteriores ainda pendentes — o acúmulo
-   * que transforma a verificação de saúde em causa de indisponibilidade.
+   * The test that proves the **raw promise** slot: the deadline is per caller and
+   * only abandons the wait, so releasing the slot on it would make every
+   * following check fire a new query on top of the still pending ones — the
+   * pileup that turns the health check into a cause of unavailability.
    */
   it('should answer unavailable within its own deadline without starting a new query', async () => {
     jest.useFakeTimers();
@@ -88,11 +88,11 @@ describe('ReadinessState — exclusivity of verification', () => {
   });
 
   /**
-   * A fronteira é por **origem**: o que a consulta rejeita vira indisponibilidade
-   * dentro de `PostgresHealthCheck`, mas um defeito no caminho de verificação
-   * propaga — o controller não o converte em `503` e ele sai `500` pelo
-   * tratamento global. O slot precisa ser liberado do mesmo jeito: retê-lo
-   * deixaria a réplica presa numa promessa rejeitada, sem verificar de novo.
+   * The boundary is by **origin**: what the query rejects becomes unavailability
+   * inside `PostgresHealthCheck`, but a defect in the check path propagates —
+   * the controller does not turn it into `503` and it goes out as `500` through
+   * the global handling. The slot must be released all the same: holding it
+   * would leave the replica stuck on a rejected promise, never checking again.
    */
   it('should release the slot and propagate when the verification itself defects', async () => {
     const defect = new TypeError('estado corrompido');
@@ -196,9 +196,9 @@ describe('ReadinessState — transition detection', () => {
   });
 
   /**
-   * Uma verificação iniciada antes do sinal de término e concluída depois dele
-   * não pode repor `ready` nem emitir recuperação: o estado de encerramento é
-   * consultado **antes** de qualquer resultado ser aplicado.
+   * A check started before the termination signal and finished after it must
+   * not restore `ready` nor emit a recovery: the shutdown state is checked
+   * **before** any result is applied.
    */
   it('should not let a result settling after the termination signal restore readiness', async () => {
     jest.useFakeTimers();
@@ -283,10 +283,11 @@ describe('ReadinessState — closing window', () => {
   });
 
   /**
-   * Sem essa condição, cada suíte E2E — que encerra com `app.close()` sem sinal —
-   * reteria o worker do Jest pela janela inteira; e o caminho de falha de
-   * bootstrap do `main.ts` manteria o loop de eventos vivo pelo próprio timer,
-   * fazendo o watchdog de 5 s truncar o encerramento que a janela deveria ordenar.
+   * Without this condition, every E2E suite — which ends with `app.close()` and
+   * no signal — would hold the Jest worker for the whole window; and `main.ts`'s
+   * bootstrap-failure path would keep the event loop alive through the timer
+   * itself, making the 5 s watchdog cut short the shutdown the window should
+   * order.
    */
   it('should not wait at all when the shutdown carries no termination signal', async () => {
     let settled = false;
@@ -322,9 +323,9 @@ describe('ReadinessState — closing window', () => {
   });
 
   /**
-   * `nest start --watch` mata o processo com `SIGTERM` e so respawna no `exit`,
-   * entao sem esta condicao cada hot reload em Linux/macOS pagaria a janela
-   * inteira — e nao ha plano de dados algum para o qual propagar a remocao.
+   * `nest start --watch` kills the process with `SIGTERM` and only respawns on
+   * `exit`, so without this condition every hot reload on Linux/macOS would pay
+   * the whole window — and there is no data plane to propagate the removal to.
    */
   it('should still mark draining outside an orchestrated environment, but not wait', async () => {
     process.env.NODE_ENV = 'development';

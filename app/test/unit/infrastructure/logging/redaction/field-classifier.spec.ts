@@ -147,18 +147,18 @@ describe('extractResourceSegment', () => {
   });
 });
 
-describe('classifyFieldName — nome sem token algum', () => {
+describe('classifyFieldName — name without any token', () => {
   it.each(['', '---', '   '])('should classify %p as clear', (name) => {
     expect(classifyFieldName(name)).toBe('clear');
   });
 });
 
 /**
- * A classificação roda em toda chave do payload — nome de campo é conteúdo
- * controlado pelo cliente. O corte no tokenizador mantém o custo proporcional
- * ao limite mesmo com a fronteira de acrônimo linear.
+ * Classification runs on every payload key — a field name is client-controlled
+ * content. The cut in the tokenizer keeps the cost proportional to the limit
+ * even with the linear acronym boundary.
  */
-describe('tokenize — custo limitado pelo nome do campo', () => {
+describe('tokenize — cost bounded by the field name', () => {
   it('should bound the field name before splitting it', () => {
     const oversized = 'A'.repeat(MAX_FIELD_NAME_LENGTH * 4);
 
@@ -177,9 +177,10 @@ describe('tokenize — custo limitado pelo nome do campo', () => {
   });
 
   /**
-   * Cortar antes de classificar falhava aberto: o token sensível ficava fora do
-   * trecho comparado e o valor saía em claro. Acima do teto a classificação é
-   * fechada, e o custo continua limitado porque nem se tokeniza.
+   * Cutting before classifying failed open: the sensitive token fell outside the
+   * compared part and the value went out in the clear. Above the cap the
+   * classification is closed, and the cost stays bounded because nothing is
+   * tokenized.
    */
   it('should fail closed for a name longer than the bound', () => {
     expect(classifyFieldName(`${'a'.repeat(MAX_FIELD_NAME_LENGTH + 2)}Password`)).toBe('secret');
@@ -192,9 +193,9 @@ describe('tokenize — custo limitado pelo nome do campo', () => {
 });
 
 /**
- * A regra de dado pessoal casa como sufixo terminal, então um qualificador
- * neutro no fim derrubava a classificação inteira — inclusive em `phoneNumber`,
- * que é o nome canônico do campo em inglês.
+ * The personal-data rule matches as a terminal suffix, so a neutral qualifier at
+ * the end defeated the whole classification — including `phoneNumber`, the
+ * canonical English field name.
  */
 describe('classifyFieldName — qualificador terminal neutro', () => {
   it.each([
@@ -231,11 +232,11 @@ describe('classifyFieldName — qualificador terminal neutro', () => {
 });
 
 /**
- * A NFKC **expande**: 128 vezes `Ⅷ` (U+2167) viram 512 maiúsculas. Com o corte
- * aplicado apenas antes da normalização, a tokenização voltaria a ver 4x o
- * tamanho contratado. O limite deve valer também para a forma expandida.
+ * NFKC **expands**: 128 times `Ⅷ` (U+2167) become 512 uppercase letters. With
+ * the cut applied only before normalization, tokenization would see 4x the
+ * agreed size again. The limit must also apply to the expanded form.
  */
-describe('tokenize — a NFKC não pode furar o limite', () => {
+describe('tokenize — NFKC must not break the limit', () => {
   const EXPANDING_CHARACTER = 'Ⅷ';
 
   it('should bound the token stream after normalization, not before it', () => {
@@ -246,8 +247,9 @@ describe('tokenize — a NFKC não pode furar o limite', () => {
   });
 
   /**
-   * Cortar a forma expandida sozinho falharia aberto — perderia um `...Password`
-   * no fim do nome. Quem decide é o classificador: estourou, é segredo.
+   * Cutting the expanded form alone would fail open — it would lose a
+   * `...Password` at the end of the name. The classifier decides: over the limit,
+   * it is a secret.
    */
   it('should fail closed when normalization pushes the name past the bound', () => {
     const expanding = EXPANDING_CHARACTER.repeat(MAX_FIELD_NAME_LENGTH);

@@ -146,10 +146,10 @@ describe('sanitizePayload', () => {
   });
 
   /**
-   * O orçamento tem de limitar o **trabalho**, não só o resultado. Antes, o laço
-   * seguia classificando toda chave depois do limite, e uma chave descartada
-   * como segredo nem sequer debitava — `Object.entries` ainda disparava todo
-   * getter do objeto de uma vez.
+   * The budget must bound the **work**, not just the result. Before, the loop
+   * kept classifying every key past the limit, and a key dropped as a secret did
+   * not even count — `Object.entries` still fired every getter of the object at
+   * once.
    */
   it('should stop reading values once the budget is exhausted', () => {
     const probe: Record<string, unknown> = {};
@@ -212,11 +212,11 @@ describe('sanitizePayload', () => {
 });
 
 /**
- * O nome da propriedade é conteúdo controlado pelo cliente. A classificação
- * lia a chave para decidir o tratamento do valor, mas nunca tratava a chave
- * como valor — então um payload em forma de mapa atravessava a redação inteira.
+ * The property name is client-controlled content. Classification read the key
+ * to decide how to treat the value, but never treated the key as a value — so a
+ * map-shaped payload crossed the whole redaction.
  */
-describe('sanitizePayload — nome de propriedade como conteúdo', () => {
+describe('sanitizePayload — property name as content', () => {
   it('should mask a personal identifier used as a property name', () => {
     const sanitized = sanitizePayload({
       'maria.silva@gmail.com': 'x',
@@ -244,10 +244,10 @@ describe('sanitizePayload — nome de propriedade como conteúdo', () => {
   });
 
   /**
-   * O teto de nome de campo existe para limitar o custo do tokenizador, mas
-   * cortar antes de classificar falhava **aberto**: o token sensível ficava
-   * fora do trecho comparado e o valor saía em claro. Acima do teto a
-   * classificação é fechada e a entrada inteira é descartada.
+   * The field-name cap exists to bound the tokenizer's cost, but cutting before
+   * classifying failed **open**: the sensitive token fell outside the compared
+   * part and the value went out in the clear. Above the cap the classification
+   * is closed and the whole entry is dropped.
    */
   it('should drop a field whose name is longer than the classification bound', () => {
     const sanitized = sanitizePayload({ ['k'.repeat(MAX_KEY_LENGTH * 4)]: 1 }) as Record<
@@ -267,10 +267,9 @@ describe('sanitizePayload — nome de propriedade como conteúdo', () => {
   });
 
   /**
-   * A colisão de chaves continua alcançável pelo **mascaramento**: dois e-mails
-   * distintos usados como chave colapsam na mesma máscara. Sobrescrever em
-   * silêncio perderia um campo justamente no log que existe para explicar a
-   * rejeição.
+   * Key collisions remain reachable through **masking**: two distinct e-mails
+   * used as keys collapse into the same mask. Overwriting silently would lose a
+   * field in exactly the log that exists to explain the rejection.
    */
   it('should not let two keys collapse onto one another after sanitization', () => {
     const sanitized = sanitizePayload({
@@ -293,9 +292,9 @@ describe('sanitizePayload — nome de propriedade como conteúdo', () => {
   });
 
   /**
-   * `JSON.parse` entrega `__proto__` como propriedade **própria**, e
-   * `result[key] = value` trocaria o protótipo do acumulador em vez de criar a
-   * entrada — o campo sumia do log sem aviso.
+   * `JSON.parse` delivers `__proto__` as an **own** property, and
+   * `result[key] = value` would swap the accumulator's prototype instead of
+   * creating the entry — the field vanished from the log without warning.
    */
   it('should keep a __proto__ key sent in the payload instead of losing it', () => {
     const parsed = JSON.parse('{"__proto__":{"polluted":1},"tipo":"PJ"}') as Record<
@@ -342,10 +341,10 @@ describe('serializeBody', () => {
   });
 
   /**
-   * O indicador precisa cobrir **todo** limite, não só o orçamento final de
-   * bytes. O corte de string é o caso mais grave porque é o único que não deixa
-   * nem marcador em banda: sem o flag, um campo de 9 KB virava 2048 caracteres
-   * sem sinal nenhum de que faltava conteúdo.
+   * The flag must cover **every** bound, not just the final byte budget. The
+   * string cut is the worst case because it is the only one that leaves no
+   * in-band marker: without the flag, a 9 KB field became 2048 characters with no
+   * sign that content was missing.
    */
   it('should flag truncation when a long string is cut, even under the byte budget', () => {
     const result = serializeBody({ blob: 'x'.repeat(MAX_TEXT_LENGTH * 4) });
@@ -391,13 +390,13 @@ describe('serializeBody', () => {
   });
 });
 
-describe('sanitizePayload — valor escalar na raiz', () => {
+describe('sanitizePayload — scalar value at the root', () => {
   it('should sanitize a scalar value', () => {
     expect(sanitizePayload(`token ${JWT}`)).toBe(`token ${REDACTED}`);
   });
 });
 
-describe('sanitizePayload — herança de PII sobre escalar não textual', () => {
+describe('sanitizePayload — PII inheritance on a non-text scalar', () => {
   it('should mask a numeric descendant of a personal container', () => {
     const sanitized = sanitizePayload({
       address: { street: 'Rua das Flores', number: 1234, active: true },
@@ -409,13 +408,14 @@ describe('sanitizePayload — herança de PII sobre escalar não textual', () =>
 });
 
 /**
- * Resolver colisão reiniciando a busca em `~2` era O(n²): mil e-mails distintos
- * que mascaram para a mesma string davam ~500 mil consultas e 176 ms de event
- * loop — alcançáveis sem autenticação em `POST /api/auth/login`, que responde
- * `400` e cai na lista de captura de corpo. O orçamento é folgado de propósito;
- * uma regressão para tempo quadrático estoura por mais de uma ordem de grandeza.
+ * Resolving collisions by restarting the search at `~2` was O(n²): a thousand
+ * distinct e-mails masking to the same string took ~500 thousand lookups and
+ * 176 ms of event loop — reachable without authentication on `POST
+ * /api/auth/login`, which answers `400` and falls in the body-capture list. The
+ * budget is loose on purpose; a regression to quadratic time overshoots it by
+ * more than an order of magnitude.
  */
-describe('serializeBody — custo da resolução de chaves colidentes', () => {
+describe('serializeBody — cost of resolving colliding keys', () => {
   const BUDGET_MS = 120;
 
   function collidingKeys(total: number): Record<string, string> {
@@ -449,10 +449,10 @@ describe('serializeBody — custo da resolução de chaves colidentes', () => {
   });
 
   /**
-   * Um sufixo que o payload **já ocupa** é a única colisão que o contador não
-   * prevê, e é o que o laço remanescente cobre. Aqui os dois documentos de 11
-   * dígitos mascaram para a mesma string, e a terceira chave chega literalmente
-   * no slot `~2` que o contador escolheria.
+   * A suffix the payload **already uses** is the only collision the counter does
+   * not foresee, and it is what the remaining loop covers. Here the two
+   * 11-digit documents mask to the same string, and the third key arrives
+   * literally in the `~2` slot the counter would choose.
    */
   it('should skip a suffix the payload itself already occupies', () => {
     const serialized = serializeBody({

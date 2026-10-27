@@ -5,10 +5,10 @@ import { getTelemetrySdk } from './telemetry-sdk.registry';
 import { TELEMETRY_SHUTDOWN_TIMEOUT_MS } from './telemetry.constants';
 
 /**
- * `onApplicationShutdown`, e não `onModuleDestroy`, pela mesma razão do Prisma:
- * o Nest executa `callDestroyHook -> callBeforeShutdownHook -> dispose ->
- * callShutdownHook`, e descarregar antes da janela de drenagem exportaria os
- * spans de requisições que ainda estão sendo atendidas.
+ * `onApplicationShutdown`, not `onModuleDestroy`, for the same reason as Prisma:
+ * Nest runs `callDestroyHook -> callBeforeShutdownHook -> dispose ->
+ * callShutdownHook`, and flushing before the drain window would export the
+ * spans of requests still being served.
  */
 @Injectable()
 export class TelemetryLifecycleService implements OnApplicationShutdown {
@@ -22,8 +22,8 @@ export class TelemetryLifecycleService implements OnApplicationShutdown {
     try {
       await withShutdownDeadline(sdk.shutdown());
     } catch (error) {
-      // Falha no descarregamento nunca impede o processo de encerrar nem os
-      // hooks seguintes de rodar.
+      // A flush failure never stops the process from ending nor the following
+      // hooks from running.
       reportTelemetryFailure('shutdown', error);
     }
   }
@@ -33,7 +33,7 @@ function withShutdownDeadline(pending: Promise<void>): Promise<void> {
   let timer: NodeJS.Timeout | undefined;
 
   const deadline = new Promise<void>((resolve) => {
-    // `unref` para que o temporizador não segure o processo no caminho saudável.
+    // `unref` so the timer does not hold the process on the healthy path.
     timer = setTimeout(resolve, TELEMETRY_SHUTDOWN_TIMEOUT_MS);
     timer.unref();
   });

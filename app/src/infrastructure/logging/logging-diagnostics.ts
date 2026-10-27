@@ -1,11 +1,12 @@
 import { resolveLoggerConfig } from './logger.config';
 
 /**
- * Um evento `'error'` sem listener em stream do Node derruba o processo, e o
- * `stderr` aceita a escrita e emite o erro depois, de forma assíncrona — fora
- * do alcance do `try/catch` do escritor abaixo. Medido: um `EPIPE` no stderr
- * matava a aplicação com exceção não capturada, o oposto exato da política
- * `continue-degraded` declarada aqui. Simétrico ao listener do destino stdout.
+ * An `'error'` event with no listener on a Node stream kills the process, and
+ * `stderr` accepts the write and emits the error later, asynchronously — out of
+ * reach of the writer's `try/catch` below. Measured: an `EPIPE` on stderr killed
+ * the application with an uncaught exception, the exact opposite of the
+ * `continue-degraded` policy declared here. Symmetric to the stdout destination
+ * listener.
  */
 process.stderr.on('error', () => undefined);
 
@@ -33,13 +34,13 @@ export interface LoggingFailureDetail {
 let destinationFailureReported = false;
 
 /**
- * Canal de diagnóstico do próprio logger, e por isso escreve direto em `stderr`
- * (fd 2) em vez de usar o `ILogger`: reportar a falha pelo mesmo caminho que
- * acabou de quebrar arrisca recursão, e quando o que falhou é o destino — o
- * `stdout` — logar lá é garantir silêncio.
+ * The logger's own diagnostic channel, which is why it writes straight to
+ * `stderr` (fd 2) instead of using `ILogger`: reporting the failure through the
+ * path that just broke risks recursion, and when what failed is the destination
+ * — `stdout` — logging there guarantees silence.
  *
- * O detalhe carrega apenas o nome do campo e o tipo do erro. Nunca o valor:
- * esta linha não pode virar a via de vazamento que a redação existe para evitar.
+ * The detail carries only the field name and the error type. Never the value:
+ * this line must not become the leak path that redaction exists to prevent.
  */
 export function reportLoggingFailure(
   stage: LoggingFailureStage,
@@ -66,11 +67,11 @@ export function reportDestinationFailure(): void {
 }
 
 /**
- * Exportada porque o canal de diagnóstico do SDK de telemetria precisa sair
- * pelo **mesmo** fd 2, com o mesmo envelope e os mesmos atributos de recurso:
- * um segundo escritor teria a própria política de escape e a própria maneira de
- * falhar. Escrever essa classe de mensagem em stdout quebraria o contrato de um
- * objeto JSON por linha com todas as chaves declaradas.
+ * Exported because the telemetry SDK's diagnostic channel must go out through
+ * the **same** fd 2, with the same envelope and the same resource attributes:
+ * a second writer would have its own escaping policy and its own way of
+ * failing. Writing this class of message to stdout would break the contract of
+ * one JSON object per line with every key declared.
  */
 export function writeDiagnostic(
   message: string,

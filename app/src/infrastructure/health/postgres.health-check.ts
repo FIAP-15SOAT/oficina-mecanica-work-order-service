@@ -7,22 +7,22 @@ import { PrismaService } from '@infrastructure/persistence/prisma/prisma.service
 export const POSTGRES_DEPENDENCY_NAME = 'postgresql';
 
 /**
- * O único prazo que **encerra** a operação em vez de abandoná-la: o `pg` rejeita
- * a promessa, o `Pool` remove o client e o `Client.end()` destrói o socket
- * porque há consulta ativa. É isso que libera o slot único de `ReadinessState` e
- * permite a réplica voltar a ficar pronta sem reinício. Aplicado **por
- * consulta**, então nenhuma rota de negócio herda teto de duração.
+ * The only deadline that **ends** the operation instead of abandoning it: `pg`
+ * rejects the promise, the `Pool` removes the client and `Client.end()` destroys
+ * the socket because a query is active. That is what frees the single
+ * `ReadinessState` slot and lets the replica become ready again without a
+ * restart. Applied **per query**, so no business route inherits a duration cap.
  */
 export const HEALTH_QUERY_TIMEOUT_MS = 2_000;
 
 /**
- * Prazo por chamador, e ele é **maior** que o `connectionTimeoutMillis` do pool
- * (3 s) de propósito: a falha de aquisição só se manifesta ao vencer aquele
- * prazo, e um deadline menor a mascararia como `timeout`, apagando justamente a
- * categoria `pool`. Menor que o `timeoutSeconds` da readinessProbe (5 s) somado
- * à margem de rede, para que o prazo que responde seja o nosso e não o do
- * kubelet — abortar do lado do orquestrador produz `client_aborted` e nenhuma
- * categoria de causa.
+ * Per-caller deadline, deliberately **longer** than the pool's
+ * `connectionTimeoutMillis` (3 s): an acquisition failure only shows up when
+ * that deadline expires, and a shorter one would mask it as `timeout`, erasing
+ * exactly the `pool` category. Shorter than the readinessProbe `timeoutSeconds`
+ * (5 s) plus network margin, so the deadline that answers is ours and not the
+ * kubelet's — aborting on the orchestrator side produces `client_aborted` and
+ * no cause category.
  */
 export const HEALTH_CHECK_DEADLINE_MS = 3_500;
 
@@ -37,8 +37,8 @@ const TIMED_OUT: HealthCheckResult = { healthy: false, category: 'timeout' };
 const MAX_CAUSE_DEPTH = 5;
 
 /**
- * SQLSTATE do PostgreSQL e códigos do `libuv`. A verificação fala com o `pg`
- * diretamente, então o que chega aqui é o erro do driver, sem embrulho.
+ * PostgreSQL SQLSTATE and `libuv` codes. The check talks to `pg` directly, so
+ * what arrives here is the driver error, unwrapped.
  */
 const CATEGORY_BY_CODE: ReadonlyMap<string, HealthFailureCategory> = new Map<
   string,
@@ -73,10 +73,10 @@ const CATEGORY_BY_CODE: ReadonlyMap<string, HealthFailureCategory> = new Map<
 ]);
 
 /**
- * As falhas que o `pg` entrega **sem** `code`: `Error`s de mensagem constante,
- * enumerados do fonte instalado. A comparação é por **igualdade exata**, nunca
- * por substring — o antipadrão que faz uma reformulação de mensagem classificar
- * errado em silêncio.
+ * The failures `pg` delivers **without** a `code`: constant-message `Error`s,
+ * enumerated from the installed source. The comparison is by **exact equality**,
+ * never by substring — the anti-pattern that makes a reworded message classify
+ * wrongly in silence.
  */
 const CATEGORY_BY_MESSAGE: ReadonlyMap<string, HealthFailureCategory> = new Map<
   string,
@@ -102,10 +102,10 @@ interface ErrorShape {
 }
 
 /**
- * Percorre `cause` e `errors` além do erro raiz: o `net.connect` do Node agrega
- * as tentativas por família de endereço num `AggregateError`, e `localhost`
- * resolve para duas. Sem visitar os agregados, um `ECONNREFUSED` sairia
- * `unknown`.
+ * Walks `cause` and `errors` beyond the root error: Node's `net.connect`
+ * aggregates the attempts per address family into an `AggregateError`, and
+ * `localhost` resolves to two. Without visiting the aggregates, an
+ * `ECONNREFUSED` would come out as `unknown`.
  */
 export function classifyHealthFailure(error: unknown): HealthFailureCategory {
   const pending: unknown[] = [error];
@@ -145,9 +145,10 @@ function matchMessage(message: unknown): HealthFailureCategory | undefined {
 }
 
 /**
- * Abandona a espera do chamador; quem **encerra** a operação é o
- * `query_timeout` acima. Por isso a promessa recebida aqui continua viva depois
- * do `race`, e o slot de `ReadinessState` continua a segurá-la até ela assentar.
+ * Abandons the caller's wait; what **ends** the operation is the
+ * `query_timeout` above. That is why the promise received here stays alive
+ * after the `race`, and the `ReadinessState` slot keeps holding it until it
+ * settles.
  */
 export function withDeadline(
   pending: Promise<HealthCheckResult>,

@@ -18,13 +18,13 @@ export const DEFAULT_PORT = 3000;
 const MAX_PORT = 65535;
 
 /**
- * Resolve a porta **antes** de o Nest ser construído, porque `app.listen()` roda
- * o `init()` primeiro: com a porta inválida a falha só aparece depois de o
- * Prisma ter conectado, e o processo fica com handle aberto sem servir ninguém.
+ * Resolves the port **before** Nest is built, because `app.listen()` runs
+ * `init()` first: with an invalid port the failure only shows up after Prisma
+ * has connected, and the process keeps an open handle while serving no one.
  *
- * Vazio cai no padrão em vez de virar `0`: `Number('')` é `0`, e o Node trata
- * `0` como "escolha uma porta livre" — a aplicação subiria numa porta que
- * ninguém sabe qual é.
+ * Blank falls back to the default instead of becoming `0`: `Number('')` is `0`,
+ * and Node treats `0` as "pick a free port" — the application would listen on
+ * a port nobody knows.
  */
 export function resolvePort(value: string | undefined): number {
   const raw = value?.trim();

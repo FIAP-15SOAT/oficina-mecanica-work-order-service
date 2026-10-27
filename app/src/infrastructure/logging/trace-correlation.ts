@@ -16,8 +16,8 @@ export function buildTraceCorrelation(): TraceCorrelationFields {
   return {
     trace_id: spanContext.traceId,
     span_id: spanContext.spanId,
-    // String de dois dígitos hexadecimais, como manda a convenção: `01` para
-    // amostrado. Emitir o número cru quebraria o tipo declarado no dicionário.
+    // Two-hex-digit string, as the convention requires: `01` for sampled.
+    // Emitting the raw number would break the type declared in the dictionary.
     trace_flags: spanContext.traceFlags.toString(16).padStart(2, '0'),
   };
 }

@@ -11,9 +11,9 @@ const SHARED_ATTRIBUTES = [
 
 describe('buildTelemetryResource', () => {
   /**
-   * A divergência que este teste impede é silenciosa: `service`/`env`/`version`
-   * diferentes entre sinais não quebram nada — o dado aparece no destino e
-   * simplesmente não se associa ao dos outros sinais.
+   * The divergence this test prevents is silent: a different
+   * `service`/`env`/`version` across signals breaks nothing — the data shows up
+   * at the destination and simply does not join the other signals.
    */
   it('should declare exactly the same five attributes as the log line', () => {
     const resource = buildTelemetryResource();
@@ -25,11 +25,10 @@ describe('buildTelemetryResource', () => {
   });
 
   /**
-   * A asserção anterior era "exatamente estes cinco atributos", e era ela que
-   * travava o defeito: `NodeSDK` resolve `configuration.resource ??
-   * defaultResource()`, então entregar um recurso próprio descartava a
-   * identidade do SDK. Proibir qualquer chave extra transformava a correção em
-   * falha de teste.
+   * The previous assertion was "exactly these five attributes", and it was what
+   * locked the defect in: `NodeSDK` resolves `configuration.resource ??
+   * defaultResource()`, so handing over our own resource dropped the SDK
+   * identity. Forbidding any extra key turned the fix into a test failure.
    */
   it('should carry the SDK identity the specification requires', () => {
     const { attributes } = buildTelemetryResource();
@@ -40,9 +39,9 @@ describe('buildTelemetryResource', () => {
   });
 
   /**
-   * `defaultResource()` traz `service.name: 'unknown_service:node'`. A mescla
-   * precisa deixar os cinco compartilhados vencerem — invertida, o serviço sai
-   * anônimo e nada se correlaciona.
+   * `defaultResource()` brings `service.name: 'unknown_service:node'`. The merge
+   * must let the five shared ones win — inverted, the service goes out anonymous
+   * and nothing correlates.
    */
   it('should let the shared attributes win over the SDK defaults', () => {
     expect(buildTelemetryResource().attributes['service.name']).toBe(
@@ -52,8 +51,8 @@ describe('buildTelemetryResource', () => {
   });
 
   /**
-   * `service.instance.id` é um `randomUUID()` de nível de módulo: o require
-   * cache é o que garante o mesmo valor em todas as emissões do processo.
+   * `service.instance.id` is a module-level `randomUUID()`: the require cache is
+   * what guarantees the same value on every emission of the process.
    */
   it('should keep service.instance.id stable within the process', () => {
     expect(buildTelemetryResource().attributes['service.instance.id']).toBe(

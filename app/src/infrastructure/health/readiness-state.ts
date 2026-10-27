@@ -17,11 +17,11 @@ const TERMINATION_SIGNALS: ReadonlySet<string> = new Set(['SIGTERM', 'SIGINT']);
 const ORCHESTRATED_ENVIRONMENT = 'production';
 
 /**
- * A janela só é sustentada onde existe um plano de dados para propagar a
- * remoção. Fora dele ela é puro custo: `nest start --watch` mata o processo com
- * `SIGTERM` e só respawna no `exit`, então cada hot reload em Linux/macOS
- * pagaria os 10 s (no Windows não, porque o `tree-kill` usa `taskkill /F` — o
- * que torna a regressão invisível para quem desenvolve lá).
+ * The window is only held where a data plane exists to propagate the removal.
+ * Outside it, it is pure cost: `nest start --watch` kills the process with
+ * `SIGTERM` and only respawns on `exit`, so every hot reload on Linux/macOS
+ * would pay the 10 s (not on Windows, because `tree-kill` uses `taskkill /F` —
+ * which makes the regression invisible to whoever develops there).
  */
 export function isDrainWindowEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.NODE_ENV === ORCHESTRATED_ENVIRONMENT;
@@ -51,9 +51,9 @@ export class ReadinessState implements BeforeApplicationShutdown {
 
     const result = await withDeadline(this.runExclusively());
 
-    // Consultado de novo, e **antes** de aplicar o resultado: o sinal de término
-    // pode ter chegado enquanto a verificação corria, e uma verificação iniciada
-    // antes dele não pode repor `ready` nem emitir recuperação.
+    // Checked again, and **before** applying the result: the termination signal
+    // may have arrived while the check ran, and a check started before it must
+    // not restore `ready` nor emit a recovery.
     if (this.draining) {
       return false;
     }
@@ -74,10 +74,10 @@ export class ReadinessState implements BeforeApplicationShutdown {
   }
 
   /**
-   * O slot detém a promessa **bruta** e só é liberado quando ela assenta —
-   * nunca quando o prazo de um chamador expira. Liberar no prazo faria cada
-   * verificação seguinte disparar uma consulta nova sobre as anteriores ainda
-   * pendentes, e a verificação de saúde viraria causa de indisponibilidade.
+   * The slot holds the **raw** promise and is only released when it settles —
+   * never when a caller's deadline expires. Releasing on the deadline would make
+   * every following check fire a new query on top of the still pending ones,
+   * and the health check would become a cause of unavailability.
    */
   private runExclusively(): Promise<HealthCheckResult> {
     if (this.pending) {
@@ -88,15 +88,15 @@ export class ReadinessState implements BeforeApplicationShutdown {
 
     this.pending = pending;
 
-    // O `catch` existe porque `finally` devolve uma promessa **nova**, que
-    // rejeita junto com a original: sem ele, uma verificação que rejeitasse
-    // produziria rejeição não tratada além do erro que o chamador já recebe.
+    // The `catch` exists because `finally` returns a **new** promise, which
+    // rejects along with the original: without it, a rejecting check would
+    // produce an unhandled rejection on top of the error the caller already gets.
     //
-    // A limpeza é incondicional de propósito. `runExclusively` é o único
-    // escritor do slot e só o preenche quando ele está vazio, então a promessa
-    // que assenta aqui é necessariamente a que está guardada: uma checagem de
-    // identidade nunca seria falsa e absorveria em silêncio um segundo escritor
-    // futuro, em vez de deixá-lo falhar alto.
+    // The cleanup is unconditional on purpose. `runExclusively` is the only
+    // writer of the slot and only fills it when empty, so the promise settling
+    // here is necessarily the stored one: an identity check would never be false
+    // and would silently absorb a future second writer instead of letting it
+    // fail loudly.
     void pending
       .finally(() => {
         this.pending = undefined;
