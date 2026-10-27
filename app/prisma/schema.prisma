@@ -63,7 +63,7 @@ enum Unit {
   JG
 }
 
-// Categoria distingue Peça de Insumo
+// Category tells a part from a supply
 enum PartSupplyCategory {
   PART
   SUPPLY

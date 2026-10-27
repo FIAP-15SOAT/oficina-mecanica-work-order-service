@@ -25,7 +25,7 @@ data:
   CUSTOMER_JWT_AUDIENCE: "oficina-api"
   AWS_REGION: "us-east-1"
   WORK_ORDER_QUEUE_NAME: "work-order.fifo"
-  # O SNS não resolve ARN por nome: o CD renderiza com a conta de `aws sts get-caller-identity`.
+  # SNS does not resolve an ARN by name: the CD renders it with the account from `aws sts get-caller-identity`.
   MESSAGING_TOPIC_ARN: "${MESSAGING_TOPIC_ARN}"
   CACHE_TTL_SECONDS: "43200"
   OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT}"

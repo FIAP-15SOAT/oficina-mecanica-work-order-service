@@ -75,9 +75,9 @@ services:
       timeout: 5s
       retries: 12
       start_period: 15s
-    # > janela de drain (10 s) + fechamento do servidor + $disconnect() + margem.
-    # O default do Compose e 10 s, que expira exatamente na virada da janela e
-    # mata a API com SIGKILL antes de ela liberar o pool.
+    # > drain window (10 s) + server close + $disconnect() + margin.
+    # The Compose default is 10 s, which expires right at the end of the window
+    # and kills the API with SIGKILL before it releases the pool.
     stop_grace_period: 40s
     depends_on:
       postgres:

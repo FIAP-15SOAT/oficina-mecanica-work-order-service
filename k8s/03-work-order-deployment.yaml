@@ -7,26 +7,26 @@ metadata:
     app.kubernetes.io/name: work-order-service
     app.kubernetes.io/part-of: oficina-mecanica
 spec:
-  # Sem `replicas`: o HPA é o dono da contagem, e um valor aqui a reverteria a cada apply.
+  # No `replicas`: the HPA owns the count, and a value here would revert it on every apply.
   selector:
     matchLabels:
       app.kubernetes.io/name: work-order-service
   template:
     metadata:
-      # Unified Service Tagging do Datadog. É o unico jeito de o coletor
-      # atribuir `service` e `env` aos logs de container: o log nao passa por
-      # OTLP (OTEL_LOGS_EXPORTER=none em 02-work-order-configmap.yaml), então o agente
-      # cai no nome da imagem, enquanto o APM, que le o resource OTel, reporta 
-      # `oficina-mecanica-work-order-service`.
-      # Dois nomes para a mesma aplicação quebram a aba Logs da pagina do
-      # serviço e qualquer metrica derivada de log.
+      # Datadog Unified Service Tagging. It is the only way for the collector
+      # to assign `service` and `env` to container logs: logs do not go through
+      # OTLP (OTEL_LOGS_EXPORTER=none in 02-work-order-configmap.yaml), so the agent
+      # falls back to the image name, while APM, which reads the OTel resource,
+      # reports `oficina-mecanica-work-order-service`.
+      # Two names for the same application break the Logs tab of the service
+      # page and any log-derived metric.
       #
-      # São valores ESPELHADOS, não derivados: label do Kubernetes não
-      # referencia ConfigMap. `service` tem de seguir igual a OTEL_SERVICE_NAME
-      # e `env` igual a NODE_ENV, os dois em 02-work-order-configmap.yaml, de onde o
-      # resource OTel tira service.name e deployment.environment.name. Mudou
-      # la, muda aqui (não há verificacao automatica.)
-      # `version` é o SHA da imagem, renderizado pelo CD.
+      # These values are MIRRORED, not derived: a Kubernetes label cannot
+      # reference a ConfigMap. `service` must stay equal to OTEL_SERVICE_NAME
+      # and `env` to NODE_ENV, both in 02-work-order-configmap.yaml, where the
+      # OTel resource takes service.name and deployment.environment.name from.
+      # Change it there, change it here (there is no automatic check).
+      # `version` is the image SHA, rendered by the CD.
       labels:
         app.kubernetes.io/name: work-order-service
         app.kubernetes.io/part-of: oficina-mecanica
@@ -34,10 +34,10 @@ spec:
         tags.datadoghq.com/env: production
         tags.datadoghq.com/version: VERSION_PLACEHOLDER
     spec:
-      # > janela de drain (10 s) + fechamento do servidor + $disconnect() +
-      # margem. Estoura-lo e SIGKILL; mantido baixo de proposito, porque ele
-      # alonga node drain e eviccao. Nao consome o rollout gate do CD: pods com
-      # DeletionTimestamp saem da contagem de ativos do ReplicaSet.
+      # > drain window (10 s) + server close + $disconnect() + margin.
+      # Exceeding it means SIGKILL; kept low on purpose, because it lengthens
+      # node drain and eviction. It does not consume the CD rollout gate: pods
+      # with a DeletionTimestamp leave the ReplicaSet's active count.
       terminationGracePeriodSeconds: 40
       containers:
         - name: api
@@ -68,9 +68,9 @@ spec:
             httpGet:
               path: /api/health/live
               port: 3000
-            # 12 x 5 s = 60 s de orcamento, so para o boot da aplicacao: a
-            # conexao do Prisma e preguicosa, entao nada de banco entra aqui.
-            # Precisa continuar menor que o --timeout=180s do rollout gate do CD.
+            # 12 x 5 s = 60 s of budget, only for the application boot: the
+            # Prisma connection is lazy, so no database work happens here.
+            # Must stay below the CD rollout gate's --timeout=180s.
             initialDelaySeconds: 0
             periodSeconds: 5
             timeoutSeconds: 3
@@ -80,10 +80,10 @@ spec:
             httpGet:
               path: /api/health/live
               port: 3000
-            # 3 x 20 s = 60 s de tolerancia antes de reiniciar: apertar esse
-            # produto converte soluco transitorio em reinicio. O
-            # timeout de 5 s e quanto bloqueio do event loop se tolera sob
-            # limits.cpu 500m, com o destino de log sincrono (ADR 0002).
+            # 3 x 20 s = 60 s of tolerance before restarting: tightening that
+            # product turns a transient hiccup into a restart. The 5 s timeout
+            # is how much event loop blocking is tolerated under
+            # limits.cpu 500m, with the synchronous log destination (ADR 0002).
             initialDelaySeconds: 0
             periodSeconds: 20
             timeoutSeconds: 5
@@ -93,13 +93,13 @@ spec:
             httpGet:
               path: /api/health/ready
               port: 3000
-            # timeoutSeconds > prazo proprio da verificacao (3,5 s) + margem de
-            # rede. O prazo proprio, por sua vez, e maior que o
-            # connectionTimeoutMillis do pool (3 s): um deadline menor mascararia
-            # saturacao de pool como 'timeout' e apagaria a categoria 'pool'.
-            # failureThreshold erra para o lado de demorar a retirar: como o RDS
-            # e compartilhado, um valor baixo tiraria todas as replicas de uma vez
-            # numa oscilacao transitoria.
+            # timeoutSeconds > the check's own deadline (3.5 s) + network margin.
+            # That deadline, in turn, is above the pool's connectionTimeoutMillis
+            # (3 s): a shorter deadline would mask pool saturation as 'timeout'
+            # and erase the 'pool' category.
+            # failureThreshold errs on the side of removing late: since the RDS
+            # is shared, a low value would take every replica out at once
+            # on a transient blip.
             initialDelaySeconds: 0
             periodSeconds: 10
             timeoutSeconds: 5
