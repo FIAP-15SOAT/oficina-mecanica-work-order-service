@@ -38,11 +38,11 @@ export class ConfirmPasswordResetUseCase implements IConfirmPasswordResetUseCase
   }
 
   /**
-   * Toda a leitura e escrita roda numa única transação: o incremento de tentativas
-   * precisa persistir mesmo quando o resultado é rejeição, e a troca de senha +
-   * consumo do código precisam ser atômicos (nunca um sem o outro). Por isso este
-   * método nunca lança — devolve o veredito e quem decide lançar é `execute()`,
-   * depois que a transação já commitou.
+   * Every read and write runs in a single transaction: the attempt increment
+   * must persist even when the result is a rejection, and the password change +
+   * code consumption must be atomic (never one without the other). That is why
+   * this method never throws — it returns the verdict, and `execute()` decides
+   * whether to throw, after the transaction has committed.
    */
   private async attemptConfirmation(
     repos: IRepositories,
@@ -73,7 +73,7 @@ export class ConfirmPasswordResetUseCase implements IConfirmPasswordResetUseCase
     return { rejected: false, userId: user.id };
   }
 
-  /** Apenas valida — nunca escreve no banco. Quem decide o incremento de tentativas é o chamador. */
+  /** Only validates — never writes to the database. The caller decides the attempt increment. */
   private async validateCode(
     repos: IRepositories,
     userId: string,

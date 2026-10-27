@@ -169,8 +169,8 @@ describe('RejectQuoteUseCase', () => {
     });
 
     /**
-     * Sem transição da OS não há entrada nova no histórico: não existe
-     * permanência a fechar, e emitir aqui inventaria uma.
+     * Without a work order transition there is no new history entry: there is
+     * no dwell time to close, and emitting here would invent one.
      */
     it('should not record a metric when another submitted quote keeps the work order still', async () => {
       const quote = createMockQuote({ status: QuoteStatus.SENT });

@@ -6,7 +6,7 @@ export interface TokenPayload {
   name: string;
   role: UserRole | null;
   typ?: 'access' | 'refresh';
-  /** Emitido automaticamente na assinatura; usado para invalidar sessões anteriores à troca de senha. */
+  /** Set automatically on signing; used to invalidate sessions older than a password change. */
   iat?: number;
 }
 

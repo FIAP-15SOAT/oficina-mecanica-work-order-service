@@ -64,10 +64,10 @@ export class OtelMetricsAdapter implements IMetrics {
   }
 
   /**
-   * A restrição por métrica é de compilação (`NoExtraFields`). Aqui a validação
-   * é contra o vocabulário lógico inteiro, e o que ele não conhece é
-   * **descartado** com um diagnóstico — nunca emitido sob o nome cru, que é
-   * como uma chave não declarada entraria no destino.
+   * The per-metric restriction is compile-time (`NoExtraFields`). Here the
+   * validation runs against the whole logical vocabulary, and whatever it does
+   * not know is **dropped** with a diagnostic — never emitted under the raw
+   * name, which is how an undeclared key would reach the destination.
    */
   private translate(attributes: MetricAttributes): Attributes {
     const translated: Attributes = {};

@@ -30,8 +30,8 @@ export class MyQuoteItemResponseDto implements MyQuoteItemResponse {
 }
 
 /**
- * Resumo — usado nas listagens, onde os itens não são carregados
- * (`findByWorkOrderId` não inclui `services`/`partsSupplies` de propósito).
+ * Summary — used in listings, where the items are not loaded
+ * (`findByWorkOrderId` leaves out `services`/`partsSupplies` on purpose).
  */
 export class MyQuoteSummaryResponseDto implements MyQuoteSummaryResponse {
   @ApiProperty({
@@ -89,7 +89,7 @@ export class MyQuoteSummaryResponseDto implements MyQuoteSummaryResponse {
   rejectedAt!: Date | null;
 }
 
-/** Detalhe — devolvido quando o orçamento foi carregado com `findByIdWithDetails`. */
+/** Detail — returned when the quote was loaded with `findByIdWithDetails`. */
 export class MyQuoteResponseDto extends MyQuoteSummaryResponseDto implements MyQuoteResponse {
   @ApiProperty({ type: [MyQuoteItemResponseDto], description: 'Serviços do orçamento' })
   services!: MyQuoteItemResponseDto[];

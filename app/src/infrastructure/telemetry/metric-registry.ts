@@ -6,7 +6,7 @@ import { MetricAttributeName } from '@application/metrics/metric-attribute';
 export type MetricCardinality = 'fixed' | 'low';
 
 export interface MetricRegistryEntry {
-  /** Nome físico. É aqui — e só aqui — que o namespace `oficina.` aparece. */
+  /** Physical name. Only here — nowhere else — does the `oficina.` namespace appear. */
   key: string;
   aggregation: AggregationOption;
 }
@@ -44,8 +44,8 @@ export const METRIC_ATTRIBUTE_REGISTRY: Readonly<
 };
 
 /**
- * Entradas com agregação padrão não geram View — uma View "padrão" seria
- * ruído sem efeito.
+ * Entries with the default aggregation produce no View — a "default" View would
+ * be noise with no effect.
  */
 export const METRIC_VIEWS: readonly ViewOptions[] = Object.values(METRIC_REGISTRY)
   .filter((entry) => entry.aggregation.type !== AggregationType.DEFAULT)

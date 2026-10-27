@@ -20,8 +20,9 @@ function at(hours: number): Date {
 }
 
 /**
- * O histórico chega como o banco o devolve: ordem cronológica crescente, com o
- * carimbo escrito pelo PostgreSQL. A última entrada é a transição corrente.
+ * The history arrives as the database returns it: ascending chronological
+ * order, with the timestamp written by PostgreSQL. The last entry is the
+ * current transition.
  */
 function entry(
   previousStatus: WorkOrderStatus | null,
@@ -29,8 +30,8 @@ function entry(
   hours: number,
 ): StatusHistory {
   return createMockStatusHistory({
-    // Identidade própria por entrada: a transição corrente é localizada por id,
-    // e um histórico de ids iguais faria o cálculo ancorar sempre na primeira.
+    // Each entry has its own identity: the current transition is found by id,
+    // and a history of equal ids would make the calculation always anchor on the first.
     id: `e2a1b0c4-0000-4000-8000-${String(entryCount++).padStart(12, '0')}`,
     workOrderId: WORK_ORDER_ID,
     previousStatus,
@@ -39,16 +40,17 @@ function entry(
   });
 }
 
-/** A transição corrente é a última entrada, como o banco a devolve. */
+/** The current transition is the last entry, as the database returns it. */
 function measure(history: StatusHistory[]): WorkOrderDurations {
   return measureWorkOrderDurations(history, history[history.length - 1]);
 }
 
 describe('measureWorkOrderDurations', () => {
   /**
-   * A leitura acontece depois do commit, então o histórico pode ter crescido
-   * entre a escrita e a leitura. Sem a transição corrente dentro dele não há o
-   * que ancorar, e medir a última linha mediria o intervalo de outra operação.
+   * The read happens after the commit, so the history may have grown between
+   * the write and the read. Without the current transition in it there is
+   * nothing to anchor on, and measuring the last row would measure another
+   * operation's interval.
    */
   it('should not measure anything when the current transition is not in the history', () => {
     const history = [entry(null, WorkOrderStatus.RECEIVED, 0)];
@@ -86,9 +88,9 @@ describe('measureWorkOrderDurations', () => {
   });
 
   /**
-   * `APPROVED` (esperando mecânico) e `COMPLETED` (pronto, esperando o cliente
-   * retirar) são tempo parado que a operação precisa enxergar — e sem eles a
-   * soma das etapas não fecharia com o total de atendimento.
+   * `APPROVED` (waiting for a mechanic) and `COMPLETED` (ready, waiting for the
+   * customer to pick up) are idle time the operation needs to see — and without
+   * them the sum of the stages would not match the total service time.
    */
   it.each([
     [WorkOrderStatus.APPROVED, WorkOrderStatus.IN_PROGRESS],
@@ -101,8 +103,8 @@ describe('measureWorkOrderDurations', () => {
   });
 
   /**
-   * `REJECTED` não é terminal: a máquina de estados declara
-   * `REJECTED -> AWAITING_APPROVAL`, e é justamente a espera que mais dói.
+   * `REJECTED` is not terminal: the state machine declares
+   * `REJECTED -> AWAITING_APPROVAL`, and that wait is exactly the one that hurts most.
    */
   it('should measure the dwell when leaving REJECTED', () => {
     const history = [
@@ -126,10 +128,10 @@ describe('measureWorkOrderDurations', () => {
   });
 
   /**
-   * A regressão que este teste impede é silenciosa e proporcional ao
-   * retrabalho: ancorar na primeira ocorrência reportaria todo o tempo desde a
-   * primeira passagem, inflando a distribuição justamente onde a métrica
-   * deveria expor o problema.
+   * The regression this test prevents is silent and proportional to rework:
+   * anchoring on the first occurrence would report all the time since the
+   * first pass, inflating the distribution exactly where the metric should
+   * expose the problem.
    */
   it('should measure the last pass, not the accumulation since the first entry', () => {
     const history = [
@@ -175,9 +177,9 @@ describe('measureWorkOrderDurations', () => {
     });
 
     /**
-     * Os totais ancoram na **primeira** entrada, enquanto a permanência ancora
-     * na última: são duas regras de busca diferentes na mesma função, e a
-     * distinção é o que mantém o painel auditável quando houve retrabalho.
+     * Totals anchor on the **first** entry, while dwell anchors on the last:
+     * two different lookup rules in the same function, and the distinction is
+     * what keeps the dashboard auditable when there was rework.
      */
     it('should anchor totals on the first entry, even with re-entry in between', () => {
       const history = [
@@ -235,9 +237,9 @@ describe('measureWorkOrderDurations', () => {
 
   describe('time source', () => {
     /**
-     * Os dois extremos vêm do carimbo persistido — nunca do relógio do
-     * processo. Misturar relógios produziria durações erradas e, sob desvio
-     * pod↔RDS, negativas: o SDK as descarta com um aviso, sem falhar.
+     * Both ends come from the persisted timestamp — never from the process
+     * clock. Mixing clocks would produce wrong durations and, under pod↔RDS
+     * skew, negative ones: the SDK drops them with a warning, without failing.
      */
     it('should derive the duration from the history timestamps, not the process clock', () => {
       const now = jest.spyOn(Date, 'now');
@@ -254,9 +256,9 @@ describe('measureWorkOrderDurations', () => {
     });
 
     /**
-     * Histórico truncado (retenção, importação parcial): sem a entrada de
-     * chegada ao status deixado não há intervalo, e inventar um a partir da
-     * primeira linha disponível mediria outra coisa.
+     * Truncated history (retention, partial import): without the entry into
+     * the left status there is no interval, and inventing one from the first
+     * available row would measure something else.
      */
     it('should not measure dwell when the entry into the left status is absent from the history', () => {
       const history = [

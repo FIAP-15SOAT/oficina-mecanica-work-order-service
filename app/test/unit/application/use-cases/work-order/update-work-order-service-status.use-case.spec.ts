@@ -331,8 +331,8 @@ describe('UpdateWorkOrderServiceStatusUseCase', () => {
     });
 
     /**
-     * O item de serviço mudou, a ordem não: sem entrada nova no histórico não
-     * há permanência a fechar, e a leitura sequer acontece.
+     * The service item changed, the work order did not: with no new history
+     * entry there is no dwell time to close, and the read does not even happen.
      */
     it('should not record a metric when the work order status does not change', async () => {
       const serviceId = randomUUID();

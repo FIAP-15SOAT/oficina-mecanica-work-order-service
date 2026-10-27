@@ -4,15 +4,15 @@ export interface IStatusHistoryRepository {
   create(entry: StatusHistory): Promise<StatusHistory>;
 
   /**
-   * Devolve o histórico **em ordem cronológica crescente** por `createdAt` — a
-   * entrada mais antiga primeiro.
+   * Returns the history **in ascending chronological order** by `createdAt` —
+   * oldest entry first.
    *
-   * ⚠️ A ordem é parte do contrato, não detalhe de implementação. O cálculo de
-   * permanência por status (`measureWorkOrderDurations`) depende dela nas duas
-   * pontas: a permanência ancora na **última** entrada que abriu o status, e os
-   * totais ancoram na **primeira**. Uma implementação que devolva outra ordem
-   * não quebra nada de forma visível — ela corrompe as durações em silêncio,
-   * porque não existe no dado nenhum sinal de que a ordem mudou.
+   * ⚠️ The order is part of the contract, not an implementation detail. The
+   * per-status dwell calculation (`measureWorkOrderDurations`) depends on it at
+   * both ends: dwell anchors on the **last** entry that opened the status, and
+   * totals anchor on the **first**. An implementation that returns another
+   * order breaks nothing visibly — it corrupts the durations silently, because
+   * nothing in the data signals that the order changed.
    */
   findByWorkOrderId(workOrderId: string): Promise<StatusHistory[]>;
 }

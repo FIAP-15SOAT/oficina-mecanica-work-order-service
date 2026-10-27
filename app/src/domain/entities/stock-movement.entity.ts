@@ -6,9 +6,9 @@ import { PartSupply } from './part-supply.entity';
 import { WorkOrder } from './work-order.entity';
 
 /**
- * Entidade de domínio que representa uma movimentação no Estoque.
- * Tipos: Entrada de Peças e Insumos (ENTRY), Saída por OS (EXIT), Ajuste (ADJUSTMENT).
- * O campo `workOrderId` é preenchido quando a saída ocorre por consumo numa Ordem de Serviço.
+ * Domain entity for a stock movement.
+ * Types: parts and supplies entry (ENTRY), work order exit (EXIT), adjustment (ADJUSTMENT).
+ * `workOrderId` is set when the exit comes from consumption in a work order.
  */
 
 interface StockMovementProps {
@@ -24,7 +24,7 @@ interface StockMovementProps {
 export class StockMovement {
   readonly id: string;
   readonly partSupplyId: string;
-  /** ID da Ordem de Serviço vinculada à saída (preenchido apenas em EXIT) */
+  /** Id of the work order linked to the exit (set only on EXIT) */
   readonly workOrderId?: string | null;
   readonly type: StockMovementType;
   readonly quantity: number;

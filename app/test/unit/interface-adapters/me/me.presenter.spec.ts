@@ -198,9 +198,9 @@ describe('MePresenter', () => {
     });
 
     /**
-     * `toQuoteResponse` só é chamado com um Quote carregado via
-     * `findByIdWithDetails` — a asserção `!` deve estourar, não silenciar,
-     * se essa premissa for violada (ver docs/testing.md).
+     * `toQuoteResponse` is only called with a Quote loaded through
+     * `findByIdWithDetails` — the `!` assertion must blow up, not stay silent,
+     * if that premise is broken (see docs/testing.md).
      */
     it('should throw when an item reference was not loaded', () => {
       const quoteService = createMockQuoteService();

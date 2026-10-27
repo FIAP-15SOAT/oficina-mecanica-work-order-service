@@ -104,9 +104,9 @@ describe('generateRequestId', () => {
   });
 
   /**
-   * O charset aceita ponto, hífen e underscore — o alfabeto de um JWT. Um token
-   * assinado curto cabia nos 128 caracteres e era ecoado ao cliente e gravado em
-   * toda linha da requisição sem passar por varredura de conteúdo.
+   * The charset accepts dot, hyphen and underscore — the alphabet of a JWT. A
+   * short signed token fit in the 128 characters and was echoed to the client
+   * and written to every line of the request without a content scan.
    */
   it('should reject an inbound identifier the content scrubber would rewrite', () => {
     const shortJwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJlLWN1cnRhLWFxdWk';
@@ -162,9 +162,9 @@ describe('resolveAccessLogLevel', () => {
   });
 
   /**
-   * O `pino-http` fabrica um `Error` a partir do status em todo 5xx concluído,
-   * então "existe err" não distingue falha de transporte de resposta normal. O
-   * estado do socket distingue — e é o que decide aqui.
+   * `pino-http` builds an `Error` from the status on every completed 5xx, so
+   * "err exists" does not tell a transport failure from a normal response. The
+   * socket state does — and it is what decides here.
    */
   it('should ignore a synthetic error when the response completed normally', () => {
     expect(
@@ -189,9 +189,9 @@ describe('resolveAccessLogLevel', () => {
   });
 
   /**
-   * Aborto de cliente chega ora por `res.on('close')` (sem `err`), ora por
-   * `res.on('error')` (com `err`) — quem dispara primeiro remove os outros. O
-   * nível não pode oscilar entre `warn` e `error` conforme essa corrida.
+   * A client abort arrives either through `res.on('close')` (no `err`) or
+   * through `res.on('error')` (with `err`) — whichever fires first removes the
+   * others. The level must not flip between `warn` and `error` with that race.
    */
   it('should classify an aborted request the same way with and without an error argument', () => {
     const aborted = createRequest({ readableAborted: true });
@@ -259,10 +259,10 @@ describe('resolveAccessLogLevel — health routes', () => {
   });
 
   /**
-   * `path` é propriedade do Express, e o predicado recebe o tipo do `node:http`.
-   * A queda para `url` cobre a requisição que não atravessou o Express — e como
-   * `url` carrega a query string, ela só casa o conjunto fechado quando não há
-   * nenhuma, o que erra para o lado de registrar.
+   * `path` is an Express property, and the predicate receives the `node:http`
+   * type. Falling back to `url` covers a request that did not go through
+   * Express — and since `url` carries the query string, it only matches the
+   * closed set when there is none, which errs on the side of logging.
    */
   it('should fall back to the raw url when the express path is absent', () => {
     const request = createRequest({ path: LIVENESS_PATH });
@@ -540,12 +540,12 @@ describe('resolveLoggerConfig', () => {
 });
 
 /**
- * Registrar só um nível diferente não basta: o desfecho precisa ser consultável.
- * Uma resposta que nunca chegou ao cliente também não pode carregar status, e
- * muito menos o corpo — `writableEnded` diz que `end()` foi chamado, não que a
- * resposta foi entregue.
+ * Logging a different level alone is not enough: the outcome must be queryable.
+ * A response that never reached the client cannot carry a status either, let
+ * alone the body — `writableEnded` says `end()` was called, not that the
+ * response was delivered.
  */
-describe('buildAccessLogAttributes — desfecho de transporte', () => {
+describe('buildAccessLogAttributes — transport outcome', () => {
   it('should mark a transport failure with a stable low-cardinality outcome', () => {
     const attributes = buildAccessLogAttributes(
       createRequest(),
@@ -605,7 +605,7 @@ describe('buildAccessLogAttributes — desfecho de transporte', () => {
   });
 });
 
-describe('buildAccessLogAttributes — casos de borda do corpo e dos cabeçalhos', () => {
+describe('buildAccessLogAttributes — body and header edge cases', () => {
   function failingRequest(body: unknown): IncomingMessage {
     return createRequest({
       method: 'POST',
@@ -662,8 +662,8 @@ describe('buildAccessLogAttributes — casos de borda do corpo e dos cabeçalhos
   });
 
   /**
-   * Todo atributo semconv que pode faltar é **condicional**: emitir a chave com
-   * valor vazio faz o armazenamento indexar um tipo que a convenção não define.
+   * Every semconv attribute that may be missing is **conditional**: emitting the
+   * key with an empty value makes the store index a type the convention does not define.
    */
   it('should omit every conditional attribute the request does not carry', () => {
     const bare = {
@@ -746,11 +746,11 @@ describe('buildAccessLogAttributes — casos de borda do corpo e dos cabeçalhos
 });
 
 /**
- * Um teto único de 2048 em todo texto era generoso demais para atributos que na
- * prática são curtos. Como o access log também sai em 401, qualquer cliente não
- * autenticado inflava a linha só alongando path, user-agent e headers.
+ * A single 2048 cap on all text was too generous for attributes that are short
+ * in practice. Since the access log also goes out on 401, any unauthenticated
+ * client inflated the line just by lengthening path, user-agent and headers.
  */
-describe('buildAccessLogAttributes — tetos por atributo', () => {
+describe('buildAccessLogAttributes — per-attribute caps', () => {
   it('should bound the user agent to its own cap', () => {
     const attributes = buildAccessLogAttributes(
       createRequest({ headers: { 'user-agent': 'U'.repeat(MAX_USER_AGENT_LENGTH * 4) } }),
@@ -801,12 +801,12 @@ describe('buildAccessLogAttributes — tetos por atributo', () => {
 });
 
 /**
- * A captura do corpo é uma **lista de permissão** de status, e não a faixa 4xx
- * inteira: num `401`/`403` a causa é a credencial e o payload não explica nada,
- * e são justamente esses os status que um chamador anônimo alcança — a faixa
- * aberta lhe dava um canal de escrita de 4 KB por requisição no log.
+ * Body capture is an **allowlist** of statuses, not the whole 4xx range: on a
+ * `401`/`403` the cause is the credential and the payload explains nothing,
+ * and those are exactly the statuses an anonymous caller reaches — the open
+ * range gave it a 4 KB-per-request write channel into the log.
  */
-describe('buildAccessLogAttributes — política de captura do corpo', () => {
+describe('buildAccessLogAttributes — body capture policy', () => {
   function postWithBody(statusCode: number): Record<string, unknown> {
     const request = createRequest({
       method: 'POST',
@@ -833,12 +833,12 @@ describe('buildAccessLogAttributes — política de captura do corpo', () => {
 });
 
 /**
- * Todo o recurso /api/auth fica fora da captura de corpo, mesmo em status que
- * normalmente capturam (400/409/422): a rota sempre trafega uma credencial
- * (senha, refresh token, código de redefinição), e não há campo isolável por
- * nome sem também apagar zipCode/statusCode do resto do log.
+ * The whole /api/auth resource stays out of body capture, even on statuses that
+ * normally capture (400/409/422): the route always carries a credential
+ * (password, refresh token, reset code), and no field can be isolated by name
+ * without also erasing zipCode/statusCode from the rest of the log.
  */
-describe('buildAccessLogAttributes — /api/auth nunca captura o corpo', () => {
+describe('buildAccessLogAttributes — /api/auth never captures the body', () => {
   function postAuthWithBody(statusCode: number, path: string): Record<string, unknown> {
     const request = createRequest({
       method: 'POST',
@@ -868,12 +868,12 @@ describe('buildAccessLogAttributes — /api/auth nunca captura o corpo', () => {
 });
 
 /**
- * `client.address` e `url.scheme` são os dois únicos valores do access log que o
- * Express deriva de cabeçalho encaminhado sem passar pelo scrubber. Com
- * `trust proxy` ativo ele devolve o primeiro salto não confiável **como texto**,
- * sem exigir que seja um IP, e o `X-Forwarded-Proto` cru.
+ * `client.address` and `url.scheme` are the only two access-log values Express
+ * derives from a forwarded header without going through the scrubber. With
+ * `trust proxy` on it returns the first untrusted hop **as text**, without
+ * requiring it to be an IP, and `X-Forwarded-Proto` raw.
  */
-describe('buildAccessLogAttributes — valores derivados de proxy', () => {
+describe('buildAccessLogAttributes — proxy-derived values', () => {
   it.each(['10.1.2.3', '::ffff:10.1.2.3', '2001:db8::1'])(
     'should record %s as the client address',
     (ip) => {

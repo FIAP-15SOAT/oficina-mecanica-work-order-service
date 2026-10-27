@@ -10,11 +10,11 @@ export interface WorkOrderStatusDwell {
 }
 
 export interface WorkOrderDurations {
-  /** Permanência no status deixado por esta transição. */
+  /** Time spent in the status this transition left. */
   dwell?: WorkOrderStatusDwell;
-  /** `IN_DIAGNOSIS -> COMPLETED`, registrado uma única vez, na conclusão. */
+  /** `IN_DIAGNOSIS -> COMPLETED`, recorded only once, on completion. */
   diagnosisToCompletionSeconds?: number;
-  /** `RECEIVED -> DELIVERED`, registrado uma única vez, na entrega. */
+  /** `RECEIVED -> DELIVERED`, recorded only once, on delivery. */
   leadTimeSeconds?: number;
 }
 

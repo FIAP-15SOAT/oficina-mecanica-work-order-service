@@ -1,9 +1,9 @@
-/** Tipo de movimentação no Controle de Estoque */
+/** Type of stock movement */
 export enum StockMovementType {
-  /** Entrada de Peças e Insumos no estoque */
+  /** Parts and supplies entering stock */
   ENTRY = 'ENTRY',
-  /** Saída por consumo em Ordem de Serviço */
+  /** Exit by consumption in a work order */
   EXIT = 'EXIT',
-  /** Ajuste de estoque (inventário) */
+  /** Stock adjustment (inventory count) */
   ADJUSTMENT = 'ADJUSTMENT',
 }

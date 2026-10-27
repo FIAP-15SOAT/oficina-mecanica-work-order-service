@@ -89,7 +89,7 @@ describe('AuthenticateUserUseCase', () => {
     );
   });
 
-  it('não deve gerar tokens se autenticação falhar', async () => {
+  it('should not issue tokens when authentication fails', async () => {
     userRepository.findByEmail.mockResolvedValue(null);
 
     await expect(

@@ -1,7 +1,7 @@
-/** Categoria da Peça ou Insumo no Estoque */
+/** Category of a part or supply in stock */
 export enum PartSupplyCategory {
-  /** Componente físico utilizado na manutenção do veículo */
+  /** Physical component used in vehicle maintenance */
   PART = 'PART',
-  /** Material auxiliar utilizado na execução do serviço */
+  /** Auxiliary material used while performing the service */
   SUPPLY = 'SUPPLY',
 }

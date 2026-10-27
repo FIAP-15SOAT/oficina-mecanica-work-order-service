@@ -73,7 +73,7 @@ export class MePresenter {
     };
   }
 
-  /** Resumo — usado nas listagens, onde os itens não são carregados. */
+  /** Summary — used in listings, where the items are not loaded. */
   static toQuoteSummaryResponse(quote: Quote): MyQuoteSummaryResponse {
     return {
       id: quote.id,
@@ -88,7 +88,7 @@ export class MePresenter {
     };
   }
 
-  /** Detalhe — exige um Quote carregado com findByIdWithDetails. */
+  /** Detail — requires a Quote loaded with findByIdWithDetails. */
   static toQuoteResponse(quote: Quote): MyQuoteResponse {
     return {
       ...MePresenter.toQuoteSummaryResponse(quote),
