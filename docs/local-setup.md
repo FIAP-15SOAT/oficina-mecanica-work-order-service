@@ -61,7 +61,7 @@ npm run db:setup
 npm run start:dev
 ```
 
-> **Volume criado por uma versão anterior do compose?** O volume `postgres_data` do PostgreSQL 16 não serve para o PostgreSQL 18, que guarda os dados num subdiretório por versão (o volume agora é montado em `/var/lib/postgresql`), e um volume criado com outro nome de banco não tem o banco `work_order`, porque o PostgreSQL só cria o banco do `POSTGRES_DB` num volume vazio. Recrie-o antes do passo 3 com `docker compose down -v`, que **apaga os dados locais**, e rode o passo 4 de novo.
+> **Subiu a stack antes de o compose se chamar `work-order`?** A stack antiga pertence ao projeto `app`, ocupa as mesmas portas e guarda os dados no volume `app_postgres_data`; a nova cria o volume `work-order_postgres_data`, vazio. Antes do passo 3, remova a antiga com `docker compose -p app down -v`, que **apaga os dados locais dela** (inclusive os de outro serviço que também tenha subido como projeto `app`), e rode o passo 4 de novo.
 
 Após a inicialização:
 

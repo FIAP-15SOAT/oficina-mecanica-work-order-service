@@ -127,7 +127,7 @@ No banco de um ambiente implantado, o mesmo `INSERT` vale em qualquer cliente SQ
 
 ## Postman / Newman
 
-A coleção e o environment estão em `collections/`. Importe `collections/oficina-collection.json` e `collections/oficina-environment.json` no Postman e selecione o environment **"Work Order API (local)"**.
+A coleção e o environment estão em `collections/`. Importe `collections/oficina-collection.json` e `collections/oficina-environment.json` no Postman e selecione o environment **"Work Order API"**.
 
 `baseUrl` representa somente a origem, sem `/api`. O valor padrão é `http://localhost:3000`; as requests da aplicação acrescentam `/api` explicitamente, enquanto o login serverless usa `/customer-auth/login`. Quando o API Gateway estiver implantado, substitua apenas `baseUrl` pela URL base efêmera do gateway. Não é necessário criar outro environment nem manter uma variável exclusiva para o gateway.
 
