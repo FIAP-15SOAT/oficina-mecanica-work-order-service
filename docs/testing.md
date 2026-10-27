@@ -120,14 +120,14 @@ Para ver uma mensagem sair do outbox, passar pelo tópico e voltar pela fila do 
 Na stack do compose (a partir de `app/`):
 
 ```bash
-docker compose exec postgres psql -U postgres -d techchallenge -c "INSERT INTO outbox (message_id, type, work_order_id, payload) VALUES (gen_random_uuid(), 'inventory.stock.reserved', NULL, '{\"quoteId\": \"00000000-0000-4000-8000-000000000000\"}')"
+docker compose exec postgres psql -U postgres -d work_order -c "INSERT INTO outbox (message_id, type, work_order_id, payload) VALUES (gen_random_uuid(), 'inventory.stock.reserved', NULL, '{\"quoteId\": \"00000000-0000-4000-8000-000000000000\"}')"
 ```
 
 No banco de um ambiente implantado, o mesmo `INSERT` vale em qualquer cliente SQL conectado ao banco do serviço. `message_id` não tem valor padrão no banco, por isso o `gen_random_uuid()`; um `work_order_id` preenchido precisa ser de uma OS existente, por causa da FK.
 
 ## Postman / Newman
 
-A coleção e o environment estão em `collections/`. Importe `collections/oficina-collection.json` e `collections/oficina-environment.json` no Postman e selecione o environment **"Oficina Mecânica"**.
+A coleção e o environment estão em `collections/`. Importe `collections/oficina-collection.json` e `collections/oficina-environment.json` no Postman e selecione o environment **"Work Order API (local)"**.
 
 `baseUrl` representa somente a origem, sem `/api`. O valor padrão é `http://localhost:3000`; as requests da aplicação acrescentam `/api` explicitamente, enquanto o login serverless usa `/customer-auth/login`. Quando o API Gateway estiver implantado, substitua apenas `baseUrl` pela URL base efêmera do gateway. Não é necessário criar outro environment nem manter uma variável exclusiva para o gateway.
 

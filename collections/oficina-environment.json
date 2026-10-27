@@ -1,6 +1,6 @@
 {
   "id": "oficina-env-001",
-  "name": "Oficina Mecânica",
+  "name": "Work Order API (local)",
   "values": [
     { "key": "baseUrl", "value": "http://localhost:3000", "type": "default", "enabled": true },
     { "key": "authToken", "value": "", "type": "secret", "enabled": true },
