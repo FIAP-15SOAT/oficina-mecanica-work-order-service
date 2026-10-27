@@ -24,8 +24,8 @@ describe('createDefaultDestination', () => {
   });
 
   /**
-   * `sync: true` porque o buffer assíncrono perde as últimas linhas quando o
-   * processo morre de repente — crash ou OOM kill —, que é quando elas importam.
+   * `sync: true` because the asynchronous buffer loses the last lines when the
+   * process dies suddenly — crash or OOM kill —, which is when they matter.
    */
   it('should write synchronously to stdout', () => {
     createDefaultDestination();
@@ -34,9 +34,9 @@ describe('createDefaultDestination', () => {
   });
 
   /**
-   * Um evento `'error'` sem listener em stream do Node **derruba o processo**:
-   * sem este handler, um `stdout` quebrado (EPIPE quando o coletor cai) faria o
-   * logging matar a aplicação que ele existe para observar.
+   * An `'error'` event with no listener on a Node stream **kills the process**:
+   * without this handler, a broken `stdout` (EPIPE when the collector goes down)
+   * would make logging kill the application it exists to observe.
    */
   it('should register an error listener so a broken stdout cannot kill the process', () => {
     const destination = createDefaultDestination();
@@ -45,9 +45,9 @@ describe('createDefaultDestination', () => {
   });
 
   /**
-   * O diagnóstico de destino é disparado **uma vez por processo** — um stdout
-   * quebrado emitiria `error` a cada escrita, e repetir a linha em stderr seria
-   * trocar o silêncio por uma inundação. Por isso a asserção vive num teste só.
+   * The destination diagnostic fires **once per process** — a broken stdout would
+   * emit `error` on every write, and repeating the line on stderr would trade
+   * silence for a flood. That is why the assertion lives in a single test.
    */
   it('should absorb the write error and report the declared failure policy once', () => {
     createDefaultDestination();

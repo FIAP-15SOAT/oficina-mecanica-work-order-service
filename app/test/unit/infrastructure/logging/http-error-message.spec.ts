@@ -30,16 +30,16 @@ function createRequest(options: FakeRequestOptions = {}): Request {
   } as unknown as Request;
 }
 
-/** Reproduz a construção do Nest: `Cannot ${método} ${originalUrl}`. */
+/** Reproduces Nest's construction: `Cannot ${method} ${originalUrl}`. */
 function frameworkNotFound(request: Request): NotFoundException {
   return new NotFoundException(`Cannot ${request.method} ${request.originalUrl}`);
 }
 
-describe('resolveHttpErrorMessage — 404 gerado pelo framework', () => {
+describe('resolveHttpErrorMessage — framework-generated 404', () => {
   /**
-   * O Nest monta a mensagem do 404 automático com `request.originalUrl`, query
-   * inclusa, e ela ia inteira para `oficina.error.message` — reintroduzindo no
-   * log a URL bruta que `url.query` existe justamente para não registrar.
+   * Nest builds the automatic 404 message with `request.originalUrl`, query
+   * included, and it went whole into `oficina.error.message` — putting back into
+   * the log the raw URL that `url.query` exists precisely not to record.
    */
   it('should rebuild the message without the raw query', () => {
     const request = createRequest({ query: { token: JWT, page: '2' } });
@@ -88,10 +88,10 @@ describe('resolveHttpErrorMessage — 404 gerado pelo framework', () => {
   });
 
   /**
-   * O ramo é reconhecido por igualdade exata contra o template do framework
-   * aplicado a esta requisição. Uma mensagem de negócio não tem como coincidir,
-   * então um `NotFoundException` de um handler real passa intocado — inclusive
-   * quando o caminho é o mesmo.
+   * The branch is recognized by exact equality against the framework template
+   * applied to this request. A business message cannot match it, so a
+   * `NotFoundException` from a real handler passes untouched — even when the path
+   * is the same.
    */
   it('should preserve a 404 raised by a real handler', () => {
     const request = createRequest({ path: '/api/quotes/1' });
@@ -120,12 +120,12 @@ describe('resolveHttpErrorMessage — 404 gerado pelo framework', () => {
   });
 });
 
-describe('resolveHttpErrorMessage — detalhe da exceção HTTP', () => {
+describe('resolveHttpErrorMessage — HTTP exception detail', () => {
   /**
-   * O `initMessage()` do Nest só copia `response.message` quando é string. Para
-   * o `string[]` do class-validator, `exception.message` vira `"Bad Request
-   * Exception"` e a causa real da rejeição — o 4xx mais comum da API — nunca
-   * chegava ao log.
+   * Nest's `initMessage()` only copies `response.message` when it is a string.
+   * For class-validator's `string[]`, `exception.message` becomes `"Bad Request
+   * Exception"` and the real cause of the rejection — the API's most common 4xx
+   * — never reached the log.
    */
   it('should join the validation messages the exception message hides', () => {
     const exception = new BadRequestException([

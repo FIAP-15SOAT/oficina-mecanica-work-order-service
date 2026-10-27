@@ -1,8 +1,7 @@
 /**
- * Rejeita, em tempo de compilação, uma chave que a entrada do catálogo não
- * declara. A checagem nativa de propriedade excedente do TypeScript só alcança
- * literais recém-criados no ponto da chamada; esta forma também pega o objeto
- * montado antes, numa variável.
+ * Rejects, at compile time, a key the catalog entry does not declare.
+ * TypeScript's native excess-property check only reaches fresh literals at the
+ * call site; this form also catches an object built earlier, in a variable.
  */
 export type NoExtraFields<TAllowed, TGiven> = TGiven &
   Record<Exclude<keyof TGiven, keyof TAllowed>, never>;

@@ -59,9 +59,9 @@ export interface MyQuoteItemResponse {
 }
 
 /**
- * Resumo — usado nas listagens, onde os itens não são carregados
- * (`findByWorkOrderId` não inclui `services`/`partsSupplies` de propósito,
- * para não puxar N itens por linha da lista).
+ * Summary — used in listings, where the items are not loaded
+ * (`findByWorkOrderId` leaves out `services`/`partsSupplies` on purpose,
+ * so a list row does not pull N items).
  */
 export interface MyQuoteSummaryResponse {
   id: string;
@@ -75,7 +75,7 @@ export interface MyQuoteSummaryResponse {
   rejectedAt: Date | null;
 }
 
-/** Detalhe — exige um Quote carregado com `findByIdWithDetails`. */
+/** Detail — requires a Quote loaded with `findByIdWithDetails`. */
 export interface MyQuoteResponse extends MyQuoteSummaryResponse {
   services: MyQuoteItemResponse[];
   partsSupplies: MyQuoteItemResponse[];

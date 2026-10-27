@@ -110,11 +110,12 @@ export class GrantCustomerAccessUseCase implements IGrantCustomerAccessUseCase {
   }
 
   /**
-   * CPF batendo é a mesma pessoa física (User.cpf é @unique global; para
-   * INDIVIDUAL vem de Customer.document, já único e validado) — reaproveita
-   * o User e só cria o vínculo. E-mail batendo com OUTRA pessoa é o bug
-   * original (e-mail não é identidade: muda, se repete, é digitado à mão no
-   * cadastro do cliente) — continua conflito real, nunca reaproveita.
+   * A matching CPF is the same natural person (User.cpf is globally @unique;
+   * for INDIVIDUAL it comes from Customer.document, already unique and
+   * validated) — reuse the User and only create the link. A matching e-mail
+   * from ANOTHER person is the original bug (an e-mail is not an identity: it
+   * changes, repeats and is typed by hand in the customer record) — it stays
+   * a real conflict and is never reused.
    */
   private async resolveUser(
     repos: IRepositories,

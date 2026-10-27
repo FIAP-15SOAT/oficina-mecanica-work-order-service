@@ -17,16 +17,16 @@ describe('isHealthProbePath', () => {
     }
   });
 
-  // Comportamento preservado do supressor de access log: o router aceita a
-  // barra final (`strict` é falso), mas ela nunca vem do kubelet — vem de
-  // humano ou de scanner, que é justamente o tráfego que se quer enxergar.
+  // Behavior kept from the access log suppressor: the router accepts the
+  // trailing slash (`strict` is false), but it never comes from the kubelet —
+  // it comes from a human or a scanner, exactly the traffic worth seeing.
   it('should not match a path with a trailing slash', () => {
     expect(isHealthProbePath(`${LIVENESS_PATH}/`)).toBe(false);
     expect(isHealthProbePath(`${READINESS_PATH}/`)).toBe(false);
   });
 
-  // Um casamento por prefixo silenciaria rota vizinha futura. O conjunto
-  // fechado não.
+  // A prefix match would silence a future neighbor route. The closed set
+  // does not.
   it('should not match a neighbouring path that only shares the prefix', () => {
     expect(isHealthProbePath('/api/health/liveness')).toBe(false);
     expect(isHealthProbePath('/api/health')).toBe(false);

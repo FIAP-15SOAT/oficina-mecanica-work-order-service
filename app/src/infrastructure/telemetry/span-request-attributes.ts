@@ -49,11 +49,11 @@ export function extractRequestPathname(url: string | null = ''): string {
 }
 
 /**
- * Mesma resolução que a linha de acesso, pelo **mesmo** `proxy-addr` que o
- * Express usa por baixo do `req.ip`, e alimentado pela **mesma**
- * `TRUSTED_PROXY_CIDRS`. Não é duplicação por escolha: o hook roda no
- * `emit('request')` do `http`, antes de qualquer middleware, e ali o objeto
- * ainda é `IncomingMessage` — `req.ip` não existe para ser reaproveitado.
+ * Same resolution as the access line, through the **same** `proxy-addr` Express
+ * uses under `req.ip`, fed by the **same** `TRUSTED_PROXY_CIDRS`. It is not
+ * duplication by choice: the hook runs on the `http` `emit('request')`, before
+ * any middleware, and there the object is still an `IncomingMessage` — `req.ip`
+ * does not exist to be reused.
  */
 function resolveClientAddress(request: IncomingMessage): string | undefined {
   const address = proxyaddr(request, resolveTrust());
@@ -65,9 +65,9 @@ let cachedTrustKey: string | undefined;
 let cachedTrust: ReturnType<typeof proxyaddr.compile> | undefined;
 
 /**
- * A compilação percorre e valida os CIDRs, e isto roda por requisição — daí a
- * memoização, chaveada pela própria configuração para que uma mudança de
- * ambiente ainda seja observada.
+ * Compiling walks and validates the CIDRs, and this runs per request — hence
+ * the memoization, keyed by the configuration itself so an environment change
+ * is still observed.
  */
 function resolveTrust(): ReturnType<typeof proxyaddr.compile> {
   const { trustedProxies } = resolveLoggerConfig();
@@ -84,9 +84,9 @@ function resolveTrust(): ReturnType<typeof proxyaddr.compile> {
 }
 
 /**
- * `proxyaddr.compile([])` é o que o Express monta para `trust proxy` desligado:
- * não confia em salto nenhum e devolve o endereço do socket. Uma lista inválida
- * cai no mesmo lugar — falha fechada, como `applyTrustProxy` faz do outro lado.
+ * `proxyaddr.compile([])` is what Express builds for `trust proxy` off: it
+ * trusts no hop and returns the socket address. An invalid list lands in the
+ * same place — fail closed, as `applyTrustProxy` does on the other side.
  */
 function compileTrust(trustedProxies: string[] | false): ReturnType<typeof proxyaddr.compile> {
   try {

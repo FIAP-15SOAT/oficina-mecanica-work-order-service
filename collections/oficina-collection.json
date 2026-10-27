@@ -1,7 +1,7 @@
 {
   "info": {
     "_postman_id": "f1423ddd-e95d-47f2-9da9-2abc2e0962c3",
-    "name": "Oficina Mecânica — API Completa",
+    "name": "Work Order API",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_exporter_id": "53661062"
   },

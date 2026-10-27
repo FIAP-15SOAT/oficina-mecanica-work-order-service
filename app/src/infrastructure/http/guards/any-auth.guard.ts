@@ -4,11 +4,10 @@ import { AuthGuard } from '@nestjs/passport';
 import { AuthenticationFailedException } from '../../exceptions/authentication-failed.exception';
 
 /**
- * Aceita token interno OU externo (GET /api/me e PATCH /api/me/password).
- * Passport tenta 'jwt' e depois 'customer-jwt' — cada um com seu próprio
- * verificador de algoritmo/chave; nenhum dos dois é relaxado para aceitar o
- * outro formato. Isto é apenas despacho de guard HTTP, não um verificador
- * compartilhado.
+ * Accepts the staff OR the customer token (GET /api/me and PATCH /api/me/password).
+ * Passport tries 'jwt' and then 'customer-jwt' — each with its own
+ * algorithm/key verifier; neither is relaxed to accept the other format.
+ * This is only HTTP guard dispatch, not a shared verifier.
  */
 @Injectable()
 export class AnyAuthGuard extends AuthGuard(['jwt', 'customer-jwt']) {

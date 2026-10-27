@@ -93,23 +93,23 @@ describe('sanitizeText', () => {
 });
 
 /**
- * Truncar limita o **tamanho** varrido; não limita o **custo**, que era
- * quadrático em três padrões. Cada caso abaixo é o pior caso daquele padrão
- * específico — um "quase-match" que faz o motor percorrer o trecho inteiro e
- * falhar no delimitador seguinte. Uma entrada única para todos não serve: uma
- * sequência só de `A` tem uma única fronteira de palavra e nem exercita o
+ * Truncating bounds the **size** scanned; it does not bound the **cost**, which
+ * was quadratic in three patterns. Each case below is the worst case of that
+ * specific pattern — a "near-match" that makes the engine walk the whole run and
+ * fail at the next delimiter. A single input for all does not work: a run of
+ * only `A` has a single word boundary and does not even exercise
  * `url-credentials`.
  *
- * O quase-match do `url-credentials` precisa conter `://`: sem ele o padrão nem
- * chega ao quantificador que fazia o backtracking, e o teste não tinha como
- * falhar — foi assim que o caso quadrático sobreviveu a uma rodada inteira.
+ * The `url-credentials` near-match must contain `://`: without it the pattern
+ * never reaches the quantifier that backtracked, and the test could not fail —
+ * that is how the quadratic case survived a whole round.
  *
- * O orçamento é folgado de propósito. Antes das correções estes casos levavam
- * 432 ms, 25 ms e 12 ms; depois, menos de 1 ms. Qualquer regressão para tempo
- * quadrático estoura o limite por duas ordens de grandeza, então a asserção não
- * fica frágil em CI lento.
+ * The budget is loose on purpose. Before the fixes these cases took 432 ms,
+ * 25 ms and 12 ms; after, under 1 ms. Any regression to quadratic time
+ * overshoots the limit by two orders of magnitude, so the assertion is not
+ * flaky on a slow CI.
  */
-describe('sanitizeText — custo linear por padrão', () => {
+describe('sanitizeText — linear cost per pattern', () => {
   const BUDGET_MS = 150;
   const LENGTH = MAX_TEXT_LENGTH * 4;
 

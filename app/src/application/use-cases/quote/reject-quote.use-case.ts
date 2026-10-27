@@ -52,8 +52,8 @@ export class RejectQuoteUseCase implements IRejectQuoteUseCase {
       );
 
       if (hasOtherSentQuote) {
-        // A OS não transiciona quando ainda há outro orçamento enviado: sem
-        // entrada nova no histórico, não há permanência a fechar.
+        // The work order does not transition while another quote is still sent:
+        // with no new history entry, there is no dwell time to close.
         return {
           quote: await repos.quote.update(quote),
           workOrderId: workOrder.id,

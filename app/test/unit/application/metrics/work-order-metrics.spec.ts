@@ -57,8 +57,8 @@ describe('recordWorkOrderTransition', () => {
   });
 
   /**
-   * A operação já está confirmada quando esta leitura acontece: propagar a falha
-   * transformaria uma escrita bem-sucedida em erro por causa de telemetria.
+   * The operation is already committed when this read happens: propagating the
+   * failure would turn a successful write into an error because of telemetry.
    */
   it('should absorb a read failure without propagating', async () => {
     const metrics = createMockMetrics();
@@ -115,9 +115,9 @@ describe('recordWorkOrderDurations', () => {
   });
 
   /**
-   * Zero é uma observação legítima — duas transições no mesmo instante do banco
-   * —, e tratá-la como "sem valor" tiraria da distribuição justamente as
-   * passagens instantâneas.
+   * Zero is a legitimate observation — two transitions at the same database
+   * instant — and treating it as "no value" would drop exactly the instant
+   * passages from the distribution.
    */
   it('should emit a zero duration, which is a valid observation', () => {
     const metrics = createMockMetrics();

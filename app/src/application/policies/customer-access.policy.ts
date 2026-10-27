@@ -4,10 +4,10 @@ import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 
 /**
- * A verificação de vínculo não fica só no guard HTTP: esta política
- * é reutilizável por qualquer adaptador que acione os use cases externos.
- * Nunca lança 403 — recurso inexistente e recurso não autorizado respondem
- * igualmente 404, para não transformar a rota em oráculo de enumeração.
+ * The link check does not live only in the HTTP guard: this policy can be
+ * reused by any adapter that triggers the external use cases.
+ * Never throws 403 — a missing resource and an unauthorized resource both
+ * answer 404, so the route does not become an enumeration oracle.
  */
 export class CustomerAccessPolicy {
   constructor(

@@ -167,10 +167,10 @@ describe('UpdateWorkOrderStatusUseCase', () => {
     });
 
     /**
-     * A leitura do histórico existe só para a métrica, e por isso acontece
-     * **fora** da transação. Dentro dela, uma falha aqui derrubaria a operação de
-     * negócio junto — e sem conserto local, porque a transação já estaria
-     * abortada e o COMMIT viraria ROLLBACK silencioso.
+     * The history read exists only for the metric, which is why it happens
+     * **outside** the transaction. Inside it, a failure here would take the
+     * business operation down too — with no local fix, because the transaction
+     * would already be aborted and the COMMIT would become a silent ROLLBACK.
      */
     it('should read the history after the commit, not inside the transaction', async () => {
       const updated = arrangeTransition();

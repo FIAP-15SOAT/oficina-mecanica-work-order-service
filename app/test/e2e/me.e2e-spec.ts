@@ -52,8 +52,8 @@ describe('Me (E2E)', () => {
   }
 
   /**
-   * Gera um CNPJ com dígitos verificadores válidos (mesmo algoritmo de
-   * `DocumentValidator.validateCnpj`), para cenários com cliente COMPANY.
+   * Generates a CNPJ with valid check digits (same algorithm as
+   * `DocumentValidator.validateCnpj`), for scenarios with a COMPANY customer.
    */
   function generateCNPJ(index: number) {
     const base = `${index.toString().padStart(8, '0')}0001`.split('').map(Number);
@@ -137,10 +137,10 @@ describe('Me (E2E)', () => {
   }
 
   /**
-   * Cria diretamente via Prisma um usuário puramente externo (role null, com
-   * CPF) já vinculado a um cliente ativo — equivalente ao resultado de
-   * `POST /api/customers/:customerId/users`, mas sem depender do fluxo
-   * de e-mail de senha inicial, que é irrelevante para este teste.
+   * Creates through Prisma a purely external user (role null, with a CPF)
+   * already linked to an active customer — equivalent to the result of
+   * `POST /api/customers/:customerId/users`, but without depending on the
+   * initial password e-mail flow, which is irrelevant to this test.
    */
   async function createExternalUserLinkedTo(customerId: string, cpf: string) {
     const passwordHash = await bcrypt.hash('External@123', 10);
@@ -209,8 +209,8 @@ describe('Me (E2E)', () => {
     });
 
     /**
-     * `page` e `limit` chegam como texto na query string: sem a conversão do
-     * `@Type(() => Number)` o `IsInt` recusaria toda requisição paginada.
+     * `page` and `limit` arrive as text in the query string: without the
+     * `@Type(() => Number)` conversion, `IsInt` would refuse every paginated request.
      */
     it('should paginate with the page and limit given in the query string', async () => {
       const customer = await createCustomer();
@@ -238,7 +238,7 @@ describe('Me (E2E)', () => {
     });
   });
 
-  // ─── Token de cliente fora da área do cliente ───────────────────────────────
+  // ─── Customer token outside the customer area ───────────────────────────────
 
   describe('Customer token outside the customer area', () => {
     it('should answer 401 to a customer token on a staff route', async () => {
@@ -252,7 +252,7 @@ describe('Me (E2E)', () => {
     });
   });
 
-  // ─── Recursos inexistentes nas rotas externas ───────────────────────────────
+  // ─── Unknown resources on the external routes ───────────────────────────────
 
   describe('Unknown resources on the external routes', () => {
     let token: string;
@@ -316,8 +316,8 @@ describe('Me (E2E)', () => {
       const user = await createExternalUserLinkedTo(customer.id, generateCPF(4001));
       const tokenIssuedBeforeChange = signTestCustomerToken(user.id);
 
-      // iat tem granularidade de segundo; garante que a troca cai num segundo
-      // seguinte ao da assinatura, para não colidir por arredondamento.
+      // iat has one-second granularity; make the change land in the second
+      // after the signing, so rounding does not make them collide.
       await new Promise((resolve) => setTimeout(resolve, 1100));
 
       await request(httpServer)
@@ -385,10 +385,10 @@ describe('Me (E2E)', () => {
 
       const externalUser = await createExternalUserLinkedTo(customerA.id, generateCPF(2000));
 
-      // Segundo vínculo via API real (não Prisma direto): mesmo CPF de
-      // externalUser reaproveita o User existente em vez de criar um novo,
-      // provando o comportamento de GrantCustomerAccessUseCase de ponta a
-      // ponta — não só a leitura de /api/me sobre um estado montado à mão.
+      // Second link through the real API (not Prisma directly): the same CPF
+      // as externalUser reuses the existing User instead of creating a new one,
+      // proving GrantCustomerAccessUseCase's behavior end to end — not only the
+      // /api/me read over a hand-built state.
       await request(httpServer)
         .post(`/api/customers/${customerB.id}/users`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -523,10 +523,10 @@ describe('Me (E2E)', () => {
     });
 
     /**
-     * A listagem de orçamentos de uma OS (`findByWorkOrderId`) não carrega os
-     * itens de propósito — mas o detalhe (`GET /:quoteId`) e a decisão
-     * (`POST /:quoteId/decisions`, tanto approve quanto reject) precisam
-     * devolver os itens com o nome real do serviço/peça, nunca em branco.
+     * The work order quote listing (`findByWorkOrderId`) does not load the
+     * items on purpose — but the detail (`GET /:quoteId`) and the decision
+     * (`POST /:quoteId/decisions`, both approve and reject) must return the
+     * items with the real service/part name, never blank.
      */
     it('returns quote items with real names on detail and on both decision outcomes, and omits items from the list', async () => {
       const customer = await createCustomer();

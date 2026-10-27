@@ -11,20 +11,20 @@ spec:
   backoffLimit: 0
   template:
     metadata:
-      # Unified Service Tagging do Datadog, pela mesma razão de
-      # `03-work-order-deployment.yaml`: o log de contêiner não passa por OTLP, então
-      # sem estas labels o agente cai no nome da imagem e reporta este Job como
-      # `ecr-oficina-mecanica-app-repo` — um serviço fantasma que é, na verdade,
-      # a mesma imagem da API.
+      # Datadog Unified Service Tagging, for the same reason as
+      # `03-work-order-deployment.yaml`: container logs do not go through OTLP, so
+      # without these labels the agent falls back to the image name and reports this
+      # Job as `ecr-oficina-mecanica-app-repo` — a ghost service that is really
+      # the same image as the API.
       #
-      # O `service` é deliberadamente DIFERENTE do da API. Job e Deployment são
-      # workloads distintos, com ciclo de vida distinto: unificá-los encheria a
-      # aba Logs da página do serviço da API com saída de migração a cada
-      # deploy, que é justamente o que as labels do Deployment foram
-      # introduzidas para evitar.
+      # `service` is deliberately DIFFERENT from the API's. Job and Deployment are
+      # distinct workloads, with distinct lifecycles: unifying them would fill the
+      # Logs tab of the API's service page with migration output on every
+      # deploy, which is exactly what the Deployment labels were introduced
+      # to avoid.
       #
-      # `env` é valor ESPELHADO de `NODE_ENV` em `02-work-order-configmap.yaml`, como
-      # no Deployment. Mudou lá, muda aqui (não há verificação automática).
+      # `env` MIRRORS `NODE_ENV` in `02-work-order-configmap.yaml`, as in the
+      # Deployment. Change it there, change it here (there is no automatic check).
       labels:
         app.kubernetes.io/name: db-migrate-job
         app.kubernetes.io/part-of: oficina-mecanica
@@ -46,10 +46,10 @@ spec:
             - name: PRISMA_HIDE_UPDATE_MESSAGE
               value: "true"
 
-          # `set -e` porque o status de saída de `sh -c` é o do ÚLTIMO comando:
-          # sem ele, uma migração que falha seguida de um seed que passa faz o
-          # Job terminar com **sucesso**, e o CD segue para o rollout com o
-          # schema desatualizado.
+          # `set -e` because the exit status of `sh -c` is the LAST command's:
+          # without it, a failing migration followed by a passing seed makes the
+          # Job end with **success**, and the CD moves on to the rollout with an
+          # outdated schema.
           command:
             - sh
             - -c

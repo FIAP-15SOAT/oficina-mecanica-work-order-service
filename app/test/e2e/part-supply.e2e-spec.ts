@@ -609,7 +609,7 @@ describe('PartSupply (E2E)', () => {
     });
   });
 
-  // ─── PATCH /api/parts-supplies/:id — Concorrência (Optimistic Locking) ──────
+  // ─── PATCH /api/parts-supplies/:id — Concurrency (optimistic locking) ───────
 
   describe('PATCH /api/parts-supplies/:id — Concurrency (optimistic locking)', () => {
     it('should maintain stock consistency under concurrent EXIT operations', async () => {

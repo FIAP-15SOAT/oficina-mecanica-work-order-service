@@ -87,10 +87,10 @@ export class UpdateCustomerUseCase implements IUpdateCustomerUseCase {
   }
 
   /**
-   * Trocar o tipo sempre reescreve a semântica do vínculo. Trocar o documento
-   * só quebra a identidade quando o cliente é INDIVIDUAL, porque nesse caso o
-   * documento do cliente É o CPF do usuário titular — o CNPJ de uma COMPANY
-   * não identifica quem a representa, então corrigi-lo não deveria ser bloqueado.
+   * Changing the type always rewrites the meaning of the link. Changing the
+   * document only breaks the identity when the customer is INDIVIDUAL, because
+   * then the customer's document IS the holder user's CPF — a COMPANY's CNPJ
+   * does not identify who represents it, so correcting it should not be blocked.
    */
   private async ensureIdentityCanChange(
     existing: Customer,

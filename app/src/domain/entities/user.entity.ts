@@ -119,9 +119,9 @@ export class User {
   }
 
   /**
-   * A concessão de acesso pode preencher um CPF ainda nulo, mas nunca
-   * substituir um já cadastrado — correção exige rota administrativa
-   * fora desta entrega.
+   * Granting access can fill a CPF that is still null, but never replace
+   * one already registered — a correction needs an administrative route
+   * outside this delivery.
    */
   assignCpf(cpf: string): void {
     if (this.cpf) {

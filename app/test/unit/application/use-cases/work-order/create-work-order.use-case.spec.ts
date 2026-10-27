@@ -409,9 +409,9 @@ describe('CreateWorkOrderUseCase', () => {
     });
 
     /**
-     * A emissão acontece **depois** do `await`: o Prisma só solicita o COMMIT
-     * quando o callback do `$transaction` retorna, então contar lá dentro
-     * incluiria o que vier a ser revertido.
+     * Emission happens **after** the `await`: Prisma only requests the COMMIT
+     * when the `$transaction` callback returns, so counting inside it would
+     * include what may still be rolled back.
      */
     it('should not count when the transaction throws', async () => {
       const customer = createMockCustomer();

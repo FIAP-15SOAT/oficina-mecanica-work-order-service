@@ -97,9 +97,9 @@ describe('OtelMetricsAdapter', () => {
     });
 
     /**
-     * A restrição por métrica é de compilação (`NoExtraFields`); esta é a
-     * segunda linha, contra o que atravessar um `as`. Um atributo desconhecido
-     * emitido sob o nome cru entraria no destino como série nova.
+     * The per-metric restriction is compile-time (`NoExtraFields`); this is the
+     * second line, against whatever slips through an `as`. An unknown attribute
+     * emitted under the raw name would reach the destination as a new series.
      */
     it('should drop an attribute the logical vocabulary does not know', async () => {
       harness.adapter.record(BUSINESS_METRICS.WORK_ORDER_STATUS_DURATION, 10, {
@@ -116,8 +116,8 @@ describe('OtelMetricsAdapter', () => {
     });
 
     /**
-     * Atributo ausente não vira série nova nem string "undefined": ele
-     * simplesmente não entra, e a métrica continua comparável com as demais.
+     * A missing attribute becomes neither a new series nor the string
+     * "undefined": it is left out, and the metric stays comparable to the others.
      */
     it('should ignore an attribute whose value was not provided', async () => {
       harness.adapter.record(BUSINESS_METRICS.WORK_ORDER_STATUS_DURATION, 5, {
@@ -151,8 +151,8 @@ describe('OtelMetricsAdapter', () => {
     });
 
     /**
-     * Fronteira não-lançante: uma operação de negócio já confirmada nunca pode
-     * virar erro por causa de telemetria.
+     * Non-throwing boundary: an already committed business operation must never
+     * turn into an error because of telemetry.
      */
     it('should absorb an emission failure without propagating', () => {
       const failing = new OtelMetricsAdapter();
@@ -187,11 +187,11 @@ describe('OtelMetricsAdapter', () => {
 
   describe('aggregation declared in the registry', () => {
     /**
-     * A agregação padrão de histograma termina em 10 000 e é dimensionada para
-     * **milissegundos** de requisição; permanências vão de minutos a dias em
-     * **segundos**, e toda observação cairia no último balde. A média
-     * continuaria certa e os percentis — a razão de existir do painel — não
-     * teriam significado, sem nada falhar.
+     * The default histogram aggregation ends at 10 000 and is sized for request
+     * **milliseconds**; dwell times range from minutes to days in **seconds**,
+     * and every observation would land in the last bucket. The average would
+     * stay right and the percentiles — the dashboard's reason to exist — would
+     * mean nothing, with nothing failing.
      */
     it('should place 60 s, 3 h and 5 days in different buckets', async () => {
       for (const seconds of [ONE_MINUTE_SECONDS, THREE_HOURS_SECONDS, FIVE_DAYS_SECONDS]) {

@@ -282,8 +282,8 @@ describe('SubmitQuoteUseCase', () => {
   });
   describe('dwell metrics', () => {
     beforeEach(() => {
-      // `clearAllMocks` limpa chamadas, mas nao implementacoes: um teste anterior
-      // deixa o envio de e-mail rejeitando.
+      // `clearAllMocks` clears calls, not implementations: an earlier test
+      // leaves the e-mail sender rejecting.
       mockEmailSender.send.mockResolvedValue(undefined);
     });
 
@@ -331,10 +331,10 @@ describe('SubmitQuoteUseCase', () => {
     });
 
     /**
-     * A transição só ocorre a partir de `IN_DIAGNOSIS` ou `REJECTED`. Com a OS
-     * já em `AWAITING_APPROVAL` não há entrada nova no histórico — e o retorno
-     * composto precisa dizer isso, senão a seção pós-commit inventaria uma
-     * permanência.
+     * The transition only happens from `IN_DIAGNOSIS` or `REJECTED`. With the
+     * work order already in `AWAITING_APPROVAL` there is no new history entry —
+     * and the composite result must say so, or the post-commit section would
+     * invent a dwell time.
      */
     it('should not record a metric when the work order was already in AWAITING_APPROVAL', async () => {
       const quote = createMockQuote({

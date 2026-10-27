@@ -61,7 +61,7 @@ npm run db:setup
 npm run start:dev
 ```
 
-> **Vindo do PostgreSQL 16?** O volume `postgres_data` criado pela versão anterior do compose não serve para o PostgreSQL 18, que guarda os dados num subdiretório por versão (o volume agora é montado em `/var/lib/postgresql`). Recrie-o antes do passo 3 com `docker compose down -v`, que **apaga os dados locais**, e rode o passo 4 de novo.
+> **Subiu a stack antes de o compose se chamar `work-order`?** A stack antiga pertence ao projeto `app`, ocupa as mesmas portas e guarda os dados no volume `app_postgres_data`; a nova cria o volume `work-order_postgres_data`, vazio. Antes do passo 3, remova a antiga com `docker compose -p app down -v`, que **apaga os dados locais dela** (inclusive os de outro serviço que também tenha subido como projeto `app`), e rode o passo 4 de novo.
 
 Após a inicialização:
 
@@ -83,7 +83,7 @@ NODE_ENV=development
 TZ=America/Sao_Paulo
 
 # Banco de dados
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/techchallenge?schema=public
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/work_order?schema=public
 
 # Autenticação de funcionário (RS256; as três chaves vêm dos comandos do passo 2)
 STAFF_JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"

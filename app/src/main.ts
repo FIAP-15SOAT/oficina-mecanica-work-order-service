@@ -27,10 +27,10 @@ async function bootstrap(): Promise<void> {
 
     logStartup(app, port, startupWarnings);
   } catch (error) {
-    // O `close()` do Nest executa os hooks de shutdown em série e um
-    // deles espera o `$disconnect()` do Prisma sem prazo: se ele não
-    // resolvesse, `bootstrap()` também nunca rejeitaria, e a linha fatal,
-    // o código de saída e o próprio watchdog jamais seriam armados.
+    // Nest's `close()` runs the shutdown hooks in series and one of them
+    // waits for Prisma's `$disconnect()` with no deadline: if it never
+    // resolved, `bootstrap()` would never reject either, and the fatal line,
+    // the exit code and the watchdog itself would never be armed.
     reportFatal(error);
 
     void app.close().catch(() => undefined);
@@ -48,15 +48,15 @@ function logStartup(app: NestExpressApplication, port: number, warnings: string[
 }
 
 /**
- * `process.exitCode` em vez de `process.exit()`: o código de saída marca a
- * falha para o orquestrador reiniciar, e o processo ainda encerra sozinho
- * quando o loop de eventos esvazia — sem cortar a escrita da linha acima, que
- * em contêiner cai num pipe e nem sempre é síncrona.
+ * `process.exitCode` instead of `process.exit()`: the exit code marks the
+ * failure for the orchestrator to restart, and the process still ends on its
+ * own when the event loop drains — without cutting the write of the line above,
+ * which in a container goes to a pipe and is not always synchronous.
  *
- * O timer é a rede de segurança para quando o loop **não** esvazia: um handle
- * que sobrou, ou um hook de shutdown que não resolve. Está `unref`ado de
- * propósito, então não segura o processo no caminho saudável e só chega a
- * disparar se algo de fato o prendeu.
+ * The timer is the safety net for when the loop does **not** drain: a leftover
+ * handle, or a shutdown hook that never resolves. It is `unref`'d on purpose,
+ * so it does not hold the process on the healthy path and only fires if
+ * something really kept it alive.
  */
 function reportFatal(error: unknown): void {
   reportBootstrapFailure(error);

@@ -65,13 +65,13 @@ function extractPlainMessage(exception: unknown): string {
 }
 
 /**
- * O `initMessage()` do Nest só copia `response.message` quando ela é string.
- * Para o `string[]` que o `ValidationPipe` produz, `exception.message` vira o
- * nome da classe humanizado — `"Bad Request Exception"` —, e a causa real da
- * rejeição, que é o 4xx mais comum da API, nunca chegava ao log.
+ * Nest's `initMessage()` only copies `response.message` when it is a string.
+ * For the `string[]` that `ValidationPipe` produces, `exception.message` becomes
+ * the humanized class name — `"Bad Request Exception"` —, and the real cause of
+ * the rejection, the API's most common 4xx, never reached the log.
  *
- * A quantidade e o tamanho são limitados porque o array é derivado do payload:
- * um corpo com muitos campos inválidos produz muitas mensagens.
+ * Count and length are bounded because the array derives from the payload:
+ * a body with many invalid fields produces many messages.
  */
 function extractHttpExceptionDetail(exception: unknown): string | undefined {
   if (!(exception instanceof HttpException)) {

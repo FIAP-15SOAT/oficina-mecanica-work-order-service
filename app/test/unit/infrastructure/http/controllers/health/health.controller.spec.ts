@@ -60,10 +60,10 @@ describe('HealthController', () => {
   });
 
   /**
-   * A fronteira é por **origem**: só a indisponibilidade esperada vira `503`.
-   * Um defeito no caminho de verificação propaga para o tratamento global e sai
-   * `500` — converter defeito de programação em "banco indisponível" esconderia
-   * a causa real exatamente no endpoint criado para diagnosticar.
+   * The boundary is by **origin**: only the expected unavailability becomes `503`.
+   * A defect in the check path propagates to the global handling and goes out as
+   * `500` — turning a programming defect into "database unavailable" would hide
+   * the real cause in exactly the endpoint built for diagnosis.
    */
   it('should let an unexpected failure propagate instead of reporting unavailability', async () => {
     const defect = new TypeError('estado corrompido');

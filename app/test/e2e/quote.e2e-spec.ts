@@ -784,10 +784,10 @@ describe('Quote (E2E)', () => {
     });
 
     /**
-     * Sem nenhum usuário externo ativo vinculado, o destinatário é o e-mail do
-     * próprio cliente e o texto troca de "acesse o sistema" para "entre em
-     * contato com a oficina" — mandar a instrução de acesso para quem não tem
-     * acesso é o defeito que este caso impede.
+     * With no active external user linked, the recipient is the customer's own
+     * e-mail and the text changes from "acesse o sistema" to "entre em contato
+     * com a oficina" — sending access instructions to someone without access is
+     * the defect this case prevents.
      */
     it('should notify the customer directly when nobody has external access', async () => {
       const customer = await createCustomerWithoutAccess();
@@ -1239,9 +1239,9 @@ describe('Quote (E2E)', () => {
         .send({})
         .expect(200);
 
-      // Motivo ausente é entrada malformada, não conflito de estado — a
-      // combinação de parâmetros (status=REJECTED sem reason) é inválida em
-      // si, independentemente do estado atual do orçamento.
+      // A missing reason is malformed input, not a state conflict — the
+      // parameter combination (status=REJECTED without reason) is invalid in
+      // itself, whatever the quote's current state.
       await request(httpServer)
         .patch(`/api/quotes/${quoteId}`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1824,7 +1824,7 @@ describe('Quote (E2E)', () => {
     });
   });
 
-  // ─── Concorrência — Optimistic Locking ──────────────────────────────────────
+  // ─── Concurrency — optimistic locking ───────────────────────────────────────
 
   describe('Quote approval — Concurrency (optimistic locking)', () => {
     async function setupSentQuote() {

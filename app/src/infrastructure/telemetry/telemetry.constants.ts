@@ -1,16 +1,15 @@
 import { reportTelemetryFailure } from './telemetry-diagnostics';
 
 /**
- * Orçamento de encerramento. A janela do orquestrador é
- * `terminationGracePeriodSeconds` (40 s), da qual 10 s já são a janela de
- * drenagem — sobram 30 s, compartilhados com o fechamento do servidor e o
- * `$disconnect()` do Prisma.
+ * Shutdown budget. The orchestrator's window is `terminationGracePeriodSeconds`
+ * (40 s), of which 10 s are already the drain window — 30 s are left, shared
+ * with the server close and Prisma's `$disconnect()`.
  *
- * Os padrões do SDK **não** cabem aí: o leitor periódico usa 30 s de prazo de
- * exportação e o exportador OTLP 10 s. E um prazo apenas externo — uma corrida
- * contra um relógio no hook — abandona a espera sem **cancelar** a exportação:
- * o handle continua vivo, o processo não encerra e o `SIGKILL` corta o flush e
- * os hooks seguintes junto.
+ * The SDK defaults do **not** fit there: the periodic reader uses a 30 s export
+ * deadline and the OTLP exporter 10 s. And a purely external deadline — a race
+ * against a clock in the hook — abandons the wait without **cancelling** the
+ * export: the handle stays alive, the process does not end and `SIGKILL` cuts
+ * the flush and the following hooks along with it.
  */
 export const DEFAULT_EXPORT_TIMEOUT_MS = 5_000;
 
@@ -19,10 +18,10 @@ export const DEFAULT_METRIC_EXPORT_TIMEOUT_MS = 5_000;
 export const DEFAULT_METRIC_EXPORT_INTERVAL_MS = 60_000;
 
 /**
- * Piso medido, não escolhido. Abaixo de 1 s o processo **nunca encerra**: o prazo
- * é encolhido junto com o intervalo (ver `resolveMetricExportTiming`), então uma
- * nova exportação começa antes de o socket da anterior ser liberado e sempre
- * sobra um handle vivo no laço de eventos.
+ * Measured floor, not chosen. Below 1 s the process **never ends**: the deadline
+ * shrinks along with the interval (see `resolveMetricExportTiming`), so a new
+ * export starts before the previous socket is released and a live handle is
+ * always left in the event loop.
  */
 export const MIN_METRIC_EXPORT_INTERVAL_MS = 1_000;
 
@@ -40,11 +39,11 @@ export function resolveTimeoutMs(raw: string | undefined, fallback: number): num
 }
 
 /**
- * Um prazo de exportação **maior** que o teto do hook de encerramento derrota o
- * teto: o `Promise.race` abandona a espera, mas o handle da exportação continua
- * vivo, o processo não encerra e o `SIGKILL` corta os hooks seguintes junto. Por
- * isso a sobreposição do operador é aceita até o limite em que ela ainda cancela
- * a tempo, e reduzida — com diagnóstico — acima disso.
+ * An export deadline **longer** than the shutdown hook's cap defeats the cap:
+ * `Promise.race` abandons the wait, but the export handle stays alive, the
+ * process does not end and `SIGKILL` cuts the following hooks along with it.
+ * That is why the operator override is accepted up to the limit where it still
+ * cancels in time, and reduced — with a diagnostic — above it.
  */
 export function resolveExportTimeoutMs(raw: string | undefined, fallback: number): number {
   const requested = resolveTimeoutMs(raw, fallback);
@@ -59,11 +58,11 @@ export function resolveExportTimeoutMs(raw: string | undefined, fallback: number
 }
 
 /**
- * As duas variáveis do leitor periódico são **relacionadas**, e o construtor
- * lança quando o intervalo é menor que o prazo. Resolvê-las isoladamente deixava
- * uma faixa larga de valores plausíveis — qualquer `OTEL_METRIC_EXPORT_INTERVAL`
- * abaixo do prazo padrão de 5 s, `1000` inclusive — derrubando o processo no
- * preload, antes de qualquer linha de log existir.
+ * The two periodic reader variables are **related**, and the constructor throws
+ * when the interval is shorter than the deadline. Resolving them separately left
+ * a wide range of plausible values — any `OTEL_METRIC_EXPORT_INTERVAL` below the
+ * 5 s default deadline, `1000` included — crashing the process in the preload,
+ * before any log line existed.
  *
  */
 export function resolveMetricExportTiming(

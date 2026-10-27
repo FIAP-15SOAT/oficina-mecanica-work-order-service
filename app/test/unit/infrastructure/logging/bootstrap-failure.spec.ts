@@ -45,8 +45,8 @@ describe('reportBootstrapFailure', () => {
   });
 
   /**
-   * O caminho fatal escapava da redação inteira: o Node despejava o stack cru.
-   * É justamente a exceção que pode carregar credencial de conexão.
+   * The fatal path escaped the whole redaction: Node dumped the raw stack.
+   * That is exactly the exception that can carry a connection credential.
    */
   it('should sanitize the fatal error before writing it', () => {
     const target = capture();
@@ -83,9 +83,9 @@ describe('reportBootstrapFailure', () => {
   });
 
   /**
-   * Sem os atributos de recurso, justamente a linha que alguém lê quando o pod
-   * não sobe seria a única impossível de atribuir a um serviço, uma versão ou um
-   * ambiente num coletor compartilhado.
+   * Without the resource attributes, the very line someone reads when the pod
+   * does not start would be the only one impossible to attribute to a service,
+   * a version or an environment in a shared collector.
    */
   it('should carry the same resource attributes as every other line', () => {
     const target = capture();
@@ -102,9 +102,9 @@ describe('reportBootstrapFailure', () => {
   });
 
   /**
-   * Os docs vendem `LOG_LEVEL=silent` como o desligamento da saída sem deploy.
-   * Um kill switch com exceção não documentada é pior que um sem exceção — e a
-   * falha continua visível pelo código de saída 1.
+   * The docs present `LOG_LEVEL=silent` as turning output off without a deploy.
+   * A kill switch with an undocumented exception is worse than one without — and
+   * the failure stays visible through exit code 1.
    */
   it('should honour the silent kill switch', () => {
     const previous = process.env.LOG_LEVEL;

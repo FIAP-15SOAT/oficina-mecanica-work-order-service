@@ -33,21 +33,23 @@ const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const JSON_CONTENT_TYPE = /^application\/(json|[\w.+-]+\+json)\b/i;
 
 /**
- * Status de cliente em que o corpo **explica** a rejeição — validação, conflito
- * e regra de negócio. É uma lista de permissão, e não a faixa 4xx inteira, por
- * dois motivos: num `401`/`403` a causa é a credencial e o payload não responde
- * nada; e, sendo esses os status alcançáveis sem autenticação, a faixa aberta
- * dava a um chamador anônimo um canal de escrita de 4 KB por requisição no
- * armazenamento de logs. `404`, `405` e `429` caem pelo mesmo critério.
+ * Client statuses in which the body **explains** the rejection — validation,
+ * conflict and business rule. It is an allowlist, not the whole 4xx range, for
+ * two reasons: on a `401`/`403` the cause is the credential and the payload
+ * answers nothing; and, these being the statuses reachable without
+ * authentication, the open range gave an anonymous caller a 4 KB-per-request
+ * write channel into the log store. `404`, `405` and `429` fall out by the same
+ * criterion.
  */
 const BODY_CAPTURE_STATUSES = new Set([400, 409, 422]);
 
 const SERVER_ERROR_STATUS = 500;
 
 /**
- * Recursos cujo corpo nunca é registrado: tudo em /api/auth trafega credencial
- * (senha, refresh token, código de redefinição) e o payload não ajuda a
- * diagnosticar a rejeição — o status e a rota já dizem o que aconteceu.
+ * Resources whose body is never logged: everything under /api/auth carries a
+ * credential (password, refresh token, reset code) and the payload does not
+ * help diagnose the rejection — the status and the route already say what
+ * happened.
  */
 const BODY_CAPTURE_EXCLUDED_RESOURCES = new Set(['auth']);
 
@@ -117,10 +119,10 @@ function isReusableRequestId(inbound: string | undefined): inbound is string {
 }
 
 /**
- * A supressão das probes vive aqui, e não em `autoLogging.ignore`, porque o
- * `ignore` é avaliado no **início** da requisição, e isso apagaria também a
- * probe que *falha*, que é exatamente o evento que motiva o registro. O
- * `customLogLevel` enxerga o `res` e silencia só o sucesso.
+ * The probe suppression lives here, not in `autoLogging.ignore`, because
+ * `ignore` is evaluated at the **start** of the request, and that would also
+ * erase the probe that *fails*, which is exactly the event worth logging.
+ * `customLogLevel` sees `res` and silences only the success.
  */
 export function resolveAccessLogLevel(
   request: IncomingMessage,
@@ -304,8 +306,8 @@ function buildBodyAttributes(
     return {};
   }
 
-  // `serializeBody` devolve `undefined` quando não há corpo para serializar —
-  // uma requisição sem corpo chega aqui com `req.body` indefinido.
+  // `serializeBody` returns `undefined` when there is no body to serialize —
+  // a request without a body arrives here with `req.body` undefined.
   const serialized = serializeBody(request.body, { resource });
 
   if (!serialized) {

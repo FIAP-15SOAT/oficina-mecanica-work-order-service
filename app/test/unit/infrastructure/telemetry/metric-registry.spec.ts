@@ -23,28 +23,28 @@ type Assert<T extends true> = T;
 type MutuallyAssignable<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
 /**
- * Falha de compilação nas duas direções: uma métrica declarada no vocabulário
- * que nenhuma entrada do catálogo emite (entrada morta), ou uma métrica do
- * catálogo sem entrada no registry (nome físico inexistente em runtime). O
- * `Record<BusinessMetricName, ...>` do registry fecha a segunda direção; esta
- * asserção fecha a primeira.
+ * Compilation fails in both directions: a metric declared in the vocabulary
+ * that no catalog entry emits (a dead entry), or a catalog metric with no
+ * registry entry (a physical name missing at runtime). The registry's
+ * `Record<BusinessMetricName, ...>` closes the second direction; this
+ * assertion closes the first.
  */
 type _CatalogMatchesVocabulary = Assert<MutuallyAssignable<CatalogMetricName, BusinessMetricName>>;
 
 /**
- * Todo atributo que o catálogo declara precisa existir no vocabulário lógico —
- * caso contrário o adaptador o descartaria em runtime, e a métrica sairia sem a
- * dimensão que o painel espera.
+ * Every attribute the catalog declares must exist in the logical vocabulary —
+ * otherwise the adapter would drop it at runtime, and the metric would go out
+ * without the dimension the dashboard expects.
  */
 type _AttributesBelongToVocabulary = Assert<
   [CatalogAttributeName] extends [MetricAttributeName] ? true : false
 >;
 
 /**
- * `high` não pertence ao tipo: declarar cardinalidade alta num atributo de
- * métrica é **erro de compilação**, não revisão esquecida. É o que impede
- * identificador de ordem de serviço, de cliente ou de usuário de virar
- * dimensão e multiplicar séries sem limite.
+ * `high` is not part of the type: declaring high cardinality on a metric
+ * attribute is a **compile error**, not a forgotten review. It is what keeps a
+ * work order, customer or user identifier from becoming a dimension and
+ * multiplying series without limit.
  */
 type _NoHighCardinalityAttribute = Assert<'high' extends MetricCardinality ? false : true>;
 
@@ -62,8 +62,8 @@ describe('metric registry', () => {
   });
 
   /**
-   * A convenção não define este atributo, e estender um namespace dela é
-   * proibido: `oficina.work_order.status`, nunca `work_order.status`.
+   * The convention does not define this attribute, and extending one of its
+   * namespaces is forbidden: `oficina.work_order.status`, never `work_order.status`.
    */
   it('should keep attribute names inside the owned namespace', () => {
     for (const entry of Object.values(METRIC_ATTRIBUTE_REGISTRY)) {
@@ -92,8 +92,8 @@ describe('metric registry', () => {
   });
 
   /**
-   * Identificador de entidade como atributo multiplica séries temporais sem
-   * limite, com custo proporcional ao tráfego.
+   * An entity identifier as an attribute multiplies time series without limit,
+   * at a cost proportional to traffic.
    */
   it('should not declare any entity identifier as an attribute', () => {
     const forbidden = ['id', 'customer', 'user', 'vehicle', 'number'];

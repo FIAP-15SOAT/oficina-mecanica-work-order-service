@@ -85,7 +85,7 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: techchallenge
+          POSTGRES_DB: work_order
         ports:
           - 5432:5432
         options: >-
@@ -106,7 +106,7 @@ jobs:
         working-directory: app
         run: npm run db:reset
         env:
-          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/techchallenge?schema=public
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/work_order?schema=public
 
   open-pr:
     name: Open Pull Request

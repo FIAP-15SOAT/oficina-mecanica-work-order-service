@@ -162,8 +162,8 @@ Outputs exportados pelo `infra-base`: `vpc_id`, `vpc_cidr`, `public_subnet_ids`,
 | Variável | Tipo | Default | Finalidade |
 |---|---|---|---|
 | `service_context` | `string` | `work-order` | Identificador do bounded context dono desta camada de dados |
-| `db_name` | `string` | `techchallenge` | Nome do banco inicial |
-| `db_username` | `string` | `techchallenge` | Usuário administrador |
+| `db_name` | `string` | `work_order` | Nome do banco inicial |
+| `db_username` | `string` | `oficina` | Usuário administrador |
 | `db_engine_version` | `string` | `18` | Versão do PostgreSQL no RDS |
 | `db_instance_class` | `string` | `db.t4g.micro` | Família de instância RDS |
 | `db_allocated_storage` | `number` | `20` | Tamanho do disco em GiB |

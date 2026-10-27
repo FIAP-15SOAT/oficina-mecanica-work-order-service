@@ -3,10 +3,9 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 export function setupSwagger(app: INestApplication): void {
   const config = new DocumentBuilder()
-    .setTitle('Oficina Mecânica API')
+    .setTitle('Work Order API')
     .setDescription(
-      'Sistema Integrado de Atendimento e Execução de Serviços — ' +
-        'Gestão de ordens de serviço, clientes, veículos, peças e serviços.',
+      'Ordens de serviço da oficina mecânica: abertura, diagnóstico, orçamento, execução e entrega.',
     )
     .setVersion('1.0.0')
     .addBearerAuth(
@@ -28,6 +27,6 @@ export function setupSwagger(app: INestApplication): void {
       tagsSorter: 'alpha',
       operationsSorter: 'method',
     },
-    customSiteTitle: 'Oficina Mecânica — API Docs',
+    customSiteTitle: 'Work Order API',
   });
 }

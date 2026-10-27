@@ -1075,7 +1075,7 @@ describe('WorkOrder (E2E)', () => {
 
       expect(res.body.data.status).toBe('IN_PROGRESS');
 
-      // Check OS status also changed to IN_PROGRESS
+      // Check the work order status also changed to IN_PROGRESS
       const woRes = await request(httpServer)
         .get(`/api/work-orders/${wo.id}`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1878,7 +1878,7 @@ describe('WorkOrder (E2E)', () => {
     });
   });
 
-  // ─── PATCH /api/work-orders/:id — Concorrência (Optimistic Locking) ─────────
+  // ─── PATCH /api/work-orders/:id — Concurrency (optimistic locking) ──────────
 
   describe('PATCH /api/work-orders/:id — Concurrency (optimistic locking)', () => {
     it('should maintain consistency under concurrent status transitions', async () => {

@@ -246,7 +246,7 @@ describe('PinoLoggerAdapter', () => {
   });
 });
 
-describe('PinoLoggerAdapter — evento com exceção anexada', () => {
+describe('PinoLoggerAdapter — event with an attached exception', () => {
   it('should carry the exception attributes alongside the event fields', () => {
     const lines = captureLines();
     const adapter = new PinoLoggerAdapter(new PinoLogger(params));
@@ -267,16 +267,16 @@ describe('PinoLoggerAdapter — evento com exceção anexada', () => {
 });
 
 /**
- * `message` é a única chave presente em toda linha que não passa por
- * `formatters.log` — o pino a serializa por um caminho separado. Pior: quando o
- * objeto traz `err` e nenhuma mensagem, o pino **levanta `err.message` cru**
- * para o envelope, que é exatamente o que o bridge do `nestjs-pino` produz a
- * partir do contrato `error(message, stack)` do Nest.
+ * `message` is the only key present in every line that does not go through
+ * `formatters.log` — pino serializes it on a separate path. Worse: when the
+ * object carries `err` and no message, pino **lifts `err.message` raw** into
+ * the envelope, which is exactly what `nestjs-pino`'s bridge produces from
+ * Nest's `error(message, stack)` contract.
  *
- * Sem o serializer, a linha saía com `exception.message` redigida ao lado de um
- * `message` com a connection string inteira.
+ * Without the serializer, the line came out with `exception.message` redacted
+ * next to a `message` holding the whole connection string.
  */
-describe('saída — a mensagem também passa pela redação', () => {
+describe('output — the message also goes through redaction', () => {
   const SENSITIVE = 'postgresql://app:S3nh4Secreta@db:5432/oficina para maria.silva@gmail.com';
 
   it('should sanitize a message emitted through the application port', () => {

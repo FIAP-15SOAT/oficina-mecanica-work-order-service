@@ -39,9 +39,8 @@ describe('reportLoggingFailure', () => {
   });
 
   /**
-   * A linha de diagnóstico carrega o nome do campo e o tipo do erro, nunca o
-   * valor: ela não pode virar a via de vazamento que a redação existe para
-   * evitar.
+   * The diagnostic line carries the field name and the error type, never the
+   * value: it must not become the leak path that redaction exists to prevent.
    */
   it('should carry the field and the error type but never a value', () => {
     const stderr = captureStderr();
@@ -66,15 +65,15 @@ describe('reportLoggingFailure', () => {
 });
 
 /**
- * O pino transforma `EPIPE` em no-op silencioso, que é exatamente o modo de
- * falha "rodando cego e ninguém percebe". A política declarada é continuar
- * degradado com uma única linha em stderr — uma por processo, para que um
- * stdout quebrado não vire uma tempestade no stderr.
+ * pino turns `EPIPE` into a silent no-op, which is exactly the "running blind
+ * and nobody notices" failure mode. The declared policy is to continue degraded
+ * with a single line on stderr — one per process, so a broken stdout does not
+ * become a storm on stderr.
  */
 describe('reportDestinationFailure', () => {
-  // O sinalizador de "já reportei" é por processo. Cada arquivo de spec tem seu
-  // próprio registro de módulos e nenhum outro teste daqui aciona esta função,
-  // então esta é de fato a primeira falha de destino do processo.
+  // The "already reported" flag is per process. Each spec file has its own
+  // module registry and no other test here triggers this function, so this is
+  // really the process's first destination failure.
   it('should report the declared policy on the first destination failure only', () => {
     const stderr = captureStderr();
 
@@ -164,13 +163,14 @@ describe('runSafelyVoid', () => {
 });
 
 /**
- * Medido: um `EPIPE` no stderr — o coletor fechando o pipe — chega de forma
- * **assíncrona**, fora do `try/catch` do escritor, e derrubava o processo com
- * exceção não capturada. O oposto exato da política `continue-degraded`. O
- * listener é simétrico ao que o destino de stdout já registra, e pelo mesmo
- * motivo: evento `'error'` sem listener em stream do Node mata o processo.
+ * Measured: an `EPIPE` on stderr — the collector closing the pipe — arrives
+ * **asynchronously**, outside the writer's `try/catch`, and killed the process
+ * with an uncaught exception. The exact opposite of the `continue-degraded`
+ * policy. The listener mirrors the one the stdout destination already
+ * registers, for the same reason: an `'error'` event with no listener on a
+ * Node stream kills the process.
  */
-describe('canal de diagnóstico — resiliência do stderr', () => {
+describe('diagnostic channel — stderr resilience', () => {
   it('should keep an error listener registered on stderr', () => {
     expect(process.stderr.listenerCount('error')).toBeGreaterThan(0);
   });
@@ -180,8 +180,8 @@ describe('canal de diagnóstico — resiliência do stderr', () => {
   });
 
   /**
-   * Num destino compartilhado, uma linha sem `service.*` é impossível de
-   * atribuir — e esta pode ser o único sinal restante quando o stdout falhou.
+   * In a shared destination, a line without `service.*` cannot be attributed —
+   * and this may be the only signal left when stdout failed.
    */
   it('should carry the resource attributes that identify the origin', () => {
     const stderr = captureStderr();

@@ -52,10 +52,10 @@ export function buildLoggerParams(destination: DestinationStream, level: LogLeve
         base: { ...resource, 'host.name': hostname(), 'process.pid': process.pid },
         messageKey: 'message',
         timestamp: () => `,"timestamp":"${new Date().toISOString()}"`,
-        // O pino aplica o `mixin` **antes** de `formatters.log`, então os três
-        // campos atravessam `normalizeLogRecord` como qualquer outra chave — e
-        // por isso precisam estar declarados no dicionário, senão sumiriam em
-        // silêncio.
+        // pino applies the `mixin` **before** `formatters.log`, so the three
+        // fields go through `normalizeLogRecord` like any other key — and that
+        // is why they must be declared in the dictionary, or they would vanish
+        // silently.
         mixin: buildTraceCorrelation,
         formatters: {
           level: (label: string) => ({ level: label }),
@@ -76,8 +76,8 @@ export function buildLoggerParams(destination: DestinationStream, level: LogLeve
         },
         genReqId: generateRequestId,
         customLogLevel: resolveAccessLogLevel,
-        // Os dois hooks precisam existir porque o pino-http roteia 4xx pelo
-        // hook de sucesso, não pelo de erro.
+        // Both hooks must exist because pino-http routes 4xx through the
+        // success hook, not the error one.
         customSuccessMessage: buildAccessLogMessage,
         customErrorMessage: buildAccessLogMessage,
         customSuccessObject: (request, response, baseObject: Record<string, unknown>) =>

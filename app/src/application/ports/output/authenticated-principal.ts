@@ -2,9 +2,9 @@ import { UserRole } from '@domain/enums/user-role.enum';
 import { AuthFlow } from '@domain/enums/auth-flow.enum';
 
 /**
- * O campo authFlow é sempre atribuído pela estratégia Passport que validou o
- * token (JwtStrategy ou CustomerJwtStrategy) — nunca lido do próprio token,
- * para que o valor não dependa do conteúdo apresentado pelo cliente.
+ * authFlow is always set by the Passport strategy that validated the token
+ * (JwtStrategy or CustomerJwtStrategy) — never read from the token itself,
+ * so the value does not depend on what the client presented.
  */
 export type AuthenticatedPrincipal =
   | { sub: string; authFlow: AuthFlow.INTERNAL; email: string; role: UserRole }

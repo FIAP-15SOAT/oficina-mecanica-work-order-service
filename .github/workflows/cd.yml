@@ -47,7 +47,7 @@ jobs:
         id: login_ecr
         uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
 
-      # Com `image_tag`, o deploy reaproveita uma imagem já publicada e o build é pulado.
+      # With `image_tag`, the deploy reuses an already published image and the build is skipped.
       - name: Set image metadata
         id: image_meta
         env:
@@ -111,9 +111,9 @@ jobs:
             exit 1
           fi
 
-      # Falha rápido e com causa explícita, antes de gastar uma autenticação AWS e
-      # um kubectl apply: sem estas chaves, os Secrets do cluster sobem com valores
-      # vazios ou malformados e o pod da API só falha depois, em CrashLoopBackOff.
+      # Fail fast with an explicit cause, before spending an AWS authentication and
+      # a kubectl apply: without these keys, the cluster Secrets go up with empty or
+      # malformed values and the API pod only fails later, in CrashLoopBackOff.
       - name: Validate required secrets
         env:
           CUSTOMER_JWT_PUBLIC_KEY: ${{ secrets.CUSTOMER_JWT_PUBLIC_KEY }}
@@ -122,7 +122,7 @@ jobs:
           STAFF_JWT_PUBLIC_KEY: ${{ vars.STAFF_JWT_PUBLIC_KEY }}
           STAFF_JWT_KEY_ID: ${{ vars.STAFF_JWT_KEY_ID }}
         run: |
-          # require_pem <variável> <bloco PEM esperado> <onde se cadastra>
+          # require_pem <variable> <expected PEM block> <where it is registered>
           require_pem() {
             if [ -z "${!1}" ]; then
               echo "::error::$1 não está configurado nos $3."
@@ -433,7 +433,7 @@ jobs:
         id: rollout
         run: kubectl rollout status deployment/${{ vars.K8S_DEPLOYMENT_NAME }} --namespace=${{ vars.K8S_NAMESPACE }} --timeout=180s
 
-      # Sem a API do gateway (subida do zero, antes do apply do api-gateway), o deploy vale pelo rollout.
+      # Without the gateway API (bootstrap from zero, before the api-gateway apply), the rollout validates the deploy.
       - name: Smoke test through the gateway
         id: smoke
         run: |

@@ -51,9 +51,9 @@ describe('sanitizeUrlPath', () => {
   });
 
   /**
-   * O scrubber trabalha sobre a forma do conteúdo, e `%40` não tem a forma de um
-   * arroba. Sem canonicalizar antes, o percent-encoding driblava a varredura
-   * inteira — a máscara só aparecia quando o cliente não codificava.
+   * The scrubber works on the content shape, and `%40` does not have the shape of
+   * an at sign. Without canonicalizing first, percent-encoding dodged the whole
+   * scan — the mask only showed up when the client did not encode.
    */
   it('should catch a percent-encoded e-mail that the raw scan would miss', () => {
     expect(sanitizeUrlPath('/api/users/maria.silva%40gmail.com')).toBe(
@@ -68,19 +68,19 @@ describe('sanitizeUrlPath', () => {
   });
 
   /**
-   * `decodeURIComponent` lança em `%ZZ`. Deixar isso subir faria o `runSafely`
-   * do access log devolver `{}` e a linha inteira se perderia por causa de um
-   * caminho malformado que o cliente escolheu — por isso a decodificação
-   * continua não-lançante. O escape inválido sobrevive literal.
+   * `decodeURIComponent` throws on `%ZZ`. Letting that bubble up would make the
+   * access log's `runSafely` return `{}` and the whole line would be lost because
+   * of a malformed path the client chose — that is why decoding stays
+   * non-throwing. The invalid escape survives literally.
    */
   it('should keep an invalid escape literal instead of throwing', () => {
     expect(sanitizeUrlPath('/api/x/%ZZ%')).toBe('/api/x/%ZZ%');
   });
 
   /**
-   * A versão anterior decodificava a string inteira e devolvia o caminho **cru**
-   * no `catch`, então um único `%ZZ` em qualquer posição desligava a
-   * canonicalização de tudo: o e-mail em outro segmento chegava legível ao log.
+   * The previous version decoded the whole string and returned the **raw** path
+   * in the `catch`, so a single `%ZZ` anywhere turned off canonicalization for
+   * everything: the e-mail in another segment reached the log readable.
    */
   it('should still canonicalize the rest of the path when one escape is invalid', () => {
     expect(sanitizeUrlPath('/api/%ZZ/maria.silva%40gmail.com')).toBe('/api/%ZZ/ma***va@gmail.com');
@@ -97,18 +97,18 @@ describe('sanitizeUrlPath', () => {
   });
 
   /**
-   * `%2540` decodifica para `%40`, que ainda não tem forma de arroba: com uma
-   * passagem só, um e-mail duplamente codificado atravessava o scrubber inteiro.
-   * A varredura roda uma vez, sobre a forma já estável.
+   * `%2540` decodes to `%40`, which still has no at-sign shape: with a single
+   * pass, a double-encoded e-mail crossed the whole scrubber. The scan runs once,
+   * over the already stable form.
    */
   it('should decode until stable so a double-encoded value still gets masked', () => {
     expect(sanitizeUrlPath('/api/users/maria%2540gmail.com')).toBe('/api/users/m***@gmail.com');
   });
 
   /**
-   * `%C3%28` é sintaticamente válido e inválido em UTF-8. Devolver o trecho
-   * inteiro cru fazia um único par ruim preservar tudo o que viesse colado nele
-   * — um e-mail ou um JWT percent-encoded chegavam íntegros e reversíveis.
+   * `%C3%28` is syntactically valid and invalid UTF-8. Returning the whole run
+   * raw made a single bad pair preserve everything attached to it — a
+   * percent-encoded e-mail or JWT arrived intact and reversible.
    */
   it('should keep decoding past a byte that is not valid utf-8', () => {
     const encoded = [...Buffer.from('maria.silva@gmail.com', 'utf8')]
@@ -174,9 +174,9 @@ describe('buildQueryString', () => {
   });
 
   /**
-   * A query também é conteúdo do cliente e podia dominar a linha sozinha: sem
-   * teto próprio, cada valor cabia em 2048 caracteres e nada limitava o total.
-   * O corte é na fronteira entre parâmetros para não deixar escape pela metade.
+   * The query is client content too and could dominate the line alone: without
+   * its own cap, each value fit in 2048 characters and nothing bounded the total.
+   * The cut is at a parameter boundary so no escape is left half-cut.
    */
   it('should cap the query string at its own bound, cutting on a parameter boundary', () => {
     const query = buildQueryString(
@@ -194,7 +194,7 @@ describe('buildQueryString', () => {
   });
 });
 
-describe('buildQueryString — requisição sem caminho', () => {
+describe('buildQueryString — request without a path', () => {
   it('should still classify the query when the request exposes no path', () => {
     const request = { query: { token: 'a', page: '1' } } as unknown as Request;
 
@@ -202,9 +202,9 @@ describe('buildQueryString — requisição sem caminho', () => {
   });
 
   /**
-   * O corte na fronteira de `&` existe para não deixar um escape percentual pela
-   * metade. Quando o teto cai **dentro** do primeiro parâmetro não há fronteira
-   * onde cortar, e o corte duro é o único resultado possível.
+   * Cutting at the `&` boundary exists so no percent escape is left half-cut.
+   * When the cap falls **inside** the first parameter there is no boundary to cut
+   * at, and a hard cut is the only possible result.
    */
   it('should hard-clip a single parameter that alone exceeds the bound', () => {
     const query = buildQueryString(
@@ -217,11 +217,12 @@ describe('buildQueryString — requisição sem caminho', () => {
 });
 
 /**
- * Decodificar sob um teto de passes fecha a codificação dupla, mas devolver a
- * forma **parcial** ao atingir o teto reabria o furo por outro lado: `%40` fica
- * a uma decodificação de virar `@`, e o e-mail voltava inteiro do log.
+ * Decoding under a pass cap closes double encoding, but returning the
+ * **partial** form when the cap is hit reopened the hole from the other side:
+ * `%40` is one decode away from `@`, and the e-mail came back whole from the
+ * log.
  */
-describe('sanitizeUrlPath — profundidade de codificação', () => {
+describe('sanitizeUrlPath — encoding depth', () => {
   it.each([
     '/users/alice%40example.com',
     '/users/alice%2540example.com',
@@ -243,11 +244,12 @@ describe('sanitizeUrlPath — profundidade de codificação', () => {
 });
 
 /**
- * O Express decodifica a query **uma vez**, então um valor duplamente codificado
- * chega ao classificador sem forma reconhecível — e o `encodeURIComponent` da
- * saída o reintroduz no log, de onde duas decodificações recuperam o original.
+ * Express decodes the query **once**, so a double-encoded value reaches the
+ * classifier without a recognizable shape — and the output's
+ * `encodeURIComponent` puts it back into the log, from where two decodes recover
+ * the original.
  */
-describe('buildQueryString — canonicalização antes de classificar', () => {
+describe('buildQueryString — canonicalization before classifying', () => {
   const jwt = 'aaaaaaaaaa.bbbbbbbbbb.cccccccccc';
 
   it.each([

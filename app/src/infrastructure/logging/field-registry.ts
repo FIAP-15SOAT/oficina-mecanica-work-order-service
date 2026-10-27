@@ -5,10 +5,10 @@ export type FieldType = 'string' | 'number' | 'boolean' | 'string[]';
 export type FieldCardinality = 'fixed' | 'low' | 'medium' | 'high';
 
 /**
- * `pii` é a única classificação que muda o comportamento em runtime: o adapter
- * mascara o valor antes de emitir. As demais são metadados de catálogo —
- * `identifier` marca um id que correlaciona registros, `sanitized` marca texto
- * que passa pelo scrubber de conteúdo, `clear` marca dado sem restrição.
+ * `pii` is the only classification that changes runtime behavior: the adapter
+ * masks the value before emitting. The others are catalog metadata —
+ * `identifier` marks an id that correlates records, `sanitized` marks text that
+ * goes through the content scrubber, `clear` marks unrestricted data.
  */
 export type FieldSensitivity = 'clear' | 'sanitized' | 'identifier' | 'pii';
 

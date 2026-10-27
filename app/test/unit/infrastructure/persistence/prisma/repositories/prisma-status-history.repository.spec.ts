@@ -63,12 +63,12 @@ describe('PrismaStatusHistoryRepository', () => {
     });
 
     /**
-     * A ordem é contrato de `IStatusHistoryRepository`, não detalhe deste
-     * repositório: `measureWorkOrderDurations` ancora a permanência na última
-     * entrada que abriu o status e os totais na primeira. Sem esta asserção,
-     * trocar o `orderBy` — ou removê-lo — passa em todos os testes e corrompe
-     * as durações em silêncio, porque o dado emitido não carrega sinal algum de
-     * que a ordem mudou.
+     * The order is part of the `IStatusHistoryRepository` contract, not a detail
+     * of this repository: `measureWorkOrderDurations` anchors dwell on the last
+     * entry that opened the status and totals on the first. Without this
+     * assertion, changing the `orderBy` — or removing it — passes every test and
+     * corrupts the durations silently, because the emitted data carries no sign
+     * that the order changed.
      */
     it('should ask the database for chronologically ascending history', async () => {
       prisma.statusHistory.findMany.mockResolvedValue([]);

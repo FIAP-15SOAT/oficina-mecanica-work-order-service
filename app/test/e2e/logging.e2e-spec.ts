@@ -177,10 +177,10 @@ describe('Structured logging (E2E)', () => {
     });
 
     /**
-     * As linhas do boot são o caminho que escapa: o `pid`/`hostname`/`time`/`msg`
-     * do pino e o `context` que o `nestjs-pino` acrescenta só aparecem quando o
-     * próprio Nest loga. Sem capturar pelo menos uma delas, a asserção do
-     * dicionário não cobre o `renameContext` nem o `base` explícito.
+     * Boot lines are the path that escapes: pino's `pid`/`hostname`/`time`/`msg`
+     * and the `context` that `nestjs-pino` adds only show up when Nest itself
+     * logs. Without capturing at least one of them, the dictionary assertion
+     * covers neither `renameContext` nor the explicit `base`.
      */
     it('should keep the framework bootstrap output inside the dictionary too', () => {
       const bootstrap = capture.bootstrapLines();
@@ -258,15 +258,15 @@ describe('Structured logging (E2E)', () => {
 
   describe('framework bootstrap output', () => {
     /**
-     * O `forRoutes` declarado em `buildLoggerParams` existe só para calar este
-     * aviso: o default do `nestjs-pino` é o curinga legado `'*'`, que somado ao
-     * `setGlobalPrefix` vira `/api/*` e faz o Nest avisar duas vezes por boot,
-     * uma por middleware registrado.
+     * The `forRoutes` declared in `buildLoggerParams` exists only to silence this
+     * warning: `nestjs-pino`'s default is the legacy `'*'` wildcard, which with
+     * `setGlobalPrefix` becomes `/api/*` and makes Nest warn twice per boot,
+     * once per registered middleware.
      *
-     * A asserção vive aqui, e não num spec unitário sobre o valor do
-     * `forRoutes`, porque quem emite o aviso é o roteador do Nest na
-     * inicialização — comparar a string com ela mesma não provaria nada, e é
-     * exatamente o boot que a regressão quebraria.
+     * The assertion lives here, and not in a unit spec on the `forRoutes`
+     * value, because the warning comes from Nest's router during
+     * initialization — comparing the string with itself would prove nothing,
+     * and the boot is exactly what the regression would break.
      */
     it('should register the request logger without tripping the legacy route converter', () => {
       const bootstrap = capture.bootstrapLines();
@@ -347,10 +347,10 @@ describe('Structured logging (E2E)', () => {
     });
 
     /**
-     * O corpo de qualquer rota /api/auth nunca é capturado, mesmo em status
-     * que normalmente disparam a captura (400/409/422) — o código de reset é
-     * uma credencial válida por 10 minutos, e não há campo que a redação por
-     * nome possa isolar sem também apagar zipCode/statusCode do resto do log.
+     * The body of any /api/auth route is never captured, even on statuses that
+     * normally trigger capture (400/409/422) — the reset code is a credential
+     * valid for 10 minutes, and no field can be isolated by name-based
+     * redaction without also erasing zipCode/statusCode from the rest of the log.
      */
     it('should never log the password reset code, even on a 400 that would otherwise capture the body', async () => {
       await request(httpServer)
@@ -380,11 +380,11 @@ describe('Structured logging (E2E)', () => {
     });
 
     /**
-     * A captura do corpo é uma lista de permissão de status, e não a faixa 4xx
-     * inteira: num `401`/`403` a causa é a credencial e o payload não explica
-     * nada — e são justamente esses os status que um chamador **anônimo**
-     * alcança, o que dava a ele um canal de escrita de 4 KB por requisição no
-     * armazenamento de logs.
+     * Body capture is an allowlist of statuses, not the whole 4xx range: on a
+     * `401`/`403` the cause is the credential and the payload explains
+     * nothing — and those are exactly the statuses an **anonymous** caller
+     * reaches, which gave it a 4 KB-per-request write channel into the log
+     * store.
      */
     it('should not capture the body of a request rejected before authentication', async () => {
       await request(httpServer)
@@ -471,9 +471,9 @@ describe('Structured logging (E2E)', () => {
     });
 
     /**
-     * O nome da propriedade é conteúdo controlado pelo cliente: um payload em
-     * forma de mapa atravessava a redação inteira, porque a classificação lia a
-     * chave mas nunca a tratava como valor.
+     * The property name is client-controlled content: a map-shaped payload
+     * crossed the whole redaction, because classification read the key but
+     * never treated it as a value.
      */
     it('should sanitize a personal identifier sent as a property name', async () => {
       await request(httpServer)
@@ -504,8 +504,8 @@ describe('Structured logging (E2E)', () => {
     });
 
     /**
-     * `%40` não tem a forma de um arroba, então sem canonicalizar o caminho o
-     * percent-encoding driblava o scrubber inteiro.
+     * `%40` does not have the shape of an at sign, so without canonicalizing
+     * the path, percent-encoding slipped past the whole scrubber.
      */
     it('should catch a percent-encoded personal identifier in the path', async () => {
       await request(httpServer)
@@ -520,14 +520,14 @@ describe('Structured logging (E2E)', () => {
     });
 
     /**
-     * A decodificação era tudo-ou-nada: `decodeURIComponent` lança em `%ZZ` e o
-     * `catch` devolvia o caminho cru, então um único escape inválido desligava a
-     * canonicalização de todos os outros segmentos.
+     * Decoding was all-or-nothing: `decodeURIComponent` throws on `%ZZ` and the
+     * `catch` returned the raw path, so a single invalid escape turned off
+     * canonicalization for every other segment.
      */
     it('should keep canonicalizing the path when one escape is invalid', async () => {
-      // O router do Express 5 recusa o escape inválido com um erro que carrega
-      // `status: 400`. Antes de o filtro passar a reconhecer esse status, o
-      // mesmo caminho resolvia `500` e ainda emitia uma linha `ERROR` com stack.
+      // The Express 5 router rejects the invalid escape with an error that
+      // carries `status: 400`. Before the filter recognized that status, the
+      // same path resolved to `500` and also emitted an `ERROR` line with a stack.
       await request(httpServer)
         .get('/api/%ZZ/maria.silva%40gmail.com')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -598,9 +598,9 @@ describe('Structured logging (E2E)', () => {
     });
 
     /**
-     * O 404 automático do Nest monta a mensagem com `request.originalUrl`, query
-     * inclusa — ela chegava inteira em `oficina.error.message` e reintroduzia no
-     * log a URL bruta que `url.query` existe para não registrar.
+     * Nest's automatic 404 builds the message from `request.originalUrl`, query
+     * included — it reached `oficina.error.message` whole and reintroduced into
+     * the log the raw URL that `url.query` exists to keep out.
      */
     it('should not reintroduce the raw url through the framework 404 message', async () => {
       await request(httpServer)
@@ -623,9 +623,9 @@ describe('Structured logging (E2E)', () => {
     });
 
     /**
-     * O `initMessage()` do Nest transforma o `string[]` do class-validator em
-     * `"Bad Request Exception"`, e a causa real da rejeição — o 4xx mais comum
-     * da API — nunca chegava ao log.
+     * Nest's `initMessage()` turns class-validator's `string[]` into
+     * `"Bad Request Exception"`, and the real cause of the rejection — the API's
+     * most common 4xx — never reached the log.
      */
     it('should carry the real validation messages on a rejected payload', async () => {
       await request(httpServer)
@@ -652,11 +652,12 @@ describe('Structured logging (E2E)', () => {
     });
 
     /**
-     * O `body-parser` lança `http-errors`, que carregam `status` mas não são
-     * `HttpException`. Sem reconhecer isso, um corpo acima de 100 kB virava
-     * `500` e o filtro emitia uma linha `ERROR` com stack — sem autenticação,
-     * sem `request.id` e sem access log irmão, porque a requisição morre antes
-     * do middleware. Era a mesma classe de ruído que esta mudança veio corrigir.
+     * `body-parser` throws `http-errors`, which carry `status` but are not
+     * `HttpException`. Without recognizing that, a body above 100 kB became a
+     * `500` and the filter emitted an `ERROR` line with a stack — with no
+     * authentication, no `request.id` and no sibling access log, because the
+     * request dies before the middleware. It was the same class of noise this
+     * change came to fix.
      */
     it('should answer 413 for an oversized body without emitting an error line', async () => {
       await request(httpServer)
@@ -683,10 +684,10 @@ describe('Structured logging (E2E)', () => {
     });
 
     /**
-     * O Swagger registra os handlers direto no adaptador do Express, antes de
-     * tudo que o `init()` do Nest acrescenta — então `/api/docs` nunca alcança o
-     * middleware de logging. É essa fronteira que faz as ~13 000 linhas de probe
-     * por dia simplesmente não existirem, sem nenhum mecanismo de supressão.
+     * Swagger registers its handlers directly on the Express adapter, before
+     * everything Nest's `init()` adds — so `/api/docs` never reaches the logging
+     * middleware. That boundary is what makes the ~13 000 probe lines a day
+     * simply not exist, with no suppression mechanism.
      */
     it('should not log a documentation request served by swagger', async () => {
       await request(httpServer).get('/api/docs/').expect(200);

@@ -1,5 +1,5 @@
 /**
- * Metadados de paginação retornados pelos use cases.
+ * Pagination metadata returned by the use cases.
  */
 export interface PaginationMeta {
   totalRecords: number;
@@ -9,7 +9,7 @@ export interface PaginationMeta {
 }
 
 /**
- * Resultado paginado genérico retornado pelos use cases.
+ * Generic paginated result returned by the use cases.
  */
 export interface PaginatedResult<T> {
   items: T[];
@@ -17,7 +17,7 @@ export interface PaginatedResult<T> {
 }
 
 /**
- * Input base de paginação. Todas as DTOs de input paginado devem extender esta interface.
+ * Base pagination input. Every paginated input DTO must extend this interface.
  */
 export interface PaginationInput {
   page: number;
@@ -25,7 +25,7 @@ export interface PaginationInput {
 }
 
 /**
- * Input de paginação opcional (query de listagem); os defaults são aplicados no controller.
+ * Optional pagination input (listing query); the controller applies the defaults.
  */
 export interface PaginationQuery {
   page?: number;
@@ -33,7 +33,7 @@ export interface PaginationQuery {
 }
 
 /**
- * Resultado paginado retornado pelos repositories.
+ * Paginated result returned by the repositories.
  */
 export interface PaginatedRepositoryResult<T> {
   items: T[];

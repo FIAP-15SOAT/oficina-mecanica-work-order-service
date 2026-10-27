@@ -1,14 +1,16 @@
+name: work-order
+
 services:
   postgres:
     image: postgres:18-alpine
-    container_name: techchallenge-postgres
+    container_name: work-order-postgres
     restart: unless-stopped
     ports:
       - "5432:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: techchallenge
+      POSTGRES_DB: work_order
       TZ: America/Sao_Paulo
       PGTZ: America/Sao_Paulo
     volumes:
@@ -20,15 +22,15 @@ services:
       retries: 10
 
   migrate:
-    image: techchallenge-api:local
+    image: work-order-service:local
     build: &api-build
       context: .
       args:
-        DATABASE_URL: postgresql://postgres:postgres@postgres:5432/techchallenge?schema=public
-    container_name: techchallenge-migrate
+        DATABASE_URL: postgresql://postgres:postgres@postgres:5432/work_order?schema=public
+    container_name: work-order-migrate
     command: ["sh", "-c", "npx prisma migrate deploy && npx prisma db seed"]
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/techchallenge?schema=public
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/work_order?schema=public
       TZ: America/Sao_Paulo
     restart: "no"
     depends_on:
@@ -36,16 +38,16 @@ services:
         condition: service_healthy
 
   api:
-    image: techchallenge-api:local
+    image: work-order-service:local
     build: *api-build
-    container_name: techchallenge-api
+    container_name: work-order-api
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
       NODE_ENV: production
       PORT: 3000
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/techchallenge?schema=public
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/work_order?schema=public
       STAFF_JWT_PRIVATE_KEY: ${STAFF_JWT_PRIVATE_KEY:?Gere as chaves RS256 de funcionário conforme docs/local-setup.md}
       STAFF_JWT_PUBLIC_KEY: ${STAFF_JWT_PUBLIC_KEY:?Gere as chaves RS256 de funcionário conforme docs/local-setup.md}
       STAFF_JWT_KEY_ID: ${STAFF_JWT_KEY_ID:-staff-local}
@@ -75,9 +77,9 @@ services:
       timeout: 5s
       retries: 12
       start_period: 15s
-    # > janela de drain (10 s) + fechamento do servidor + $disconnect() + margem.
-    # O default do Compose e 10 s, que expira exatamente na virada da janela e
-    # mata a API com SIGKILL antes de ela liberar o pool.
+    # > drain window (10 s) + server close + $disconnect() + margin.
+    # The Compose default is 10 s, which expires right at the end of the window
+    # and kills the API with SIGKILL before it releases the pool.
     stop_grace_period: 40s
     depends_on:
       postgres:
@@ -91,7 +93,7 @@ services:
 
   localstack:
     image: localstack/localstack:4.14.0
-    container_name: techchallenge-localstack
+    container_name: work-order-localstack
     restart: unless-stopped
     ports:
       - "127.0.0.1:4566:4566"
@@ -106,7 +108,7 @@ services:
 
   valkey:
     image: valkey/valkey:9.1
-    container_name: techchallenge-valkey
+    container_name: work-order-valkey
     restart: unless-stopped
     command: ["valkey-server", "--requirepass", "valkey"]
     ports:
@@ -119,7 +121,7 @@ services:
 
   mailhog:
     image: mailhog/mailhog:v1.0.1
-    container_name: techchallenge-mailhog
+    container_name: work-order-mailhog
     restart: unless-stopped
     ports:
       - "1025:1025" # SMTP

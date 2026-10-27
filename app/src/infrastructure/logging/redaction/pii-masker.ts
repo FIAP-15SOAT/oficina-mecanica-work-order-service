@@ -3,10 +3,10 @@ export const MASK = '***';
 const REVEALED_EDGE_LENGTH = 2;
 
 /**
- * Abaixo deste tamanho, revelar duas pontas deixaria de ser mascaramento: em um
- * valor de 6 caracteres, `12**56` expõe 4 de 6 e o resto se reconstrói por
- * tentativa. Entre 4 e 6 revelamos só o primeiro caractere, o suficiente para
- * distinguir ocorrências no troubleshooting; abaixo de 4, nada.
+ * Below this length, revealing both ends would no longer be masking: in a
+ * 6-character value, `12**56` exposes 4 of 6 and the rest is rebuilt by trial.
+ * Between 4 and 6 only the first character is revealed, enough to tell
+ * occurrences apart while troubleshooting; below 4, nothing.
  */
 const MIN_TWO_EDGE_LENGTH = 7;
 const MIN_SINGLE_EDGE_LENGTH = 4;
@@ -66,10 +66,10 @@ function maskFreeText(value: string): string {
 }
 
 /**
- * Um identificador formatado é um valor composto só de blocos numéricos
- * separados por pontuação — CPF, CNPJ, CEP, telefone. Mascará-lo com a regra de
- * texto livre (`12***09`) destruiria a forma e ninguém reconheceria mais o que
- * o campo era.
+ * A formatted identifier is a value made only of numeric blocks separated by
+ * punctuation — CPF, CNPJ, CEP, phone. Masking it with the free-text rule
+ * (`12***09`) would destroy the shape and nobody would recognize what the field
+ * was anymore.
  */
 function isFormattedIdentifier(value: string): boolean {
   const runs = findAlphanumericRuns(value);
@@ -77,7 +77,7 @@ function isFormattedIdentifier(value: string): boolean {
   return runs.length >= 2 && runs.every((run) => /^\p{N}+$/u.test(run[0]));
 }
 
-// Mascara bloco a bloco preservando a pontuação original, revelando só o final:
+// Masks block by block, keeping the original punctuation and revealing only the end:
 //
 //   123.456.789-09     → ***.***.789-09
 //   12.345.678/0001-95 → **.***.***/****-95
@@ -102,9 +102,10 @@ function maskFormattedIdentifier(value: string): string {
 }
 
 /**
- * O último bloco sempre aparece. O penúltimo só entra junto quando os dois somam
- * até 5 caracteres — é o que produz `***.***.789-09` no CPF (3 + 2) sem revelar
- * demais em um telefone, onde o penúltimo bloco já tem 5 dígitos sozinho.
+ * The last block always shows. The second to last joins it only when both add
+ * up to at most 5 characters — that is what produces `***.***.789-09` for a CPF
+ * (3 + 2) without revealing too much of a phone, where the second to last block
+ * alone already has 5 digits.
  */
 function resolveVisibleRuns(runs: RegExpExecArray[]): Set<number> {
   const lastIndex = runs.length - 1;

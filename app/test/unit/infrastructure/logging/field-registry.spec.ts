@@ -27,10 +27,10 @@ type Assert<T extends true> = T;
 type MutuallyAssignable<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 
 /**
- * Falha de compilação em duas direções: um campo lógico declarado no vocabulário
- * que nenhum evento emite (entrada morta, como o `previousQuoteStatus` e o
- * `dbOperation` que ficaram órfãos na versão anterior), ou um campo usado por um
- * evento que o registro não conhece (log perdido em runtime).
+ * Compilation fails in both directions: a logical field declared in the
+ * vocabulary that no event emits (a dead entry, like the `previousQuoteStatus`
+ * and `dbOperation` left orphaned in the previous version), or a field used by
+ * an event that the registry does not know (a log lost at runtime).
  */
 type _CatalogMatchesVocabulary = Assert<MutuallyAssignable<CatalogFieldName, LogicalFieldName>>;
 
@@ -62,10 +62,10 @@ describe('field registry', () => {
   });
 
   /**
-   * A allowlist e as entradas `http.request.header.*` do dicionário são duas
-   * listas escritas à mão. Acrescentar um header só na allowlist faz o
-   * normalizador descartar o atributo **em silêncio**, e a asserção do E2E é
-   * `chaves ⊆ dicionário`, nunca o inverso — nada falharia.
+   * The allowlist and the dictionary's `http.request.header.*` entries are two
+   * hand-written lists. Adding a header only to the allowlist makes the
+   * normalizer drop the attribute **silently**, and the E2E assertion is
+   * `keys ⊆ dictionary`, never the reverse — nothing would fail.
    */
   it('should declare a dictionary entry for every allowlisted request header', () => {
     const missing = ALLOWED_REQUEST_HEADERS.filter(

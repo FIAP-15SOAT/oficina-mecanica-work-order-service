@@ -30,17 +30,17 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
-      # Par de chaves efêmero, gerado a cada run — nunca comitado. Isola o
-      # scan da rota /api/me/* da Lambda externa (fora de escopo): o job
-      # assina seus próprios tokens de cliente, exatamente como os E2E fazem
-      # com test/helpers/customer-jwt.helper.ts.
+      # Ephemeral key pair, generated on every run — never committed. Isolates
+      # the /api/me/* scan from the external Lambda (out of scope): the job
+      # signs its own customer tokens, exactly as the E2E tests do with
+      # test/helpers/customer-jwt.helper.ts.
       - name: Generate an ephemeral RS256 key pair for the customer auth flow
         run: |
           openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /tmp/customer-jwt.key
           openssl rsa -in /tmp/customer-jwt.key -pubout -out /tmp/customer-jwt.pub
           echo "CUSTOMER_JWT_PUBLIC_KEY=$(awk 'NF {sub(/\r/, ""); printf "%s\\n", $0}' /tmp/customer-jwt.pub)" >> "$GITHUB_ENV"
 
-      # Pares efêmeros do token de funcionário (access e refresh), só para este run.
+      # Ephemeral staff token key pairs (access and refresh), only for this run.
       - name: Generate ephemeral RS256 key pairs for the staff tokens
         run: |
           pem_line() { awk 'NF {sub(/\r/, ""); printf "%s\\n", $0}' "$1"; }
@@ -82,12 +82,12 @@ jobs:
           echo "::add-mask::$token"
           echo "ZAP_AUTH_HEADER_VALUE=Bearer $token" >> "$GITHUB_ENV"
 
-      # A Lambda externa está fora de escopo (ver docs/testing.md). O job
-      # assina o próprio token de cliente com a chave privada gerada acima,
-      # para um usuário já semeado — o mesmo papel que a Lambda desempenharia.
+      # The external Lambda is out of scope (see docs/testing.md). The job
+      # signs its own customer token with the private key generated above,
+      # for an already seeded user — the same role the Lambda would play.
       - name: Sign an ephemeral customer JWT for the external scan pass
         run: |
-          user_id="$(docker compose exec -T postgres psql -U postgres -d techchallenge -tAc \
+          user_id="$(docker compose exec -T postgres psql -U postgres -d work_order -tAc \
             "SELECT id FROM users WHERE email = '${SEED_CUSTOMER_USER_EMAIL}';" | tr -d '[:space:]')"
           if [ -z "$user_id" ]; then
             echo "::error::Could not find the seeded customer user (${SEED_CUSTOMER_USER_EMAIL})."
@@ -142,9 +142,9 @@ jobs:
             zap-work/zap-report.json
           if-no-files-found: warn
 
-      # Segunda passagem: mesma stack efêmera, autenticada como Cliente da
-      # Oficina (customer-jwt) — cobre /api/me/* além do 401 que a passagem
-      # interna sempre recebe dessas rotas.
+      # Second pass: same ephemeral stack, authenticated as a workshop customer
+      # (customer-jwt) — covers /api/me/* beyond the 401 the staff pass always
+      # gets from those routes.
       - name: Run OWASP ZAP API scan — external (Customer) auth
         run: |
           docker run --rm \
