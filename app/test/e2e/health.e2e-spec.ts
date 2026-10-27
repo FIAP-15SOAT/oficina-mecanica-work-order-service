@@ -39,10 +39,10 @@ function eventLines(capture: LogCapture, name: string): Record<string, unknown>[
 }
 
 /**
- * `close(signal)` executa os hooks de encerramento de qualquer forma — o
- * `enableShutdownHooks()` apenas registra listeners de sinais do processo, e a
- * suíte não o usa. A interface pública do Nest não declara o parâmetro, mas o
- * `NestApplicationContext` o aceita e o repassa aos hooks.
+ * `close(signal)` runs the shutdown hooks either way — `enableShutdownHooks()`
+ * only registers process signal listeners, and the suite does not use it.
+ * Nest's public interface does not declare the parameter, but
+ * `NestApplicationContext` accepts it and passes it on to the hooks.
  */
 function closeWithSignal(app: INestApplication, signal: string): Promise<void> {
   return (app as { close(signal?: string): Promise<void> }).close(signal);
@@ -55,10 +55,10 @@ interface ObservedFailure {
 }
 
 /**
- * Consulta direta ao pool parado, pelo mesmo caminho que a verificação usa, só
- * para **documentar a forma** que o driver entrega. Sem isso um `unknown` na
- * linha de transição é mudo: o evento não carrega texto do driver por decisão de
- * segurança, então a asserção da categoria falharia sem dizer o que mudou.
+ * Direct query to the stopped pool, through the same path the check uses, only
+ * to **document the shape** the driver delivers. Without it an `unknown` on the
+ * transition line says nothing: by security decision the event carries no driver
+ * text, so the category assertion would fail without saying what changed.
  */
 async function observeRawFailure(prisma: PrismaService): Promise<ObservedFailure> {
   let failure: unknown;
@@ -86,16 +86,16 @@ const READINESS_WARMUP_TIMEOUT_MS = 30_000;
 const READINESS_WARMUP_INTERVAL_MS = 250;
 
 /**
- * A **primeira** verificação depois do boot paga TCP + autenticação com o pool
- * ainda vazio, e o prazo próprio é de 3,5 s. Numa máquina saturada — doze suítes
- * E2E, cada uma com os próprios containers — esse caso frio estoura o prazo e a
- * prontidão responde `503` uma vez, exatamente como responderia em produção
- * antes de o `failureThreshold` ser atingido.
+ * The **first** check after boot pays TCP + authentication with the pool still
+ * empty, and its own deadline is 3.5 s. On a saturated machine — twelve E2E
+ * suites, each with its own containers — that cold case misses the deadline and
+ * readiness answers `503` once, exactly as it would in production before
+ * `failureThreshold` is reached.
  *
- * A propriedade continua asserida: se a prontidão **nunca** ficar `200`, esta
- * função falha e derruba a suíte. O que ela remove é a dependência de uma única
- * amostra fria sob inanição de CPU — a latência de partida a frio está medida
- * em `design.md › D10`, e o que os testes abaixo verificam é o **contrato**.
+ * The property is still asserted: if readiness **never** becomes `200`, this
+ * function fails and takes the suite down. What it removes is the dependency on
+ * a single cold sample under CPU starvation — cold-start latency is measured
+ * separately, and what the tests below check is the **contract**.
  */
 async function waitUntilReady(server: Server): Promise<void> {
   const deadline = Date.now() + READINESS_WARMUP_TIMEOUT_MS;
@@ -129,8 +129,8 @@ describe('Health endpoints (E2E)', () => {
   });
 
   /**
-   * O app é fechado pelo último teste, que precisa capturar as linhas do próprio
-   * encerramento.
+   * The app is closed by the last test, which needs to capture the lines of its
+   * own shutdown.
    */
   afterAll(async () => {
     await ctx.postgresContainer.stop();
@@ -184,12 +184,11 @@ describe('Health endpoints (E2E)', () => {
   });
 
   /**
-   * Precisa ser o **último** teste do **primeiro** `describe` do arquivo, e as
-   * duas condições são do `nestjs-pino`: o logger fora de contexto de requisição
-   * é um singleton de módulo (`outOfContext`, criado uma única vez), então as
-   * linhas de encerramento de qualquer app posterior caem na captura deste
-   * primeiro. E o app precisa ser fechado dentro do teste para que a captura o
-   * enxergue.
+   * It must be the **last** test of the file's **first** `describe`, and both
+   * conditions come from `nestjs-pino`: the logger outside a request context is
+   * a module singleton (`outOfContext`, created only once), so the shutdown
+   * lines of any later app land in this first one's capture. And the app must
+   * be closed inside the test for the capture to see it.
    */
   it('should release the pool before announcing the shutdown as completed', async () => {
     await closeWithSignal(ctx.app, 'SIGTERM');
@@ -229,11 +228,11 @@ describe('Health endpoints with the database unreachable (E2E)', () => {
   });
 
   /**
-   * Ordem explícita: depois do `stop()`, o `close()` chama `$disconnect()`
-   * contra um servidor morto e essa espera não tem prazo, então ela acontece
-   * sozinha e primeiro. Um `stop()` posterior é no-op — o testcontainers memoiza
-   * o container parado —, o que também significa que `restart()` não é caminho
-   * de recuperação: a transição de recuperação fica coberta pelo unitário.
+   * Explicit order: after `stop()`, `close()` calls `$disconnect()` against a
+   * dead server and that wait has no deadline, so it happens alone and first. A
+   * later `stop()` is a no-op — testcontainers memoizes the stopped container —
+   * which also means `restart()` is not a recovery path: the recovery
+   * transition is covered by the unit spec.
    */
   afterAll(async () => {
     await ctx.app.close();
@@ -269,10 +268,10 @@ describe('Health endpoints with the database unreachable (E2E)', () => {
   });
 
   /**
-   * A resposta `503` é deliberada e o handler não lança, então não há exceção
-   * resolvida de onde derivar os atributos de erro — e o `pino-http` sintetiza
-   * um `Error` a partir do status que o projeto descarta de propósito. O sistema
-   * não os fabrica para preencher o campo.
+   * The `503` response is deliberate and the handler does not throw, so there
+   * is no resolved exception to derive the error attributes from — and
+   * `pino-http` synthesizes an `Error` from the status, which the project
+   * discards on purpose. The system does not fabricate them to fill the field.
    */
   it('should omit the error attributes and the stack trace on the deliberate failure', () => {
     const [line] = failureLines.filter((entry) => entry.message === ACCESS_LOG_MESSAGE);
@@ -293,16 +292,16 @@ describe('Health endpoints with the database unreachable (E2E)', () => {
     expect(degraded[0]['oficina.dependency.name']).toBe('postgresql');
     expect(HEALTH_FAILURE_CATEGORIES).toContain(degraded[0]['oficina.health.failure.category']);
 
-    // Um container parado produz `ECONNREFUSED` — direto ou agregado por família
-    // de endereço — ou um `Error` do `pg` de mensagem constante. Todos
-    // classificam como `connection`, e nunca como `unknown`.
+    // A stopped container produces `ECONNREFUSED` — direct or aggregated by
+    // address family — or a `pg` `Error` with a constant message. All of them
+    // classify as `connection`, never as `unknown`.
     expect(degraded[0]['oficina.health.failure.category']).toBe('connection');
   });
 
   /**
-   * Assere sobre o objeto inteiro de propósito: numa divergência o Jest imprime
-   * o `code` e a mensagem observados, que é a informação que falta para corrigir
-   * o mapeamento sem outra rodada completa da suíte.
+   * Asserts on the whole object on purpose: on a mismatch Jest prints the
+   * observed `code` and message, which is the information needed to fix the
+   * mapping without another full run of the suite.
    */
   it('should classify the shape the driver actually produces for a dead server', () => {
     expect(observedFailure).toMatchObject({ category: 'connection' });
@@ -330,17 +329,17 @@ describe('Health endpoints during graceful shutdown (E2E)', () => {
   let previousEnvironment: string | undefined;
 
   beforeEach(async () => {
-    // A janela é sustentada apenas onde existe um plano de dados para propagar a
-    // remoção — fora dele ela seria só latência de hot reload. Declarar o
-    // ambiente aqui é o que faz esta suíte exercitar o comportamento orquestrado.
+    // The window is held only where a data plane exists to propagate the
+    // removal — outside one it would just be hot-reload latency. Declaring the
+    // environment here is what makes this suite exercise the orchestrated behavior.
     previousEnvironment = process.env.NODE_ENV;
     process.env.NODE_ENV = 'production';
 
     ctx = await setupTestApp();
     httpServer = ctx.httpServer;
 
-    // A janela só é sustentada com sinal real, e o servidor precisa estar
-    // escutando de fato para que uma requisição atravesse o encerramento.
+    // The window is held only on a real signal, and the server must really be
+    // listening for a request to cross the shutdown.
     await ctx.app.listen(0);
     await cleanDatabase(ctx.prisma);
     await waitUntilReady(httpServer);
@@ -363,12 +362,12 @@ describe('Health endpoints during graceful shutdown (E2E)', () => {
   });
 
   /**
-   * O **único** teste que prova a ordem de liberação dos recursos. O teste de
-   * status acima não prova: com o `$disconnect()` de volta em `onModuleDestroy`,
-   * `/ready` responderia `503` pelo estado de `draining` e `/live` `200` de
-   * qualquer forma, e os dois passariam. Aqui a consulta real ao banco acontece
-   * **depois** de o encerramento começar, então ela falha se o pool tiver sido
-   * fechado antes da janela.
+   * The **only** test that proves the order in which resources are released.
+   * The status test above does not: with `$disconnect()` back in
+   * `onModuleDestroy`, `/ready` would answer `503` from the `draining` state
+   * and `/live` `200` either way, and both would pass. Here the real database
+   * query happens **after** shutdown starts, so it fails if the pool was closed
+   * before the window.
    */
   it('should let an in-flight business request reach the database during the window', async () => {
     const auth: AuthTokens = await registerAndLogin(
@@ -431,17 +430,18 @@ describe('Health endpoints during graceful shutdown (E2E)', () => {
 });
 
 /**
- * Um endereço que recusa a conexão de imediato. O objetivo não é medir latência,
- * é provar que a porta abre com o banco inalcançável **desde o boot**.
+ * An address that refuses the connection immediately. The goal is not to measure
+ * latency, but to prove the port opens with the database unreachable **from boot**.
  */
 const UNREACHABLE_DATABASE_URL = 'postgresql://nobody:nobody@127.0.0.1:1/nodb';
 
 /**
- * Sobe a aplicação sem infraestrutura alguma — sem containers, sem migration.
- * A composição da borda vem de `configureApp()`, a mesma que o `main.ts` usa,
- * para que a sequência não seja duplicada à mão e volte a divergir — e o
- * `listen()` também: "a porta abre com o banco fora" é a propriedade que este
- * `describe` existe para provar, e sem escutar de fato não há porta a assertar.
+ * Boots the application with no infrastructure at all — no containers, no
+ * migration. The edge composition comes from `configureApp()`, the same one
+ * `main.ts` uses, so the sequence is not duplicated by hand and does not drift
+ * again — and so does `listen()`: "the port opens with the database down" is
+ * the property this `describe` exists to prove, and without really listening
+ * there is no port to assert.
  */
 async function bootWithoutDatabase(): Promise<NestExpressApplication> {
   // No broker here either: relay and consumer are inert, as in setupTestApp.
@@ -481,11 +481,11 @@ describe('Health endpoints with the database unavailable from boot (E2E)', () =>
   });
 
   /**
-   * A propriedade cloud-native que o desenho depende e que nenhum outro teste
-   * cobria: o `$connect()` do adapter é preguiçoso, então um pod criado com o
-   * banco fora **sobe**, passa no `startupProbe` e se recupera sozinho. Se uma
-   * versão futura do adapter passar a validar conectividade no `connect()`, isto
-   * vira `CrashLoopBackOff` em produção — e falha aqui primeiro.
+   * The cloud-native property the design depends on and no other test covered:
+   * the adapter's `$connect()` is lazy, so a pod created with the database down
+   * **starts**, passes the `startupProbe` and recovers on its own. If a future
+   * adapter version starts checking connectivity in `connect()`, this becomes
+   * `CrashLoopBackOff` in production — and fails here first.
    */
   it('should open the port even though the database is unreachable', () => {
     expect(httpServer.listening).toBe(true);
@@ -506,17 +506,17 @@ describe('Health endpoints with the database unavailable from boot (E2E)', () =>
   });
 
   /**
-   * O contrato publicado é insumo do scan de DAST e de clientes gerados. Um
-   * schema único com os dois valores afirmaria que `/live` pode responder
-   * `unavailable` e que o `503` pode responder `ok` — estados que não existem, e
-   * que levariam um consumidor a ler o corpo em vez do status.
+   * The published contract feeds the DAST scan and generated clients. A single
+   * schema with both values would claim that `/live` can answer `unavailable`
+   * and that the `503` can answer `ok` — states that do not exist, and that
+   * would lead a consumer to read the body instead of the status.
    */
   describe('published contract', () => {
     let paths: Record<string, Record<string, { responses: Record<string, unknown> }>>;
     let schemas: Record<string, { properties: { status: { enum: unknown } } }>;
 
-    // O Swagger publica o corpo como `$ref` para `components.schemas`, então a
-    // asserção precisa resolver a referência para chegar ao enum real.
+    // Swagger publishes the body as a `$ref` to `components.schemas`, so the
+    // assertion must resolve the reference to reach the real enum.
     const enumOf = (response: unknown): unknown => {
       const { $ref } = (
         response as { content: { 'application/json': { schema: { $ref: string } } } }

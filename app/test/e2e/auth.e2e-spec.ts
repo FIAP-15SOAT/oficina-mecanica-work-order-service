@@ -178,11 +178,11 @@ describe('Auth (E2E)', () => {
     });
 
     /**
-     * Uma conta puramente externa (role null) usa o mesmo hash de senha nos
-     * dois fluxos — o login interno precisa recusar antes de emitir qualquer
-     * token, e não só depois, no primeiro uso (CustomerJwtStrategy/JwtStrategy
-     * já bloqueiam o token em si, mas o contrato de login não pode dizer "OK"
-     * para uma conta que não vai conseguir usar nada).
+     * A purely external account (role null) uses the same password hash in
+     * both flows — staff login must refuse before issuing any token, not only
+     * later, on first use (CustomerJwtStrategy/JwtStrategy already block the
+     * token itself, but the login contract must not say "OK" to an account
+     * that will not be able to use anything).
      */
     it('should return 401 for an externally-only account (role null), never issuing a token', async () => {
       const passwordHash = await bcrypt.hash('External@123', 10);
@@ -271,12 +271,12 @@ describe('Auth (E2E)', () => {
     });
 
     /**
-     * Login já recusa contas role null (ver suite acima), então uma delas
-     * nunca tem, na prática, um refresh token legítimo em mãos. Este teste
-     * cobre o outro lado da defesa: se um token desses existisse (assinado
-     * manualmente aqui com o mesmo secret de teste, simulando um token
-     * emitido antes desta correção, ou por qualquer outro caminho), o refresh
-     * ainda assim tem que recusar — a barreira não pode depender só do login.
+     * Login already refuses role null accounts (see the suite above), so in
+     * practice none of them ever holds a legitimate refresh token. This test
+     * covers the other side of the defense: if such a token existed (signed
+     * by hand here with the same test key, simulating a token issued before
+     * this fix, or through any other path), refresh must still refuse it —
+     * the barrier must not depend on login alone.
      */
     it('should return 401 for an externally-only account (role null), never renewing the token', async () => {
       const passwordHash = await bcrypt.hash('External@123', 10);
@@ -429,8 +429,8 @@ describe('Auth (E2E)', () => {
         ctx.prisma,
       );
 
-      // iat tem granularidade de segundo; garante que a troca cai num segundo
-      // seguinte ao do login, para não colidir por arredondamento.
+      // iat has one-second granularity; make the change land in the second
+      // after the login, so rounding does not make them collide.
       await new Promise((resolve) => setTimeout(resolve, 1100));
 
       await request(httpServer)
@@ -534,8 +534,8 @@ describe('Auth (E2E)', () => {
 
       const targetUserId = createRes.body.data.id;
 
-      // Token assinado para o alvo antes do reset — prova que a confirmação
-      // por código também invalida sessões antigas, não só a troca autenticada.
+      // Token signed for the target before the reset — proves that confirming
+      // by code also invalidates old sessions, not only the authenticated change.
       const tokenIssuedBeforeReset = signTestStaffToken({
         sub: targetUserId,
         email: targetEmail,
@@ -543,10 +543,9 @@ describe('Auth (E2E)', () => {
         role: 'ATTENDANT',
       });
 
-      // iat tem granularidade de segundo; garante que a confirmação do reset
-      // cai num segundo seguinte ao da assinatura, para não colidir por
-      // arredondamento (o fetch no MailHog pode ser rápido demais para isso
-      // acontecer naturalmente).
+      // iat has one-second granularity; make the reset confirmation land in
+      // the second after the signing, so rounding does not make them collide
+      // (the MailHog fetch can be too fast for that to happen naturally).
       await new Promise((resolve) => setTimeout(resolve, 1100));
 
       await request(httpServer)
@@ -610,11 +609,11 @@ describe('Auth (E2E)', () => {
     });
 
     /**
-     * O contador de tentativas precisa ser um incremento atômico no banco —
-     * um simples read-modify-write em memória (ler attempts, somar 1, gravar
-     * o valor absoluto) perde incrementos sob concorrência: N requisições
-     * simultâneas leem o mesmo valor inicial e todas gravam N+1, nunca N+N.
-     * Sem essa atomicidade, o teto de 5 tentativas nunca é alcançado.
+     * The attempt counter must be an atomic increment in the database — a
+     * plain in-memory read-modify-write (read attempts, add 1, write the
+     * absolute value) loses increments under concurrency: N simultaneous
+     * requests read the same initial value and all write N+1, never N+N.
+     * Without that atomicity, the 5-attempt ceiling is never reached.
      */
     it('should exhaust the code after 10 concurrent wrong confirmation attempts', async () => {
       const adminAuth = await registerAndLogin(
@@ -702,9 +701,9 @@ describe('Auth (E2E)', () => {
     });
 
     /**
-     * A expiração é do carimbo persistido, não do relógio do teste: adiantar
-     * `expires_at` no banco é a única forma de exercitar a janela sem esperar
-     * o prazo real de validade.
+     * Expiry comes from the persisted timestamp, not the test clock: moving
+     * `expires_at` in the database is the only way to exercise the window
+     * without waiting for the real validity period.
      */
     it('should return 401 for a code that has already expired', async () => {
       const adminAuth = await registerAndLogin(
@@ -752,9 +751,9 @@ describe('Auth (E2E)', () => {
     });
 
     /**
-     * A confirmação é anônima: e-mail desconhecido e código nunca emitido têm
-     * de responder o **mesmo** `401` de um código errado, ou a rota vira um
-     * oráculo de existência de conta.
+     * Confirmation is anonymous: an unknown e-mail and a never-issued code must
+     * answer the **same** `401` as a wrong code, or the route becomes an
+     * account existence oracle.
      */
     it('should return 401 for an unknown e-mail', async () => {
       await request(httpServer)

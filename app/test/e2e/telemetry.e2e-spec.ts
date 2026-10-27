@@ -28,23 +28,23 @@ const ACCESS_LOG_MESSAGE = 'http request';
 const TEST_SPAN_NAME = 'e2e server span';
 
 /**
- * ⚠️ A auto-instrumentação **não funciona sob Jest**: o `jest-runtime` tem
- * registro de módulos próprio e não passa pelo carregador do Node, que é onde
- * `require-in-the-middle` engancha. Um teste que afirmasse algo sobre spans
- * produzidos pela instrumentação ficaria verde **sem verificar nada** — e um
- * teste vazio é pior que a ausência do teste, porque compra confiança.
+ * ⚠️ Auto-instrumentation **does not work under Jest**: `jest-runtime` has its
+ * own module registry and does not go through Node's loader, which is where
+ * `require-in-the-middle` hooks in. A test asserting something about spans
+ * produced by instrumentation would stay green **without checking anything** —
+ * and an empty test is worse than no test, because it buys confidence.
  *
- * O que esta suíte verifica é o que **é nosso** e funciona sem patching: o
- * `mixin` de correlação lendo o span ativo, os três campos sobrevivendo ao
- * normalizador de saída, e a emissão das métricas de negócio ponta a ponta com
- * PostgreSQL real. O span de servidor é aberto por um middleware do próprio
- * teste, que reproduz o que `instrumentation-http` faz — inclusive o
- * `context.bind` da resposta, sem o qual o ouvinte de conclusão do `pino-http`
- * rodaria fora do contexto e o `trace_id` sumiria da linha de access log.
+ * What this suite checks is what **is ours** and works without patching: the
+ * correlation `mixin` reading the active span, the three fields surviving the
+ * output normalizer, and business metrics emitted end to end with a real
+ * PostgreSQL. The server span is opened by the test's own middleware, which
+ * reproduces what `instrumentation-http` does — including the response's
+ * `context.bind`, without which `pino-http`'s completion listener would run
+ * outside the context and `trace_id` would vanish from the access log line.
  *
- * Spans de servidor de verdade, `http.route` parametrizado, exclusão das probes
- * e ausência de `url.query` são verificados no smoke fora do Jest, sobre a
- * stack do compose, que roda o `CMD` real com o preload.
+ * Real server spans, the parameterized `http.route`, probe exclusion and the
+ * absence of `url.query` are checked in the smoke test outside Jest, over the
+ * compose stack, which runs the real `CMD` with the preload.
  */
 function openServerSpan(app: NestExpressApplication): void {
   app.use((req: Request, res: Response, next: NextFunction) => {
@@ -87,8 +87,8 @@ describe('Telemetry (E2E)', () => {
     });
     meterProvider = new MeterProvider({ readers: [reader], views: [...METRIC_VIEWS] });
 
-    // Antes de `setupTestApp`: o adaptador resolve o `Meter` no construtor, e
-    // quem o constrói é o contêiner de injeção durante a inicialização.
+    // Before `setupTestApp`: the adapter resolves the `Meter` in its
+    // constructor, and the injection container builds it during initialization.
     metrics.setGlobalMeterProvider(meterProvider);
     collect = async () => (await reader.collect()).resourceMetrics;
 
@@ -115,7 +115,7 @@ describe('Telemetry (E2E)', () => {
     );
     capture.clear();
     spanExporter.reset();
-    // Drena a janela delta para que cada teste comece do zero.
+    // Drain the delta window so each test starts from zero.
     await collect();
   });
 
@@ -138,8 +138,8 @@ describe('Telemetry (E2E)', () => {
       expect(line['span_id']).toBe(span.spanContext().spanId);
       expect(line['trace_flags']).toBe('01');
 
-      // `request.id` permanece: é a chave que existe também fora de um span, é
-      // ecoada no cabeçalho de resposta e é a que um usuário cita num chamado.
+      // `request.id` stays: it is the key that also exists outside a span, is
+      // echoed in the response header and is the one a user quotes in a ticket.
       expect(line['request.id']).toEqual(expect.any(String));
     });
 
@@ -156,8 +156,8 @@ describe('Telemetry (E2E)', () => {
     });
 
     /**
-     * Um identificador vazio ou sintético é pior que a ausência do campo:
-     * levaria o destino a tentar correlacionar com um trace que não existe.
+     * An empty or synthetic identifier is worse than no field: it would make
+     * the destination try to correlate with a trace that does not exist.
      */
     it('should not emit trace fields on bootstrap lines, which live outside any span', () => {
       const bootstrapLines = capture.bootstrapLines();
@@ -172,8 +172,8 @@ describe('Telemetry (E2E)', () => {
     });
 
     /**
-     * Sem declaração no dicionário, `normalizeLogRecord` descartaria os três em
-     * silêncio — uma correlação prometida e não entregue.
+     * Without a dictionary declaration, `normalizeLogRecord` would drop all
+     * three silently — a correlation promised and not delivered.
      */
     it('should keep the dictionary closed with the three new fields', async () => {
       await request(httpServer)
@@ -301,9 +301,9 @@ describe('Telemetry (E2E)', () => {
     }
 
     /**
-     * O leitor exporta em temporalidade **delta**, então cada coleta drena a
-     * janela: coletar duas vezes no mesmo teste devolveria a segunda vazia. A
-     * suíte tira **um** retrato e consulta esse retrato.
+     * The reader exports with **delta** temporality, so each collection drains
+     * the window: collecting twice in the same test would return the second
+     * empty. The suite takes **one** snapshot and queries it.
      */
     async function takeSnapshot(): Promise<(name: string) => CollectedPoint[]> {
       const resourceMetrics = await collect();
@@ -349,8 +349,8 @@ describe('Telemetry (E2E)', () => {
 
       expect(points('oficina.work_order.created')[0].value).toBe(1);
 
-      // Todo status com transição de saída produz uma observação: é o que faz a
-      // soma das etapas fechar com o total de atendimento.
+      // Every status with an outgoing transition produces an observation: that
+      // is what makes the sum of the stages match the total service time.
       expect(dwellStatuses(points).sort()).toEqual([
         'APPROVED',
         'AWAITING_APPROVAL',
@@ -388,11 +388,11 @@ describe('Telemetry (E2E)', () => {
 
       expect(dwellStatuses(points)).toContain('REJECTED');
 
-      // Reentrada: o histograma agrega por conjunto de atributos, então as duas
-      // passagens por `AWAITING_APPROVAL` viram **duas observações** no mesmo
-      // ponto — nunca uma só, acumulada desde a primeira entrada. Que cada
-      // observação corresponda apenas à sua passagem é o que o spec unitário de
-      // `measureWorkOrderDurations` fixa.
+      // Re-entry: the histogram aggregates by attribute set, so the two passes
+      // through `AWAITING_APPROVAL` become **two observations** in the same
+      // point — never one, accumulated since the first entry. That each
+      // observation covers only its own pass is what the
+      // `measureWorkOrderDurations` unit spec pins down.
       const awaitingApproval = points('oficina.work_order.status.duration').find(
         (point) => point.attributes['oficina.work_order.status'] === 'AWAITING_APPROVAL',
       );
@@ -401,8 +401,8 @@ describe('Telemetry (E2E)', () => {
     });
 
     /**
-     * Cancelar não é demorar: incluir a ordem cancelada nos totais misturaria
-     * "demorou" com "não aconteceu".
+     * Cancelling is not taking long: including the cancelled order in the
+     * totals would mix "took long" with "did not happen".
      */
     it('should not produce any total when the order is cancelled midway', async () => {
       const workOrderId = await createWorkOrder();

@@ -664,10 +664,10 @@ describe('Customer (E2E)', () => {
     });
 
     /**
-     * O tipo do cliente decide de quem é a identidade do acesso externo (CPF do
-     * próprio cliente para INDIVIDUAL, CPF de um representante para COMPANY).
-     * Trocá-lo com vínculo ativo deixaria o usuário externo apontando para uma
-     * identidade que o cliente não tem mais.
+     * The customer type decides whose identity the external access uses (the
+     * customer's own CPF for INDIVIDUAL, a representative's CPF for COMPANY).
+     * Changing it with an active link would leave the external user pointing
+     * to an identity the customer no longer has.
      */
     it('should return 409 when changing the type of a customer with an active access link', async () => {
       const created = await request(httpServer)
