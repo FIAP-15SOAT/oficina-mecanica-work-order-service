@@ -76,7 +76,7 @@ describe('OutboxRelayService', () => {
     return new OutboxRelayService(
       prisma as PrismaService,
       sns as unknown as SNSClient,
-      { getOrThrow: jest.fn().mockReturnValue(TOPIC_ARN) } as unknown as ConfigService,
+      new ConfigService({ MESSAGING_TOPIC_ARN: TOPIC_ARN }),
       pinoLogger as unknown as PinoLogger,
       logger,
     );
