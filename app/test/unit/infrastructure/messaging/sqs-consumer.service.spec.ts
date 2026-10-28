@@ -113,7 +113,7 @@ describe('SqsConsumerService', () => {
     service = new SqsConsumerService(
       sqs as unknown as SQSClient,
       registry,
-      { getOrThrow: jest.fn().mockReturnValue('work-order.fifo') } as unknown as ConfigService,
+      new ConfigService({ WORK_ORDER_QUEUE_NAME: 'work-order.fifo' }),
       pinoLogger as unknown as PinoLogger,
       logger,
     );
