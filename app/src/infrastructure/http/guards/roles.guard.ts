@@ -22,7 +22,7 @@ export class RolesGuard implements CanActivate {
     const user = request.user;
 
     if (!requiredRoles.includes(user.role)) {
-      throw new ForbiddenException('Acesso negado');
+      throw new ForbiddenException('Acesso negado.');
     }
 
     return true;

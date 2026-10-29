@@ -97,7 +97,7 @@ describe('AllExceptionsFilter (E2E)', () => {
     expect(res.body.statusCode).toBe(418);
   });
 
-  it('should return 400 with "Bad request" message for a SyntaxError with body property', async () => {
+  it('should return 400 with the invalid request message for a SyntaxError with body property', async () => {
     const res = await request(httpServer)
       .get('/_test-exceptions/syntax-error-with-body')
       .expect(400);
@@ -106,6 +106,20 @@ describe('AllExceptionsFilter (E2E)', () => {
       statusCode: 400,
       error: 'Bad Request',
       message: 'Requisição inválida.',
+    });
+  });
+
+  it('should return 413 with the Portuguese message for an oversized body', async () => {
+    // 200 KB is above the body-parser default JSON limit (100 KB); adjust if a custom limit is configured.
+    const res = await request(httpServer)
+      .post('/_test-exceptions/raw-error')
+      .send({ data: 'x'.repeat(200 * 1024) })
+      .expect(413);
+
+    expect(res.body).toEqual({
+      statusCode: 413,
+      error: 'Payload Too Large',
+      message: 'Corpo da requisição grande demais.',
     });
   });
 });

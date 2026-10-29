@@ -66,7 +66,7 @@ describe('RolesGuard', () => {
     });
 
     expect(() => guard.canActivate(mockExecutionContext)).toThrow(
-      new ForbiddenException('Acesso negado'),
+      new ForbiddenException('Acesso negado.'),
     );
   });
 
@@ -90,7 +90,7 @@ describe('RolesGuard', () => {
     });
 
     expect(() => guard.canActivate(mockExecutionContext)).toThrow(
-      new ForbiddenException('Acesso negado'),
+      new ForbiddenException('Acesso negado.'),
     );
   });
 

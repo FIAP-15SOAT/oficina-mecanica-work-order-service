@@ -12,6 +12,17 @@ import { Request, Response } from 'express';
 import { ILogger } from '@application/ports/output/logger.service.interface';
 import { recordHttpFailure } from '@infrastructure/logging/http-failure.recorder';
 
+const INVALID_REQUEST_MESSAGE = 'Requisição inválida.';
+
+// Portuguese texts for the English messages that Nest and the body-parser generate by themselves.
+// Intentionally limited to what they raise today: our own code always throws Portuguese messages.
+const FRAMEWORK_MESSAGES: Partial<Record<number, string>> = {
+  [HttpStatus.BAD_REQUEST]: INVALID_REQUEST_MESSAGE,
+  [HttpStatus.METHOD_NOT_ALLOWED]: 'Método não permitido.',
+  [HttpStatus.PAYLOAD_TOO_LARGE]: 'Corpo da requisição grande demais.',
+  [HttpStatus.UNSUPPORTED_MEDIA_TYPE]: 'Tipo de conteúdo não suportado.',
+};
+
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger: ILogger;
@@ -43,7 +54,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return 'Ocorreu um erro inesperado.';
     }
 
-    if (exception instanceof NotFoundException && exception.message.startsWith('Cannot ')) {
+    if (exception instanceof NotFoundException && /^Cannot [A-Z]+ \//.test(exception.message)) {
       // Nest's router 404 ("Cannot GET /x") is English framework text.
       return 'Recurso não encontrado.';
     }
@@ -52,17 +63,22 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const response = exception.getResponse();
 
       if (typeof response === 'object' && response !== null && 'message' in response) {
-        return (response as Record<string, unknown>).message as string | string[];
+        const message = (response as Record<string, unknown>).message as string | string[];
+
+        // Our own messages are already Portuguese; only the bare Nest default phrase is translated.
+        return message === this.resolveErrorName(status)
+          ? (FRAMEWORK_MESSAGES[status] ?? message)
+          : message;
       }
 
       return exception.message;
     }
 
     if (!(exception instanceof SyntaxError) && this.isExposedHttpError(exception)) {
-      return exception.message;
+      return FRAMEWORK_MESSAGES[status] ?? INVALID_REQUEST_MESSAGE;
     }
 
-    return 'Requisição inválida.';
+    return INVALID_REQUEST_MESSAGE;
   }
 
   private isExposedHttpError(exception: unknown): exception is Error {
