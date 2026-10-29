@@ -1,4 +1,4 @@
-import { ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
+import { ArgumentsHost, HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
 
 import { ILogger } from '@application/ports/output/logger.service.interface';
 import { createMockLogger } from '../../../../helpers/logger-mock.factory';
@@ -110,6 +110,19 @@ describe('AllExceptionsFilter', () => {
     });
   });
 
+  it('should replace the router 404 text with a Portuguese message', () => {
+    const { host, statusFn, jsonFn } = createMockHost();
+
+    filter.catch(new NotFoundException('Cannot GET /x'), host);
+
+    expect(statusFn).toHaveBeenCalledWith(HttpStatus.NOT_FOUND);
+    expect(jsonFn).toHaveBeenCalledWith({
+      statusCode: HttpStatus.NOT_FOUND,
+      error: 'Not Found',
+      message: 'Recurso não encontrado.',
+    });
+  });
+
   it('should return 500 and generic message for unknown Error instances', () => {
     const { host, statusFn, jsonFn } = createMockHost();
     const exception = new Error('Erro inesperado no sistema');
@@ -120,7 +133,7 @@ describe('AllExceptionsFilter', () => {
     expect(jsonFn).toHaveBeenCalledWith({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       error: 'Internal Server Error',
-      message: 'An unexpected error occurred',
+      message: 'Ocorreu um erro inesperado.',
     });
     expect(logger.event).toHaveBeenCalledTimes(1);
     expect(logger.event).toHaveBeenCalledWith(TECHNICAL_EVENTS.HTTP_REQUEST_FAILED, {}, exception);
@@ -135,7 +148,7 @@ describe('AllExceptionsFilter', () => {
     expect(jsonFn).toHaveBeenCalledWith({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       error: 'Internal Server Error',
-      message: 'An unexpected error occurred',
+      message: 'Ocorreu um erro inesperado.',
     });
     expect(logger.event).toHaveBeenCalledTimes(1);
     expect(logger.event).toHaveBeenCalledWith(
@@ -155,7 +168,7 @@ describe('AllExceptionsFilter', () => {
     expect(jsonFn).toHaveBeenCalledWith({
       statusCode: HttpStatus.BAD_REQUEST,
       error: 'Bad Request',
-      message: 'Bad request',
+      message: 'Requisição inválida.',
     });
     expect(logger.event).not.toHaveBeenCalled();
   });
@@ -237,7 +250,7 @@ describe('AllExceptionsFilter', () => {
       expect(jsonFn).toHaveBeenCalledWith({
         statusCode: HttpStatus.BAD_REQUEST,
         error: 'Bad Request',
-        message: 'Bad request',
+        message: 'Requisição inválida.',
       });
     });
   });

@@ -584,7 +584,7 @@ describe('Structured logging (E2E)', () => {
       expect(res.body).toEqual({
         statusCode: 404,
         error: 'Not Found',
-        message: 'Cannot GET /rota-fora-do-prefixo',
+        message: 'Recurso não encontrado.',
       });
     });
 

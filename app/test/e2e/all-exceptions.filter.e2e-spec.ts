@@ -64,7 +64,7 @@ describe('AllExceptionsFilter (E2E)', () => {
     expect(res.body).toEqual({
       statusCode: 500,
       error: 'Internal Server Error',
-      message: 'An unexpected error occurred',
+      message: 'Ocorreu um erro inesperado.',
     });
   });
 
@@ -74,7 +74,7 @@ describe('AllExceptionsFilter (E2E)', () => {
     expect(res.body).toEqual({
       statusCode: 500,
       error: 'Internal Server Error',
-      message: 'An unexpected error occurred',
+      message: 'Ocorreu um erro inesperado.',
     });
   });
 
@@ -105,7 +105,7 @@ describe('AllExceptionsFilter (E2E)', () => {
     expect(res.body).toEqual({
       statusCode: 400,
       error: 'Bad Request',
-      message: 'Bad request',
+      message: 'Requisição inválida.',
     });
   });
 });

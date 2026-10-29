@@ -53,7 +53,7 @@ O nível vem do status, mas só depois de o **desfecho** ser resolvido pelo esta
 
 ### Por que o autor é resolvido no encerramento
 
-`JwtAuthGuard` popula `req.user`, e então `RolesGuard` pode retornar `false` — um `403`. O interceptor nunca roda, então um autor vinculado ao interceptor estaria ausente exatamente no evento mais digno de auditoria: um usuário autenticado recusado por RBAC. Ler `req.user` no encerramento cobre 200, 403 e tudo entre eles. O mapeamento vem do payload real do `JwtStrategy`: `sub → user.id`, `[role] → user.roles`. O `email` nunca é emitido.
+`JwtAuthGuard` popula `req.user`, e então `RolesGuard` pode lançar `ForbiddenException` — um `403`. O interceptor nunca roda, então um autor vinculado ao interceptor estaria ausente exatamente no evento mais digno de auditoria: um usuário autenticado recusado por RBAC. Ler `req.user` no encerramento cobre 200, 403 e tudo entre eles. O mapeamento vem do payload real do `JwtStrategy`: `sub → user.id`, `[role] → user.roles`. O `email` nunca é emitido.
 
 ### Porta `ILogger` e os dois catálogos
 
