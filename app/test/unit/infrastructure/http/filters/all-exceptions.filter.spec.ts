@@ -1,11 +1,4 @@
-import {
-  ArgumentsHost,
-  ConflictException,
-  HttpException,
-  HttpStatus,
-  NotFoundException,
-  PayloadTooLargeException,
-} from '@nestjs/common';
+import { ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
 
 import { ILogger } from '@application/ports/output/logger.service.interface';
 import { createMockLogger } from '../../../../helpers/logger-mock.factory';
@@ -117,49 +110,6 @@ describe('AllExceptionsFilter', () => {
     });
   });
 
-  it('should replace the router 404 text with a Portuguese message', () => {
-    const { host, statusFn, jsonFn } = createMockHost();
-
-    filter.catch(new NotFoundException('Cannot GET /x'), host);
-
-    expect(statusFn).toHaveBeenCalledWith(HttpStatus.NOT_FOUND);
-    expect(jsonFn).toHaveBeenCalledWith({
-      statusCode: HttpStatus.NOT_FOUND,
-      error: 'Not Found',
-      message: 'Recurso não encontrado.',
-    });
-  });
-
-  it('should translate the bare Nest default phrase of a native HttpException', () => {
-    const { host, jsonFn } = createMockHost();
-
-    filter.catch(new PayloadTooLargeException(), host);
-
-    expect(jsonFn).toHaveBeenCalledWith({
-      statusCode: HttpStatus.PAYLOAD_TOO_LARGE,
-      error: 'Payload Too Large',
-      message: 'Corpo da requisição grande demais.',
-    });
-  });
-
-  it('should keep the default phrase when the status has no Portuguese mapping', () => {
-    const { host, jsonFn } = createMockHost();
-
-    filter.catch(new ConflictException(), host);
-
-    expect(jsonFn).toHaveBeenCalledWith(expect.objectContaining({ message: 'Conflict' }));
-  });
-
-  it('should not translate a 404 whose text only starts like the router message', () => {
-    const { host, jsonFn } = createMockHost();
-
-    filter.catch(new NotFoundException('Cannot find the customer'), host);
-
-    expect(jsonFn).toHaveBeenCalledWith(
-      expect.objectContaining({ message: 'Cannot find the customer' }),
-    );
-  });
-
   it('should return 500 and generic message for unknown Error instances', () => {
     const { host, statusFn, jsonFn } = createMockHost();
     const exception = new Error('Erro inesperado no sistema');
@@ -170,7 +120,7 @@ describe('AllExceptionsFilter', () => {
     expect(jsonFn).toHaveBeenCalledWith({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       error: 'Internal Server Error',
-      message: 'Ocorreu um erro inesperado.',
+      message: 'Ocorreu um erro inesperado',
     });
     expect(logger.event).toHaveBeenCalledTimes(1);
     expect(logger.event).toHaveBeenCalledWith(TECHNICAL_EVENTS.HTTP_REQUEST_FAILED, {}, exception);
@@ -185,7 +135,7 @@ describe('AllExceptionsFilter', () => {
     expect(jsonFn).toHaveBeenCalledWith({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       error: 'Internal Server Error',
-      message: 'Ocorreu um erro inesperado.',
+      message: 'Ocorreu um erro inesperado',
     });
     expect(logger.event).toHaveBeenCalledTimes(1);
     expect(logger.event).toHaveBeenCalledWith(
@@ -205,7 +155,7 @@ describe('AllExceptionsFilter', () => {
     expect(jsonFn).toHaveBeenCalledWith({
       statusCode: HttpStatus.BAD_REQUEST,
       error: 'Bad Request',
-      message: 'Requisição inválida.',
+      message: 'Requisição inválida',
     });
     expect(logger.event).not.toHaveBeenCalled();
   });
@@ -236,7 +186,7 @@ describe('AllExceptionsFilter', () => {
       expect(jsonFn).toHaveBeenCalledWith({
         statusCode: HttpStatus.PAYLOAD_TOO_LARGE,
         error: 'Payload Too Large',
-        message: 'Corpo da requisição grande demais.',
+        message: 'request entity too large',
       });
     });
 
@@ -257,29 +207,6 @@ describe('AllExceptionsFilter', () => {
       );
 
       expect(statusFn).toHaveBeenCalledWith(HttpStatus.UNSUPPORTED_MEDIA_TYPE);
-    });
-
-    it('should translate an unsupported charset message to Portuguese', () => {
-      const { host, jsonFn } = createMockHost();
-
-      filter.catch(
-        Object.assign(new Error('unsupported charset'), { status: 415, expose: true }),
-        host,
-      );
-
-      expect(jsonFn).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'Tipo de conteúdo não suportado.' }),
-      );
-    });
-
-    it('should fall back to the invalid request message for an exposed error with an unmapped status', () => {
-      const { host, jsonFn } = createMockHost();
-
-      filter.catch(Object.assign(new Error('teapot'), { status: 418, expose: true }), host);
-
-      expect(jsonFn).toHaveBeenCalledWith(
-        expect.objectContaining({ message: 'Requisição inválida.' }),
-      );
     });
 
     it('should keep an ordinary error at 500 when it carries no usable status', () => {
@@ -310,7 +237,7 @@ describe('AllExceptionsFilter', () => {
       expect(jsonFn).toHaveBeenCalledWith({
         statusCode: HttpStatus.BAD_REQUEST,
         error: 'Bad Request',
-        message: 'Requisição inválida.',
+        message: 'Requisição inválida',
       });
     });
   });

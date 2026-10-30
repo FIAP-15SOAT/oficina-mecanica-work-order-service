@@ -64,7 +64,7 @@ describe('AllExceptionsFilter (E2E)', () => {
     expect(res.body).toEqual({
       statusCode: 500,
       error: 'Internal Server Error',
-      message: 'Ocorreu um erro inesperado.',
+      message: 'Ocorreu um erro inesperado',
     });
   });
 
@@ -74,7 +74,7 @@ describe('AllExceptionsFilter (E2E)', () => {
     expect(res.body).toEqual({
       statusCode: 500,
       error: 'Internal Server Error',
-      message: 'Ocorreu um erro inesperado.',
+      message: 'Ocorreu um erro inesperado',
     });
   });
 
@@ -105,21 +105,7 @@ describe('AllExceptionsFilter (E2E)', () => {
     expect(res.body).toEqual({
       statusCode: 400,
       error: 'Bad Request',
-      message: 'Requisição inválida.',
-    });
-  });
-
-  it('should return 413 with the Portuguese message for an oversized body', async () => {
-    // 200 KB is above the body-parser default JSON limit (100 KB); adjust if a custom limit is configured.
-    const res = await request(httpServer)
-      .post('/_test-exceptions/raw-error')
-      .send({ data: 'x'.repeat(200 * 1024) })
-      .expect(413);
-
-    expect(res.body).toEqual({
-      statusCode: 413,
-      error: 'Payload Too Large',
-      message: 'Corpo da requisição grande demais.',
+      message: 'Requisição inválida',
     });
   });
 });

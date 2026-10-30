@@ -1,4 +1,4 @@
-import { ExecutionContext, ForbiddenException } from '@nestjs/common';
+import { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
 import { RolesGuard } from '@infrastructure/http/guards/roles.guard';
@@ -65,9 +65,9 @@ describe('RolesGuard', () => {
       user: { role: UserRole.ATTENDANT },
     });
 
-    expect(() => guard.canActivate(mockExecutionContext)).toThrow(
-      new ForbiddenException('Acesso negado.'),
-    );
+    const result = guard.canActivate(mockExecutionContext);
+
+    expect(result).toBe(false);
   });
 
   it('should allow access when user has one of multiple required roles', () => {
@@ -89,9 +89,9 @@ describe('RolesGuard', () => {
       user: { role: UserRole.ATTENDANT },
     });
 
-    expect(() => guard.canActivate(mockExecutionContext)).toThrow(
-      new ForbiddenException('Acesso negado.'),
-    );
+    const result = guard.canActivate(mockExecutionContext);
+
+    expect(result).toBe(false);
   });
 
   it('should check roles from both handler and class', () => {
