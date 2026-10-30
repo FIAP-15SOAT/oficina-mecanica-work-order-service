@@ -25,7 +25,7 @@ describe('CustomerJwtAuthGuard', () => {
       }).toThrow(AuthenticationFailedException);
       expect(() => {
         guard.handleRequest(error, null);
-      }).toThrow('Token de cliente inválido ou ausente.');
+      }).toThrow('Token de cliente inválido ou ausente');
     });
 
     it('should throw AuthenticationFailedException when the strategy resolved no user', () => {

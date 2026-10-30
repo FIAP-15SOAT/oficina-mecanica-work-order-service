@@ -25,7 +25,7 @@ describe('JwtAuthGuard', () => {
       }).toThrow(AuthenticationFailedException);
       expect(() => {
         guard.handleRequest(error, null);
-      }).toThrow('Token de autenticação inválido ou ausente.');
+      }).toThrow('Token de autenticação inválido ou ausente');
     });
 
     it('should throw AuthenticationFailedException when user is null', () => {
