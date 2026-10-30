@@ -8,7 +8,7 @@ export class CustomerJwtAuthGuard extends AuthGuard('customer-jwt') {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handleRequest<TUser = any>(err: any, user: any): TUser {
     if (err || !user) {
-      throw new AuthenticationFailedException('Token de cliente inválido ou ausente.');
+      throw new AuthenticationFailedException('Token de cliente inválido ou ausente');
     }
     return user as TUser;
   }

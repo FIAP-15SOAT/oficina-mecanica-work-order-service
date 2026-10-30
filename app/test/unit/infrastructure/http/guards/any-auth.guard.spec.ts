@@ -33,7 +33,7 @@ describe('AnyAuthGuard', () => {
       }).toThrow(AuthenticationFailedException);
       expect(() => {
         guard.handleRequest(error, null);
-      }).toThrow('Token de autenticação inválido ou ausente.');
+      }).toThrow('Token de autenticação inválido ou ausente');
     });
 
     it('should throw AuthenticationFailedException when no strategy resolved a user', () => {

@@ -120,7 +120,7 @@ describe('AllExceptionsFilter', () => {
     expect(jsonFn).toHaveBeenCalledWith({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       error: 'Internal Server Error',
-      message: 'An unexpected error occurred',
+      message: 'Ocorreu um erro inesperado',
     });
     expect(logger.event).toHaveBeenCalledTimes(1);
     expect(logger.event).toHaveBeenCalledWith(TECHNICAL_EVENTS.HTTP_REQUEST_FAILED, {}, exception);
@@ -135,7 +135,7 @@ describe('AllExceptionsFilter', () => {
     expect(jsonFn).toHaveBeenCalledWith({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       error: 'Internal Server Error',
-      message: 'An unexpected error occurred',
+      message: 'Ocorreu um erro inesperado',
     });
     expect(logger.event).toHaveBeenCalledTimes(1);
     expect(logger.event).toHaveBeenCalledWith(
@@ -155,7 +155,7 @@ describe('AllExceptionsFilter', () => {
     expect(jsonFn).toHaveBeenCalledWith({
       statusCode: HttpStatus.BAD_REQUEST,
       error: 'Bad Request',
-      message: 'Bad request',
+      message: 'Requisição inválida',
     });
     expect(logger.event).not.toHaveBeenCalled();
   });
@@ -237,7 +237,7 @@ describe('AllExceptionsFilter', () => {
       expect(jsonFn).toHaveBeenCalledWith({
         statusCode: HttpStatus.BAD_REQUEST,
         error: 'Bad Request',
-        message: 'Bad request',
+        message: 'Requisição inválida',
       });
     });
   });

@@ -39,7 +39,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
   private resolveMessage(status: HttpStatus, exception: unknown): string | string[] {
     if (status === HttpStatus.INTERNAL_SERVER_ERROR) {
-      return 'An unexpected error occurred';
+      return 'Ocorreu um erro inesperado';
     }
 
     if (exception instanceof HttpException) {
@@ -56,7 +56,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       return exception.message;
     }
 
-    return 'Bad request';
+    return 'Requisição inválida';
   }
 
   private isExposedHttpError(exception: unknown): exception is Error {

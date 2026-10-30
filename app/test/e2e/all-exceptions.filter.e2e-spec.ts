@@ -64,7 +64,7 @@ describe('AllExceptionsFilter (E2E)', () => {
     expect(res.body).toEqual({
       statusCode: 500,
       error: 'Internal Server Error',
-      message: 'An unexpected error occurred',
+      message: 'Ocorreu um erro inesperado',
     });
   });
 
@@ -74,7 +74,7 @@ describe('AllExceptionsFilter (E2E)', () => {
     expect(res.body).toEqual({
       statusCode: 500,
       error: 'Internal Server Error',
-      message: 'An unexpected error occurred',
+      message: 'Ocorreu um erro inesperado',
     });
   });
 
@@ -97,7 +97,7 @@ describe('AllExceptionsFilter (E2E)', () => {
     expect(res.body.statusCode).toBe(418);
   });
 
-  it('should return 400 with "Bad request" message for a SyntaxError with body property', async () => {
+  it('should return 400 with the invalid request message for a SyntaxError with body property', async () => {
     const res = await request(httpServer)
       .get('/_test-exceptions/syntax-error-with-body')
       .expect(400);
@@ -105,7 +105,7 @@ describe('AllExceptionsFilter (E2E)', () => {
     expect(res.body).toEqual({
       statusCode: 400,
       error: 'Bad Request',
-      message: 'Bad request',
+      message: 'Requisição inválida',
     });
   });
 });
