@@ -9,11 +9,11 @@ describe('Plate VO', () => {
       ['abc-1234', 'ABC1234'],
       ['  ABC-1234  ', 'ABC1234'],
       ['ABC1D23', 'ABC1D23'],
-    ])('sanitizes and creates from %p → %p', (input, expected) => {
+    ])('should sanitize and create from %p → %p', (input, expected) => {
       expect(Plate.create(input).value).toBe(expected);
     });
 
-    it.each([null, undefined, '', '   '])('throws when value is %p', (value) => {
+    it.each([null, undefined, '', '   '])('should throw when value is %p', (value) => {
       expect(() => Plate.create(value as string)).toThrow(DomainValidationException);
       expect(() => Plate.create(value as string)).toThrow('Placa é obrigatória');
     });
@@ -28,21 +28,21 @@ describe('Plate VO', () => {
   });
 
   describe('equals', () => {
-    it('returns true for same value (regardless of input formatting)', () => {
+    it('should return true for same value (regardless of input formatting)', () => {
       expect(Plate.create('ABC-1234').equals(Plate.create('abc1234'))).toBe(true);
     });
 
-    it('returns false for different values', () => {
+    it('should return false for different values', () => {
       expect(Plate.create('ABC-1234').equals(Plate.create('XYZ-5678'))).toBe(false);
     });
 
-    it('returns false for non-Plate instance', () => {
+    it('should return false for non-Plate instance', () => {
       expect(Plate.create('ABC-1234').equals({ value: 'ABC1234' } as unknown as Plate)).toBe(false);
     });
   });
 
   describe('toString', () => {
-    it('returns the sanitized value', () => {
+    it('should return the sanitized value', () => {
       expect(Plate.create('ABC-1234').toString()).toBe('ABC1234');
     });
   });

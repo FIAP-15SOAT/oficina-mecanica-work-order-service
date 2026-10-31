@@ -7,7 +7,7 @@ describe('Cpf VO', () => {
       ['123.456.789-09', '12345678909'],
       ['12345678909', '12345678909'],
       ['  123.456.789-09  ', '12345678909'],
-    ])('sanitizes and creates from %p → %p', (input, expected) => {
+    ])('should sanitize and create from %p → %p', (input, expected) => {
       const cpf = Cpf.create(input);
       expect(cpf.value).toBe(expected);
     });
@@ -22,26 +22,26 @@ describe('Cpf VO', () => {
   });
 
   describe('equals', () => {
-    it('returns true for the same value (regardless of input formatting)', () => {
+    it('should return true for the same value (regardless of input formatting)', () => {
       const a = Cpf.create('123.456.789-09');
       const b = Cpf.create('12345678909');
       expect(a.equals(b)).toBe(true);
     });
 
-    it('returns false for different values', () => {
+    it('should return false for different values', () => {
       const a = Cpf.create('123.456.789-09');
       const b = Cpf.create('529.982.247-25');
       expect(a.equals(b)).toBe(false);
     });
 
-    it('returns false for non-Cpf instance', () => {
+    it('should return false for non-Cpf instance', () => {
       const a = Cpf.create('123.456.789-09');
       expect(a.equals({ value: '12345678909' } as unknown as Cpf)).toBe(false);
     });
   });
 
   describe('toString', () => {
-    it('returns the sanitized value', () => {
+    it('should return the sanitized value', () => {
       expect(Cpf.create('123.456.789-09').toString()).toBe('12345678909');
     });
   });

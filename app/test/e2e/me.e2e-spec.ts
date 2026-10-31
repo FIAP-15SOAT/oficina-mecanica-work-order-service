@@ -311,7 +311,7 @@ describe('Me (E2E)', () => {
       expect(await bcrypt.compare('NovaSenha@456', updated!.passwordHash)).toBe(true);
     });
 
-    it('rejects an external token issued before an authenticated password change', async () => {
+    it('should reject an external token issued before an authenticated password change', async () => {
       const customer = await createCustomer();
       const user = await createExternalUserLinkedTo(customer.id, generateCPF(4001));
       const tokenIssuedBeforeChange = signTestCustomerToken(user.id);
@@ -378,7 +378,7 @@ describe('Me (E2E)', () => {
   // ─── Full external customer flow: CPF login → /api/me → quote decision ───
 
   describe('Full external customer flow — CPF login → /api/me → quote decision', () => {
-    it('lets an externally authenticated user with an INDIVIDUAL and a COMPANY customer see both, scopes work-order/quote access to their own customers, and decides a quote', async () => {
+    it('should let an externally authenticated user with an INDIVIDUAL and a COMPANY customer see both, scope work-order/quote access to their own customers, and decide a quote', async () => {
       const customerA = await createCustomer();
       const customerB = await createCompanyCustomer();
       const otherCustomer = await createCustomer();
@@ -528,7 +528,7 @@ describe('Me (E2E)', () => {
      * (`POST /:quoteId/decisions`, both approve and reject) must return the
      * items with the real service/part name, never blank.
      */
-    it('returns quote items with real names on detail and on both decision outcomes, and omits items from the list', async () => {
+    it('should return quote items with real names on detail and on both decision outcomes, and omit items from the list', async () => {
       const customer = await createCustomer();
       const user = await createExternalUserLinkedTo(customer.id, generateCPF(2100));
       const vehicle = await createVehicle(customer.id);

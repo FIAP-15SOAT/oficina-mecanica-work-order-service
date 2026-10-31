@@ -7,12 +7,12 @@ describe('Email VO', () => {
       ['a valid email', 'user@example.com', 'user@example.com'],
       ['an email with surrounding whitespace', '  user@example.com  ', 'user@example.com'],
       ['a mixed-case email', 'User@Example.COM', 'user@example.com'],
-    ])('creates from %s', (_description, raw, expected) => {
+    ])('should create from %s', (_description, raw, expected) => {
       const email = Email.create(raw);
       expect(email.value).toBe(expected);
     });
 
-    it.each([null, undefined, '', '   '])('throws when value is %p', (raw) => {
+    it.each([null, undefined, '', '   '])('should throw when value is %p', (raw) => {
       expect(() => Email.create(raw as string)).toThrow(DomainValidationException);
       expect(() => Email.create(raw as string)).toThrow('E-mail é obrigatório');
     });
@@ -25,7 +25,7 @@ describe('Email VO', () => {
       },
     );
 
-    it('throws when email exceeds 150 chars', () => {
+    it('should throw when email exceeds 150 chars', () => {
       const local = 'a'.repeat(140);
       const longEmail = `${local}@example.com`;
       expect(() => Email.create(longEmail)).toThrow(/no máximo 150 caracteres/);
@@ -33,21 +33,21 @@ describe('Email VO', () => {
   });
 
   describe('equals', () => {
-    it('returns true for same value', () => {
+    it('should return true for same value', () => {
       expect(Email.create('a@b.com').equals(Email.create('a@b.com'))).toBe(true);
     });
 
-    it('returns false for different values', () => {
+    it('should return false for different values', () => {
       expect(Email.create('a@b.com').equals(Email.create('c@d.com'))).toBe(false);
     });
 
-    it('returns false for non-Email instance', () => {
+    it('should return false for non-Email instance', () => {
       expect(Email.create('a@b.com').equals({ value: 'a@b.com' } as unknown as Email)).toBe(false);
     });
   });
 
   describe('toString', () => {
-    it('returns the value', () => {
+    it('should return the value', () => {
       expect(Email.create('a@b.com').toString()).toBe('a@b.com');
     });
   });
