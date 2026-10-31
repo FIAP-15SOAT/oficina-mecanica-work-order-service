@@ -1,8 +1,8 @@
 import { User } from '@domain/entities/user.entity';
 
 import { IUnitOfWork, IRepositories } from '@domain/interfaces/repositories/unit-of-work.interface';
-import { IHashService } from '@application/ports/output/hash.service.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { IHashService } from '@application/ports/output/services/hash.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { ConfirmPasswordResetDto } from '@application/ports/input/auth/dto/confirm-password-reset.dto';

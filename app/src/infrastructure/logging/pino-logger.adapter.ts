@@ -3,7 +3,10 @@ import { PinoLogger } from 'nestjs-pino';
 
 import { LogEventDefinition, LogLevelName } from '@application/logging/log-event';
 import { LogFields } from '@application/logging/log-field';
-import { ILogger, NoExtraFields } from '@application/ports/output/logger.service.interface';
+import {
+  ILogger,
+  NoExtraFields,
+} from '@application/ports/output/services/logger.service.interface';
 
 import { reportLoggingFailure, runSafelyVoid } from './logging-diagnostics';
 import { describeError } from './error-serializer';

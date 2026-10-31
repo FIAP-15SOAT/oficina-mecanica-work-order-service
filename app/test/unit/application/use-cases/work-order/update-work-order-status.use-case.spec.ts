@@ -5,16 +5,16 @@ import { BusinessRuleViolationException } from '@domain/exceptions/business-rule
 import { createMockWorkOrder } from '../../../../helpers/work-order-mock.factory';
 import { createMockUnitOfWorkWithRepos } from '../../../../helpers/unit-of-work-mock.factory';
 import { IUnitOfWork, IRepositories } from '@domain/interfaces/repositories/unit-of-work.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { createMockLogger } from '../../../../helpers/logger-mock.factory';
-import { IMetrics } from '@application/ports/output/metrics.service.interface';
+import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
 import { createMockMetrics } from '../../../../helpers/metrics-mock.factory';
 import { StatusHistory } from '@domain/entities/status-history.entity';
 import {
   arrangeStatusHistory,
   createMockStatusHistory,
 } from '../../../../helpers/status-history-mock.factory';
-import { ICache } from '@application/ports/output/cache.service.interface';
+import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { createMockCache } from '../../../../helpers/cache-mock.factory';
 import { randomUUID } from 'node:crypto';

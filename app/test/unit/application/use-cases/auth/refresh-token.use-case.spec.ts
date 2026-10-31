@@ -5,7 +5,7 @@ import {
   createMockUserRepository,
 } from '../../../../helpers/mock-factories';
 import { RefreshTokenUseCase } from '@application/use-cases/auth/refresh-token.use-case';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { createMockLogger } from '../../../../helpers/logger-mock.factory';
 
 describe('RefreshTokenUseCase', () => {

@@ -5,9 +5,9 @@ import { CustomerType } from '@domain/enums/customer-type.enum';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
 
 import { IUnitOfWork, IRepositories } from '@domain/interfaces/repositories/unit-of-work.interface';
-import { IHashService } from '@application/ports/output/hash.service.interface';
-import { IEmailSenderService } from '@application/ports/output/email-sender.service.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { IHashService } from '@application/ports/output/services/hash.service.interface';
+import { IEmailSenderService } from '@application/ports/output/services/email-sender.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { PasswordGenerator } from '@domain/services/password-generator';
 
 import {

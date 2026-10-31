@@ -7,7 +7,7 @@ import { IRepositories, IUnitOfWork } from '@domain/interfaces/repositories/unit
 import { createMockPartSupply } from '../../../../helpers/part-supply-mock.factory';
 import { createMockUnitOfWorkWithRepos } from '../../../../helpers/unit-of-work-mock.factory';
 import { createMockStockMovement } from '../../../../helpers/stock-movement-mock.factory';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { createMockLogger } from '../../../../helpers/logger-mock.factory';
 
 describe('UpdateStockUseCase', () => {

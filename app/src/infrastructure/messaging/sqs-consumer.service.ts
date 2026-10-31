@@ -25,7 +25,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { Consumer } from 'sqs-consumer';
 
 import { MessageEnvelope } from '@application/messaging/message-envelope';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { TECHNICAL_EVENTS } from '@infrastructure/logging/technical-event.catalog';
 
 import { MessageEnvelopeDto } from './message-envelope.dto';

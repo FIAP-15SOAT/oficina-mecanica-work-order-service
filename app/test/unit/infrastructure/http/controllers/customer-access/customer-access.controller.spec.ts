@@ -8,7 +8,7 @@ import { CustomerType } from '@domain/enums/customer-type.enum';
 import { UserRole } from '@domain/enums/user-role.enum';
 import { AuthFlow } from '@domain/enums/auth-flow.enum';
 
-import { AuthenticatedPrincipal } from '@application/ports/output/authenticated-principal';
+import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
 import { GrantCustomerAccessRequestDto } from '@infrastructure/http/controllers/customer-access/dto/requests/grant-customer-access-request.dto';
 import { UpdateCustomerStatusRequestDto } from '@infrastructure/http/controllers/customer-access/dto/requests/update-customer-status-request.dto';
 

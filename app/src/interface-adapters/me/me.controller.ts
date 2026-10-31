@@ -8,7 +8,7 @@ import { IDecideMyQuoteUseCase } from '@application/ports/input/me/decide-my-quo
 
 import { ChangeOwnPasswordDto } from '@application/ports/input/me/dto/change-own-password.dto';
 import { QuoteDecisionDto } from '@application/ports/input/me/dto/quote-decision.dto';
-import { AuthenticatedPrincipal } from '@application/ports/output/authenticated-principal';
+import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
 import { PaginationInput } from '@domain/interfaces/common/pagination.interface';
 
 import { MePresenter } from './me.presenter';

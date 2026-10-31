@@ -8,7 +8,7 @@ import { ResourceNotFoundException } from '@application/exceptions/resource-not-
 import { ResourceConflictException } from '@application/exceptions/resource-conflict.exception';
 import { ServiceRequestRejectedException } from '@application/exceptions/service-request-rejected.exception';
 import { UnauthorizedAccessException } from '@application/exceptions/unauthorized-access.exception';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { recordHttpFailure } from '@infrastructure/logging/http-failure.recorder';
 
 @Catch(ApplicationException)

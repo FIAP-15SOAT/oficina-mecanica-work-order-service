@@ -11,7 +11,7 @@ import { UserRole } from '@domain/enums/user-role.enum';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
 import { createMockService } from '../../../../helpers/service-mock.factory';
 import { createMockPartSupply } from '../../../../helpers/part-supply-mock.factory';
-import { IMetrics } from '@application/ports/output/metrics.service.interface';
+import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
 import { createMockMetrics } from '../../../../helpers/metrics-mock.factory';
 
 describe('CreateWorkOrderUseCase', () => {

@@ -9,13 +9,13 @@ import { StockMovementType } from '@domain/enums/stock-movement-type.enum';
 import { IRepositories, IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
 import { UpdateWorkOrderServiceStatusDto } from '@application/ports/input/work-order/dto/update-work-order-service-status.dto';
-import { ILogger } from '@application/ports/output/logger.service.interface';
-import { IMetrics } from '@application/ports/output/metrics.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
+import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { recordWorkOrderTransition } from '@application/metrics/work-order-metrics';
 
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
-import { ICache } from '@application/ports/output/cache.service.interface';
+import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 
 interface StockConsumptionSummary {

@@ -20,10 +20,10 @@ import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order
 import { IQuoteRepository } from '@domain/interfaces/repositories/quote.repository.interface';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
-import { IHashService } from '@application/ports/output/hash.service.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
-import { IMetrics } from '@application/ports/output/metrics.service.interface';
-import { ICache } from '@application/ports/output/cache.service.interface';
+import { IHashService } from '@application/ports/output/services/hash.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
+import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
+import { ICache } from '@application/ports/output/services/cache.service.interface';
 
 import { MeController as MeCleanController } from '@interface-adapters/me/me.controller';
 import { MeController } from './me.controller';

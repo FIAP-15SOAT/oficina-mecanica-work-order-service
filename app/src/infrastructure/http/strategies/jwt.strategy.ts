@@ -5,8 +5,8 @@ import type { JwtHeader } from 'jsonwebtoken';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
-import { TokenPayload } from '@application/ports/output/token.service.interface';
-import { AuthenticatedPrincipal } from '@application/ports/output/authenticated-principal';
+import { TokenPayload } from '@application/ports/output/services/token.service.interface';
+import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
 import { AuthFlow } from '@domain/enums/auth-flow.enum';
 import { readPemKey } from '@infrastructure/utils/read-pem-key.util';
 import { STAFF_TOKEN_ALGORITHM } from '@infrastructure/services/staff-token.constants';

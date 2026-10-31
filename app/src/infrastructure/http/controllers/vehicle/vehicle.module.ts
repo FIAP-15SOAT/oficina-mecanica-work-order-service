@@ -10,7 +10,7 @@ import { FindVehiclesByCustomerIdUseCase } from '@application/use-cases/vehicle/
 import { ICustomerRepository } from '@domain/interfaces/repositories/customer.repository.interface';
 import { IVehicleRepository } from '@domain/interfaces/repositories/vehicle.repository.interface';
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
-import { ICache } from '@application/ports/output/cache.service.interface';
+import { ICache } from '@application/ports/output/services/cache.service.interface';
 
 import { VehicleController as VehicleCleanController } from '@interface-adapters/vehicle/vehicle.controller';
 import { VehicleController } from './vehicle.controller';

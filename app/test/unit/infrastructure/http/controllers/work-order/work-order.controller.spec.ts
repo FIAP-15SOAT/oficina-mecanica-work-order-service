@@ -12,7 +12,7 @@ import { UpdateWorkOrderStatusRequestDto } from '@infrastructure/http/controller
 import { UpdateWorkOrderServiceStatusRequestDto } from '@infrastructure/http/controllers/work-order/dto/requests/update-work-order-service-status-request.dto';
 import { FindAllWorkOrdersPaginatedQueryDto } from '@infrastructure/http/controllers/work-order/dto/requests/filter-work-orders.dto';
 
-import { AuthenticatedPrincipal } from '@application/ports/output/authenticated-principal';
+import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { WorkOrderServiceStatus } from '@domain/enums/work-order-service-status.enum';
 import { UserRole } from '@domain/enums/user-role.enum';

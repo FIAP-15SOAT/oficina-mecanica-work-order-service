@@ -6,7 +6,7 @@ import { InternalHttpClient } from './internal-http-client';
 @Global()
 @Module({
   imports: [HttpModule],
-  providers: [{ provide: 'IInternalHttpClient', useClass: InternalHttpClient }],
-  exports: ['IInternalHttpClient'],
+  providers: [InternalHttpClient],
+  exports: [InternalHttpClient],
 })
 export class ClientsModule {}

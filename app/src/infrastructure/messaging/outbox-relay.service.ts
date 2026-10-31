@@ -9,7 +9,7 @@ import { context, propagation, ROOT_CONTEXT } from '@opentelemetry/api';
 import { PublishCommand, SNSClient } from '@aws-sdk/client-sns';
 import { PinoLogger } from 'nestjs-pino';
 
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { TECHNICAL_EVENTS } from '@infrastructure/logging/technical-event.catalog';
 import { PrismaService } from '@infrastructure/persistence/prisma/prisma.service';
 

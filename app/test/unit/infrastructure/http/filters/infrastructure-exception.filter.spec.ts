@@ -1,6 +1,6 @@
 import { ArgumentsHost, HttpStatus } from '@nestjs/common';
 
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { createMockLogger } from '../../../../helpers/logger-mock.factory';
 
 import { InfrastructureExceptionFilter } from '@infrastructure/http/filters/infrastructure-exception.filter';

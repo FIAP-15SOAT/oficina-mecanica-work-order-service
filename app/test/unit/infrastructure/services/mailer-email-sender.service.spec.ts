@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { MailerService } from '@nestjs-modules/mailer';
 
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { MailerEmailSenderService } from '@infrastructure/services/mailer-email-sender.service';
 import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
 import { TECHNICAL_EVENTS } from '@infrastructure/logging/technical-event.catalog';

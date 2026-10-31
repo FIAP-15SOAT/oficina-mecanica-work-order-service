@@ -1,7 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { ValkeyCacheAdapter } from '@infrastructure/cache/valkey-cache.adapter';
 import { createCacheClient } from '@infrastructure/cache/valkey-client';
 import { TECHNICAL_EVENTS } from '@infrastructure/logging/technical-event.catalog';

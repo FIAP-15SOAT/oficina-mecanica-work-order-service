@@ -2,7 +2,7 @@ import { ResourceNotFoundException } from '@application/exceptions/resource-not-
 import { UpdateUserStatusUseCase } from '@application/use-cases/user/update-user-status.use-case';
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { createMockUser, createMockUserRepository } from '../../../../helpers/user-mock.factory';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { createMockLogger } from '../../../../helpers/logger-mock.factory';
 
 describe('UpdateUserStatusUseCase', () => {

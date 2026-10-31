@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { decode, Jwt, JwtPayload, sign, verify } from 'jsonwebtoken';
 import { UserRole } from '@domain/enums/user-role.enum';
-import { TokenPayload } from '@application/ports/output/token.service.interface';
+import { TokenPayload } from '@application/ports/output/services/token.service.interface';
 import { JwtTokenService } from '@infrastructure/services/jwt-token.service';
 import {
   STAFF_JWT_TEST_AUDIENCE,

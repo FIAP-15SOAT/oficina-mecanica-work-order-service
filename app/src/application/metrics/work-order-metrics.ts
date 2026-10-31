@@ -1,7 +1,7 @@
 import { StatusHistory } from '@domain/entities/status-history.entity';
 import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
 
-import { IMetrics } from '@application/ports/output/metrics.service.interface';
+import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
 
 import { BUSINESS_METRICS } from './business-metric.catalog';
 import { measureWorkOrderDurations, WorkOrderDurations } from './work-order-duration';

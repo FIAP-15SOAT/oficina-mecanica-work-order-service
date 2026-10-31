@@ -1,7 +1,7 @@
 import { ExecutionContext } from '@nestjs/common';
 import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
 
-import { AuthenticatedPrincipal } from '@application/ports/output/authenticated-principal';
+import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
 import { UserRole } from '@domain/enums/user-role.enum';
 import { AuthFlow } from '@domain/enums/auth-flow.enum';
 import { CurrentPrincipal } from '@infrastructure/http/decorators/current-principal.decorator';

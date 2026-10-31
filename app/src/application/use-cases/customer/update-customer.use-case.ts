@@ -11,7 +11,7 @@ import { UpdateCustomerDto } from '@application/ports/input/customer/dto/update-
 import { ResourceConflictException } from '@application/exceptions/resource-conflict.exception';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
-import { ICache } from '@application/ports/output/cache.service.interface';
+import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
 

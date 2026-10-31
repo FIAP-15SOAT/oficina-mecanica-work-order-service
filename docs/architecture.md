@@ -54,9 +54,11 @@ app/src/
 ├── application/                     # Camada de aplicação (orquestração de casos de uso, sem framework)
 │   ├── ports/
 │   │   ├── input/<domínio>/         # I<Nome>UseCase (input ports) + DTOs de entrada
-│   │   └── output/                  # IEmailSenderService, IHashService, ITokenService,
-│   │                                # ILogger, IMetrics, ICache, IInternalHttpClient
-│   │                                # (output ports)
+│   │   └── output/
+│   │       ├── services/            # IEmailSenderService, IHashService, ITokenService,
+│   │       │                        # ILogger, IMetrics, ICache (output ports)
+│   │       └── gateways/<dono>/     # I<Dono><Coisa>Gateway + *GatewayResponse
+│   ├── auth/                        # Principal autenticado que os controllers passam aos casos de uso
 │   ├── messaging/                   # MessageEnvelope + MessageHandler (contrato dos handlers)
 │   ├── keys/                        # Chaves de cache (work-order:work-order:<id>)
 │   ├── mappers/                     # WorkOrderCacheMapper (snapshot versionado da OS no cache)
@@ -432,7 +434,7 @@ As rotas `/internal/...` atendem só outros serviços, pela rede do cluster. Ela
 
 O dono de cada rota versiona a fixture da resposta em `app/test/contracts/`, conferida pelo próprio e2e (ver [Testes](testing.md#contrato-das-rotas-internal)).
 
-Para chamar outro serviço, o caso de uso usa a porta `IInternalHttpClient` (`application/ports/output/`), implementada pelo `InternalHttpClient` sobre o `HttpService` do `@nestjs/axios`:
+Para chamar outro serviço, o caso de uso usa o gateway do dono (`application/ports/output/gateways/<dono>/`), implementado em `infrastructure/gateways/<dono>/` sobre o `InternalHttpClient`, que usa o `HttpService` do `@nestjs/axios`:
 
 - envia o `x-request-id` do contexto atual (o da requisição HTTP ou, num handler de mensagem, o `messageId`). O `traceparent` é injetado pela instrumentação HTTP do OpenTelemetry, e a chamada aparece como span `CLIENT`;
 - usa prazo de 2 s por padrão (`timeoutMs` muda o prazo de uma chamada), sem retentativa e sem seguir redirecionamento;

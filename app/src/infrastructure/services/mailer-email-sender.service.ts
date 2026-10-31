@@ -4,8 +4,8 @@ import { MailerService } from '@nestjs-modules/mailer';
 import {
   IEmailSenderService,
   SendEmailInput,
-} from '@application/ports/output/email-sender.service.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+} from '@application/ports/output/services/email-sender.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 
 import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
 import { TECHNICAL_EVENTS } from '@infrastructure/logging/technical-event.catalog';

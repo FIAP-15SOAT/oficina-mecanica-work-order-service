@@ -5,8 +5,8 @@ import { WorkOrder } from '@domain/entities/work-order.entity';
 
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 
-import { ILogger } from '@application/ports/output/logger.service.interface';
-import { IMetrics } from '@application/ports/output/metrics.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
+import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { recordWorkOrderTransition } from '@application/metrics/work-order-metrics';
 import { IRepositories, IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
@@ -14,10 +14,10 @@ import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status
 import {
   IEmailSenderService,
   SendEmailInput,
-} from '@application/ports/output/email-sender.service.interface';
+} from '@application/ports/output/services/email-sender.service.interface';
 
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
-import { ICache } from '@application/ports/output/cache.service.interface';
+import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 
 interface QuoteRecipient {

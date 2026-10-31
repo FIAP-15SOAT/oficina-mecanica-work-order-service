@@ -33,7 +33,7 @@ import {
 import { RolesGuard } from '@infrastructure/http/guards/roles.guard';
 import { Roles } from '@infrastructure/http/decorators/roles.decorator';
 import { CurrentPrincipal } from '@infrastructure/http/decorators/current-principal.decorator';
-import { AuthenticatedPrincipal } from '@application/ports/output/authenticated-principal';
+import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
 import { UserRole } from '@domain/enums/user-role.enum';
 
 import { QuoteController as QuoteCleanController } from '@interface-adapters/quote/quote.controller';

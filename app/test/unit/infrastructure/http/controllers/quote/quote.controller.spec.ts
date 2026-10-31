@@ -9,7 +9,7 @@ import { QuoteStatus } from '@domain/enums/quote-status.enum';
 import { UserRole } from '@domain/enums/user-role.enum';
 import { AuthFlow } from '@domain/enums/auth-flow.enum';
 
-import { AuthenticatedPrincipal } from '@application/ports/output/authenticated-principal';
+import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
 import { CreateQuoteRequestDto } from '@infrastructure/http/controllers/quote/dto/requests/create-quote-request.dto';
 import { AddQuoteServiceRequestDto } from '@infrastructure/http/controllers/quote/dto/requests/add-quote-service-request.dto';
 import { AddQuotePartSupplyRequestDto } from '@infrastructure/http/controllers/quote/dto/requests/add-quote-part-supply-request.dto';

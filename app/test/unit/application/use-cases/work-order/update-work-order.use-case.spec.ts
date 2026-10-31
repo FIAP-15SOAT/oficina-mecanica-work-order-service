@@ -11,7 +11,7 @@ import {
   createMockWorkOrderRepository,
 } from '../../../../helpers/work-order-mock.factory';
 import { createMockUser, createMockUserRepository } from '../../../../helpers/user-mock.factory';
-import { ICache } from '@application/ports/output/cache.service.interface';
+import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { createMockCache } from '../../../../helpers/cache-mock.factory';
 

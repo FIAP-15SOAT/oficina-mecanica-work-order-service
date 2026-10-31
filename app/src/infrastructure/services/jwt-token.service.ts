@@ -5,7 +5,7 @@ import {
   ITokenService,
   TokenPair,
   TokenPayload,
-} from '@application/ports/output/token.service.interface';
+} from '@application/ports/output/services/token.service.interface';
 import { readPemKey } from '@infrastructure/utils/read-pem-key.util';
 import { STAFF_TOKEN_ALGORITHM } from './staff-token.constants';
 
