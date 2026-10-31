@@ -6,7 +6,7 @@ import { IUserRepository } from '@domain/interfaces/repositories/user.repository
 
 import { UpdateWorkOrderDto } from '@application/ports/input/work-order/dto/update-work-order.dto';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
-import { ICache } from '@application/ports/output/cache.service.interface';
+import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 
 export class UpdateWorkOrderUseCase {

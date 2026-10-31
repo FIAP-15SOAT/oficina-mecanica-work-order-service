@@ -1,6 +1,6 @@
 import { BeforeApplicationShutdown, Inject, Injectable } from '@nestjs/common';
 
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { TECHNICAL_EVENTS } from '@infrastructure/logging/technical-event.catalog';
 
 import {

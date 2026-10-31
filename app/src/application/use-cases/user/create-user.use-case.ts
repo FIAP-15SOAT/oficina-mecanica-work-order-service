@@ -1,9 +1,9 @@
 import { User } from '@domain/entities/user.entity';
 import { PasswordGenerator } from '@domain/services/password-generator';
 
-import { IHashService } from '@application/ports/output/hash.service.interface';
-import { IEmailSenderService } from '@application/ports/output/email-sender.service.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { IHashService } from '@application/ports/output/services/hash.service.interface';
+import { IEmailSenderService } from '@application/ports/output/services/email-sender.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 
 import {

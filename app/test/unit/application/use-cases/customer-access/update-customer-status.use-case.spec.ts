@@ -5,8 +5,8 @@ import { CustomerType } from '@domain/enums/customer-type.enum';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { ICustomerRepository } from '@domain/interfaces/repositories/customer.repository.interface';
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
-import { ICache } from '@application/ports/output/cache.service.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ICache } from '@application/ports/output/services/cache.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { createMockCustomerRepository } from '../../../../helpers/customer-mock.factory';
 import {

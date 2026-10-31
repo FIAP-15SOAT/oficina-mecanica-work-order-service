@@ -13,9 +13,9 @@ import { IssuePasswordResetCodeUseCase } from '@application/use-cases/auth/issue
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IUserCustomerRepository } from '@domain/interfaces/repositories/user-customer.repository.interface';
 import { IPasswordResetCodeRepository } from '@domain/interfaces/repositories/password-reset-code.repository.interface';
-import { IHashService } from '@application/ports/output/hash.service.interface';
-import { IEmailSenderService } from '@application/ports/output/email-sender.service.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { IHashService } from '@application/ports/output/services/hash.service.interface';
+import { IEmailSenderService } from '@application/ports/output/services/email-sender.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 
 import { UserController as UserCleanController } from '@interface-adapters/user/user.controller';
 import { UserController } from './user.controller';

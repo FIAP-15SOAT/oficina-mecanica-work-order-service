@@ -18,10 +18,10 @@ import { InfrastructureServicesModule } from '@infrastructure/services/infrastru
 import { IQuoteRepository } from '@domain/interfaces/repositories/quote.repository.interface';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 
-import { IEmailSenderService } from '@application/ports/output/email-sender.service.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
-import { IMetrics } from '@application/ports/output/metrics.service.interface';
-import { ICache } from '@application/ports/output/cache.service.interface';
+import { IEmailSenderService } from '@application/ports/output/services/email-sender.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
+import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
+import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
 
 import { QuoteController as QuoteCleanController } from '@interface-adapters/quote/quote.controller';

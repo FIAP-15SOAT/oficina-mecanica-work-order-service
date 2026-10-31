@@ -5,7 +5,7 @@ import { DomainException } from '@domain/exceptions/domain.exception';
 import { DomainValidationException } from '@domain/exceptions/domain-validation.exception';
 import { EntityNotFoundException } from '@domain/exceptions/entity-not-found.exception';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { recordHttpFailure } from '@infrastructure/logging/http-failure.recorder';
 
 @Catch(DomainException)

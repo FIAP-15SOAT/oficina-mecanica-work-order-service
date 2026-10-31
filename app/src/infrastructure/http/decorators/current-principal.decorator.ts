@@ -1,5 +1,5 @@
 import { createParamDecorator, ExecutionContext } from '@nestjs/common';
-import { AuthenticatedPrincipal } from '@application/ports/output/authenticated-principal';
+import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
 
 export const CurrentPrincipal = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): AuthenticatedPrincipal => {

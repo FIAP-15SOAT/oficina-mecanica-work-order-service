@@ -2,8 +2,8 @@ import { User } from '@domain/entities/user.entity';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
 
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
-import { IHashService } from '@application/ports/output/hash.service.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { IHashService } from '@application/ports/output/services/hash.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { ChangeOwnPasswordDto } from '@application/ports/input/me/dto/change-own-password.dto';

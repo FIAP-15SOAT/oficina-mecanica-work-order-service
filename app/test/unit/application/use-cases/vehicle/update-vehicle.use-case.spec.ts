@@ -14,7 +14,7 @@ import {
   createMockVehicleRepository,
 } from '../../../../helpers/vehicle-mock.factory';
 import { Plate } from '@domain/value-objects/plate.vo';
-import { ICache } from '@application/ports/output/cache.service.interface';
+import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { createMockCache } from '../../../../helpers/cache-mock.factory';
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';

@@ -1,4 +1,4 @@
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 
 export function createMockLogger(): jest.Mocked<ILogger> {
   const logger: jest.Mocked<ILogger> = {

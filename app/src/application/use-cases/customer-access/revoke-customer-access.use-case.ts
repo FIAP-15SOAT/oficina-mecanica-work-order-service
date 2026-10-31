@@ -1,5 +1,5 @@
 import { IUserCustomerRepository } from '@domain/interfaces/repositories/user-customer.repository.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { IRevokeCustomerAccessUseCase } from '@application/ports/input/customer-access/revoke-customer-access.use-case.interface';

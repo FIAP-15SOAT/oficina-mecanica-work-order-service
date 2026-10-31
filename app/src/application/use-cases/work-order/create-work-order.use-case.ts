@@ -5,7 +5,7 @@ import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { BUSINESS_METRICS } from '@application/metrics/business-metric.catalog';
-import { IMetrics } from '@application/ports/output/metrics.service.interface';
+import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
 import { QuoteItemValidator } from '@application/services/quote-item-validator';
 import { CreateWorkOrderDto } from '@application/ports/input/work-order/dto/create-work-order.dto';
 

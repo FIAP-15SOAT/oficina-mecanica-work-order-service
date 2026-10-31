@@ -1,4 +1,4 @@
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 
 import { resolveErrorType } from './error-serializer';
 import { resolveHttpErrorMessage } from './http-error-message';

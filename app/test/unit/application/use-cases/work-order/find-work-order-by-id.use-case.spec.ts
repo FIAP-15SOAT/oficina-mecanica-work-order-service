@@ -4,7 +4,7 @@ import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { WorkOrderCacheMapper } from '@application/mappers/work-order-cache.mapper';
 import { FindWorkOrderByIdUseCase } from '@application/use-cases/work-order/find-work-order-by-id.use-case';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
-import { ICache } from '@application/ports/output/cache.service.interface';
+import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { WorkOrder } from '@domain/entities/work-order.entity';
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';

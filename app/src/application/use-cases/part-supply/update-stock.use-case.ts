@@ -4,7 +4,7 @@ import { StockMovement } from '@domain/entities/stock-movement.entity';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { UpdateStockDto } from '@application/ports/input/part-supply/dto/update-stock.dto';
 import { IUpdateStockUseCase } from '@application/ports/input/part-supply/update-stock.use-case.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 
 export class UpdateStockUseCase implements IUpdateStockUseCase {

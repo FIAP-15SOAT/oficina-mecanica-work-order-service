@@ -9,14 +9,14 @@ import { RevokeCustomerAccessUseCase } from '@application/use-cases/customer-acc
 import { UpdateCustomerStatusUseCase } from '@application/use-cases/customer-access/update-customer-status.use-case';
 
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
-import { IHashService } from '@application/ports/output/hash.service.interface';
-import { IEmailSenderService } from '@application/ports/output/email-sender.service.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { IHashService } from '@application/ports/output/services/hash.service.interface';
+import { IEmailSenderService } from '@application/ports/output/services/email-sender.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { ICustomerRepository } from '@domain/interfaces/repositories/customer.repository.interface';
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IUserCustomerRepository } from '@domain/interfaces/repositories/user-customer.repository.interface';
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
-import { ICache } from '@application/ports/output/cache.service.interface';
+import { ICache } from '@application/ports/output/services/cache.service.interface';
 
 import { CustomerAccessController as CustomerAccessCleanController } from '@interface-adapters/customer-access/customer-access.controller';
 import { CustomerAccessController } from './customer-access.controller';

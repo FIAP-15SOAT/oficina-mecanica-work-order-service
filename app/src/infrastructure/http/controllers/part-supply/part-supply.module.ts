@@ -9,7 +9,7 @@ import { UpdateStockUseCase } from '@application/use-cases/part-supply/update-st
 
 import { IPartSupplyRepository } from '@domain/interfaces/repositories/part-supply.repository.interface';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 
 import { PartSupplyController as PartSupplyCleanController } from '@interface-adapters/part-supply/part-supply.controller';
 import { PartSupplyController } from './part-supply.controller';

@@ -1,6 +1,6 @@
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IUpdateUserStatusUseCase } from '@application/ports/input/user/update-user-status.use-case.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 
 import { UserPublicView } from '@domain/entities/user.entity';

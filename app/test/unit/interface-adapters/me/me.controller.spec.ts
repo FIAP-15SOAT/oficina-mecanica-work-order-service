@@ -7,7 +7,7 @@ import { UserRole } from '@domain/enums/user-role.enum';
 import { CustomerType } from '@domain/enums/customer-type.enum';
 import { QuoteDecisionAction } from '@domain/enums/quote-decision-action.enum';
 import { AuthFlow } from '@domain/enums/auth-flow.enum';
-import { AuthenticatedPrincipal } from '@application/ports/output/authenticated-principal';
+import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
 
 import { createMockWorkOrder } from '../../../helpers/work-order-mock.factory';
 import { createMockQuote } from '../../../helpers/quote-mock.factory';

@@ -2,7 +2,7 @@ import { WorkOrder } from '@domain/entities/work-order.entity';
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
-import { ICache } from '@application/ports/output/cache.service.interface';
+import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import {
   CachedWorkOrder,

@@ -4,9 +4,9 @@ import { ResetCodeGenerator } from '@domain/services/reset-code-generator';
 
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IPasswordResetCodeRepository } from '@domain/interfaces/repositories/password-reset-code.repository.interface';
-import { IHashService } from '@application/ports/output/hash.service.interface';
-import { IEmailSenderService } from '@application/ports/output/email-sender.service.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { IHashService } from '@application/ports/output/services/hash.service.interface';
+import { IEmailSenderService } from '@application/ports/output/services/email-sender.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';

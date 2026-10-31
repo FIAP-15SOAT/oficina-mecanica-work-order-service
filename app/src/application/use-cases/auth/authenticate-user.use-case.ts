@@ -1,6 +1,6 @@
-import { IHashService } from '@application/ports/output/hash.service.interface';
-import { ITokenService } from '@application/ports/output/token.service.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { IHashService } from '@application/ports/output/services/hash.service.interface';
+import { ITokenService } from '@application/ports/output/services/token.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import {

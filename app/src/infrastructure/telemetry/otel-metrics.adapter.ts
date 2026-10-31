@@ -3,8 +3,8 @@ import { Attributes, Counter, Histogram, Meter, metrics } from '@opentelemetry/a
 
 import { BusinessMetricDefinition } from '@application/metrics/business-metric';
 import { MetricAttributes } from '@application/metrics/metric-attribute';
-import { IMetrics } from '@application/ports/output/metrics.service.interface';
-import { NoExtraFields } from '@application/ports/output/no-extra-fields';
+import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
+import { NoExtraFields } from '@application/ports/output/services/no-extra-fields';
 
 import { resolveMetricAttribute, resolveMetricKey } from './metric-registry';
 import { reportTelemetryFailure } from './telemetry-diagnostics';

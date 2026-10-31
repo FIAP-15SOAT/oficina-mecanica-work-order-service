@@ -6,7 +6,7 @@ import {
   createMockUserRepository,
 } from '../../../../helpers/mock-factories';
 import { AuthenticateUserUseCase } from '@application/use-cases/auth/authenticate-user.use-case';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { createMockLogger } from '../../../../helpers/logger-mock.factory';
 
 describe('AuthenticateUserUseCase', () => {

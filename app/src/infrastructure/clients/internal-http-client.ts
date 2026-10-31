@@ -5,10 +5,6 @@ import { PinoLogger } from 'nestjs-pino';
 import { firstValueFrom } from 'rxjs';
 
 import { ServiceRequestRejectedException } from '@application/exceptions/service-request-rejected.exception';
-import {
-  IInternalHttpClient,
-  InternalRequest,
-} from '@application/ports/output/internal-http-client.interface';
 
 import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
 import {
@@ -23,12 +19,19 @@ const SERVER_ERROR_STATUS = 500;
 const UNAVAILABLE_MESSAGE = 'Serviço de destino indisponível.';
 const REJECTED_MESSAGE = 'Requisição recusada pelo serviço de destino.';
 
+export interface InternalRequest {
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  url: string;
+  body?: unknown;
+  timeoutMs?: number;
+}
+
 interface OwnerErrorBody {
   message: unknown;
 }
 
 @Injectable()
-export class InternalHttpClient implements IInternalHttpClient {
+export class InternalHttpClient {
   constructor(
     private readonly http: HttpService,
     private readonly pinoLogger: PinoLogger,

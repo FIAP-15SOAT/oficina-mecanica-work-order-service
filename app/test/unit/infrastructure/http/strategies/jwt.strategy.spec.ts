@@ -9,7 +9,7 @@ import { IUserRepository } from '@domain/interfaces/repositories/user.repository
 import { UserRole } from '@domain/enums/user-role.enum';
 import { User } from '@domain/entities/user.entity';
 
-import { TokenPayload } from '@application/ports/output/token.service.interface';
+import { TokenPayload } from '@application/ports/output/services/token.service.interface';
 import { AuthFlow } from '@domain/enums/auth-flow.enum';
 import { createMockUser, createMockUserRepository } from '../../../../helpers/user-mock.factory';
 import { Email } from '@domain/value-objects/email.vo';

@@ -1,4 +1,4 @@
-import { ICache } from '@application/ports/output/cache.service.interface';
+import { ICache } from '@application/ports/output/services/cache.service.interface';
 
 export function createMockCache(): jest.Mocked<ICache> {
   return {

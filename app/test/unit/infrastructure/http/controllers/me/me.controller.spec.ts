@@ -8,7 +8,7 @@ import { CustomerType } from '@domain/enums/customer-type.enum';
 import { QuoteDecisionAction } from '@domain/enums/quote-decision-action.enum';
 import { AuthFlow } from '@domain/enums/auth-flow.enum';
 
-import { AuthenticatedPrincipal } from '@application/ports/output/authenticated-principal';
+import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
 import { ChangeOwnPasswordRequestDto } from '@infrastructure/http/controllers/me/dto/requests/change-own-password-request.dto';
 import { DecideMyQuoteRequestDto } from '@infrastructure/http/controllers/me/dto/requests/decide-my-quote-request.dto';
 import { FindMyWorkOrdersQueryDto } from '@infrastructure/http/controllers/me/dto/requests/find-my-work-orders-query.dto';

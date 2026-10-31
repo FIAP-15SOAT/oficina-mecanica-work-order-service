@@ -28,7 +28,7 @@ import {
 
 import { CustomerArea } from '@infrastructure/http/decorators/customer-area.decorator';
 import { CurrentPrincipal } from '@infrastructure/http/decorators/current-principal.decorator';
-import { AuthenticatedPrincipal } from '@application/ports/output/authenticated-principal';
+import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
 
 import { MeController as MeCleanController } from '@interface-adapters/me/me.controller';
 import { ChangeOwnPasswordRequestDto } from './dto/requests/change-own-password-request.dto';

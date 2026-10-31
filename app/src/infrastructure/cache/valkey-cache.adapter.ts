@@ -2,8 +2,8 @@ import { Inject, Injectable, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
-import { ICache } from '@application/ports/output/cache.service.interface';
-import { ILogger } from '@application/ports/output/logger.service.interface';
+import { ICache } from '@application/ports/output/services/cache.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { TECHNICAL_EVENTS } from '@infrastructure/logging/technical-event.catalog';
 
 import { createCacheClient } from './valkey-client';

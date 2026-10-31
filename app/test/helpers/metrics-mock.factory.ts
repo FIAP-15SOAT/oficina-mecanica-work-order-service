@@ -1,4 +1,4 @@
-import { IMetrics } from '@application/ports/output/metrics.service.interface';
+import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
 
 export function createMockMetrics(): jest.Mocked<IMetrics> {
   return {

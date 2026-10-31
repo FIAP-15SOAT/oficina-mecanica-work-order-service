@@ -58,7 +58,7 @@ O nível vem do status, mas só depois de o **desfecho** ser resolvido pelo esta
 ### Porta `ILogger` e os dois catálogos
 
 ```
-application/ports/output/logger.service.interface.ts   ILogger — TS puro, exigido pela cerca do ESLint
+application/ports/output/services/logger.service.interface.ts   ILogger — TS puro, exigido pela cerca do ESLint
 application/logging/business-event.catalog.ts          catálogo tipado e fechado dos eventos de negócio
 
 infrastructure/logging/pino-logger.adapter.ts          implementa ILogger
@@ -266,10 +266,10 @@ Métrica técnica do consumidor:
 
 ### Métricas de negócio
 
-Uma porta `IMetrics` em `application/ports/output/`, no mesmo molde de `ILogger` e pelo mesmo critério — *a camada de aplicação precisa emitir esse sinal?* Para traces a resposta é não (o span vem do transporte, e por isso não existe `ITracer`); para estas métricas o requisito faz do caso de uso o emissor, e a porta tem **6 chamadores**.
+Uma porta `IMetrics` em `application/ports/output/services/`, no mesmo molde de `ILogger` e pelo mesmo critério — *a camada de aplicação precisa emitir esse sinal?* Para traces a resposta é não (o span vem do transporte, e por isso não existe `ITracer`); para estas métricas o requisito faz do caso de uso o emissor, e a porta tem **6 chamadores**.
 
 ```
-application/ports/output/metrics.service.interface.ts   IMetrics — interface TS pura
+application/ports/output/services/metrics.service.interface.ts   IMetrics — interface TS pura
 application/metrics/business-metric.catalog.ts          nome lógico, instrumento, unidade, atributos
 application/metrics/work-order-duration.ts              cálculo puro de permanência e totais
 infrastructure/telemetry/metric-registry.ts             lógico para físico, agregação, cardinalidade
