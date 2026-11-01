@@ -16,8 +16,8 @@ export const INTERNAL_HTTP_DEFAULT_TIMEOUT_MS = 2_000;
 
 const CLIENT_ERROR_STATUS = 400;
 const SERVER_ERROR_STATUS = 500;
-const UNAVAILABLE_MESSAGE = 'Serviço de destino indisponível.';
-const REJECTED_MESSAGE = 'Requisição recusada pelo serviço de destino.';
+const UNAVAILABLE_MESSAGE = 'Serviço de destino indisponível';
+const REJECTED_MESSAGE = 'Requisição recusada pelo serviço de destino';
 
 export interface InternalRequest {
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
