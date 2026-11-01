@@ -8,7 +8,7 @@ describe('Document VO', () => {
       ['123.456.789-09', '12345678909'],
       ['12345678909', '12345678909'],
       ['  123.456.789-09  ', '12345678909'],
-    ])('sanitizes and creates from %p → %p', (input, expected) => {
+    ])('should sanitize and create from %p → %p', (input, expected) => {
       const doc = Document.create(input, CustomerType.INDIVIDUAL);
       expect(doc.value).toBe(expected);
       expect(doc.type).toBe(CustomerType.INDIVIDUAL);
@@ -31,13 +31,13 @@ describe('Document VO', () => {
     it.each([
       ['12.345.678/0001-95', '12345678000195'],
       ['12345678000195', '12345678000195'],
-    ])('sanitizes and creates from %p → %p', (input, expected) => {
+    ])('should sanitize and create from %p → %p', (input, expected) => {
       const doc = Document.create(input, CustomerType.COMPANY);
       expect(doc.value).toBe(expected);
       expect(doc.type).toBe(CustomerType.COMPANY);
     });
 
-    it.each(['00.000.000/0000-00', '12345', 'abc'])('throws on invalid CNPJ %p', (value) => {
+    it.each(['00.000.000/0000-00', '12345', 'abc'])('should throw on invalid CNPJ %p', (value) => {
       expect(() => Document.create(value, CustomerType.COMPANY)).toThrow(DomainValidationException);
       expect(() => Document.create(value, CustomerType.COMPANY)).toThrow(
         'Pessoa jurídica deve informar um CNPJ válido',
@@ -46,7 +46,7 @@ describe('Document VO', () => {
   });
 
   describe('create — presence', () => {
-    it.each([null, undefined, '', '   '])('throws when value is %p', (value) => {
+    it.each([null, undefined, '', '   '])('should throw when value is %p', (value) => {
       expect(() => Document.create(value as string, CustomerType.INDIVIDUAL)).toThrow(
         'Documento é obrigatório',
       );
@@ -54,26 +54,26 @@ describe('Document VO', () => {
   });
 
   describe('equals', () => {
-    it('returns true for same value and type (regardless of input formatting)', () => {
+    it('should return true for same value and type (regardless of input formatting)', () => {
       const a = Document.create('123.456.789-09', CustomerType.INDIVIDUAL);
       const b = Document.create('12345678909', CustomerType.INDIVIDUAL);
       expect(a.equals(b)).toBe(true);
     });
 
-    it('returns false for different values', () => {
+    it('should return false for different values', () => {
       const a = Document.create('123.456.789-09', CustomerType.INDIVIDUAL);
       const b = Document.create('529.982.247-25', CustomerType.INDIVIDUAL);
       expect(a.equals(b)).toBe(false);
     });
 
-    it('returns false for non-Document instance', () => {
+    it('should return false for non-Document instance', () => {
       const a = Document.create('123.456.789-09', CustomerType.INDIVIDUAL);
       expect(a.equals({ value: '12345678909' } as unknown as Document)).toBe(false);
     });
   });
 
   describe('toString', () => {
-    it('returns the sanitized value', () => {
+    it('should return the sanitized value', () => {
       expect(Document.create('123.456.789-09', CustomerType.INDIVIDUAL).toString()).toBe(
         '12345678909',
       );

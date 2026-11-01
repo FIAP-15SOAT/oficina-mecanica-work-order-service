@@ -321,7 +321,7 @@ describe('Auth (E2E)', () => {
       publicKeyEncoding: { type: 'spki', format: 'pem' },
     }).privateKey;
 
-    it('issues an access token that a service validates with only the public key and kid', async () => {
+    it('should issue an access token that a service validates with only the public key and kid', async () => {
       const auth = await registerAndLogin(
         httpServer,
         { name: 'Contract User', email: 'contract@e2e.test' },
@@ -351,7 +351,7 @@ describe('Auth (E2E)', () => {
       expect(claims.exp! - claims.iat!).toBe(600);
     });
 
-    it('issues a refresh token with its own audience and type', async () => {
+    it('should issue a refresh token with its own audience and type', async () => {
       const auth = await registerAndLogin(
         httpServer,
         { email: 'refresh-profile@e2e.test' },
@@ -386,7 +386,7 @@ describe('Auth (E2E)', () => {
       ['with another audience', () => signTestStaffToken(staffClaims, { audience: 'oficina-api' })],
       ['from the customer flow', () => signTestCustomerToken(staffClaims.sub)],
       ['refresh sent as access', () => signTestRefreshToken(staffClaims)],
-    ])('rejects a token %s on a staff route with 401', async (_case, token) => {
+    ])('should reject a token %s on a staff route with 401', async (_case, token) => {
       await ctx.prisma.user.create({
         data: {
           id: staffClaims.sub,
@@ -403,7 +403,7 @@ describe('Auth (E2E)', () => {
         .expect(401);
     });
 
-    it('rejects an access token sent to POST /api/auth/refresh', async () => {
+    it('should reject an access token sent to POST /api/auth/refresh', async () => {
       const auth = await registerAndLogin(
         httpServer,
         { email: 'access-as-refresh@e2e.test' },
@@ -422,7 +422,7 @@ describe('Auth (E2E)', () => {
   // ─── Changing the password invalidates tokens issued before it ─────────────
 
   describe('Password change invalidates previously issued tokens', () => {
-    it('rejects the old access and refresh tokens after PATCH /api/me/password, while the new password logs in fine', async () => {
+    it('should reject the old access and refresh tokens after PATCH /api/me/password, while the new password logs in fine', async () => {
       const auth = await registerAndLogin(
         httpServer,
         { name: 'Password Rotation', email: 'password-rotation@e2e.test', password: 'Old@Pass1' },

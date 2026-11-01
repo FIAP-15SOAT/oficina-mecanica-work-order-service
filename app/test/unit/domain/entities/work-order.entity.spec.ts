@@ -309,7 +309,7 @@ describe('WorkOrder Entity', () => {
       expect(workOrder.deliveredAt).toBeInstanceOf(Date);
     });
 
-    it('REJECTED -> AWAITING_APPROVAL is allowed', () => {
+    it('should allow REJECTED -> AWAITING_APPROVAL', () => {
       const workOrder = createMockWorkOrder({ status: WorkOrderStatus.AWAITING_APPROVAL });
       workOrder.changeStatus(WorkOrderStatus.REJECTED);
       workOrder.changeStatus(WorkOrderStatus.AWAITING_APPROVAL);
@@ -317,7 +317,7 @@ describe('WorkOrder Entity', () => {
       expect(workOrder.status).toBe(WorkOrderStatus.AWAITING_APPROVAL);
     });
 
-    it('REJECTED -> IN_DIAGNOSIS should throw', () => {
+    it('should throw on REJECTED -> IN_DIAGNOSIS', () => {
       const workOrder = createMockWorkOrder({ status: WorkOrderStatus.AWAITING_APPROVAL });
       workOrder.changeStatus(WorkOrderStatus.REJECTED);
 

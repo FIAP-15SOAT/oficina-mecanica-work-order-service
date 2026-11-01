@@ -8,31 +8,31 @@ describe('Phone VO', () => {
       ['(11) 99999-9999', '11999999999'],
       ['99999-9999', '999999999'],
       ['11 99999-9999', '11999999999'],
-    ])('sanitizes and creates from %p → %p', (input, expected) => {
+    ])('should sanitize and create from %p → %p', (input, expected) => {
       expect(Phone.create(input).value).toBe(expected);
     });
 
-    it.each([null, undefined, '', '   '])('throws when value is %p', (value) => {
+    it.each([null, undefined, '', '   '])('should throw when value is %p', (value) => {
       expect(() => Phone.create(value as string)).toThrow(DomainValidationException);
       expect(() => Phone.create(value as string)).toThrow('Telefone é obrigatório');
     });
 
-    it.each(['abc', '123', '99999-9'])('throws on malformed phone %p', (value) => {
+    it.each(['abc', '123', '99999-9'])('should throw on malformed phone %p', (value) => {
       expect(() => Phone.create(value)).toThrow(DomainValidationException);
       expect(() => Phone.create(value)).toThrow(/Telefone inválido/);
     });
   });
 
   describe('equals', () => {
-    it('returns true for same value', () => {
+    it('should return true for same value', () => {
       expect(Phone.create('11999999999').equals(Phone.create('(11) 99999-9999'))).toBe(true);
     });
 
-    it('returns false for different values', () => {
+    it('should return false for different values', () => {
       expect(Phone.create('11999999999').equals(Phone.create('11888888888'))).toBe(false);
     });
 
-    it('returns false for non-Phone instance', () => {
+    it('should return false for non-Phone instance', () => {
       expect(Phone.create('11999999999').equals({ value: '11999999999' } as unknown as Phone)).toBe(
         false,
       );
@@ -40,7 +40,7 @@ describe('Phone VO', () => {
   });
 
   describe('toString', () => {
-    it('returns the value', () => {
+    it('should return the value', () => {
       expect(Phone.create('11999999999').toString()).toBe('11999999999');
     });
   });

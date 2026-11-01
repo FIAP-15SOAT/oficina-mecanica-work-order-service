@@ -1826,7 +1826,7 @@ describe('WorkOrder (E2E)', () => {
       expect(res.body.data.some((wo: { id: string }) => wo.id === activeWo.id)).toBe(true);
     });
 
-    it('GET /api/work-orders?status=DELIVERED should return delivered orders (override default)', async () => {
+    it('should return delivered orders for GET /api/work-orders?status=DELIVERED (override default)', async () => {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
 
@@ -1851,7 +1851,7 @@ describe('WorkOrder (E2E)', () => {
       expect(res.body.data.every((wo: { status: string }) => wo.status === 'DELIVERED')).toBe(true);
     });
 
-    it('GET /api/work-orders/:id of a closed order should return 200', async () => {
+    it('should return 200 for GET /api/work-orders/:id of a closed order', async () => {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
 

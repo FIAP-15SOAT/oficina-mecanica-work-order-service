@@ -282,20 +282,20 @@ describe('JwtStrategy', () => {
       iat: Math.floor(Date.now() / 1000),
     };
 
-    it('rejects a token whose kid differs from the configured one', async () => {
+    it('should reject a token whose kid differs from the configured one', async () => {
       await expect(
         strategy.validate(asStaffJwt(payload, { alg: 'RS256', kid: 'other-kid' })),
       ).rejects.toThrow(new UnauthorizedException('Token inválido'));
       expect(userRepository.findById).not.toHaveBeenCalled();
     });
 
-    it('rejects a token without kid', async () => {
+    it('should reject a token without kid', async () => {
       await expect(strategy.validate(asStaffJwt(payload, { alg: 'RS256' }))).rejects.toThrow(
         new UnauthorizedException('Token inválido'),
       );
     });
 
-    it('rejects a token whose typ is not access', async () => {
+    it('should reject a token whose typ is not access', async () => {
       await expect(strategy.validate(asStaffJwt({ ...payload, typ: 'refresh' }))).rejects.toThrow(
         new UnauthorizedException('Token inválido'),
       );
@@ -330,7 +330,7 @@ describe('JwtStrategy', () => {
       );
     });
 
-    it('authenticates a valid access token', async () => {
+    it('should authenticate a valid access token', async () => {
       await expect(authenticate(signTestStaffToken(claims))).resolves.toEqual({
         success: {
           sub: claims.sub,
@@ -341,7 +341,7 @@ describe('JwtStrategy', () => {
       });
     });
 
-    it('authenticates with the configured issuer and audience', async () => {
+    it('should authenticate with the configured issuer and audience', async () => {
       const custom: Record<string, string> = {
         ...CONFIG,
         STAFF_JWT_ISSUER: 'custom-issuer',
@@ -377,12 +377,12 @@ describe('JwtStrategy', () => {
       ['with another audience', () => signTestStaffToken(claims, { audience: 'oficina-api' })],
       ['refresh sent as access', () => signTestRefreshToken(claims)],
       ['expired', () => signTestStaffToken(claims, { expiresIn: -10 })],
-    ])('fails a token %s', async (_case, token) => {
+    ])('should fail a token %s', async (_case, token) => {
       await expect(authenticate(token())).resolves.toHaveProperty('fail');
       expect(userRepository.findById).not.toHaveBeenCalled();
     });
 
-    it('errors with 401 a token without exp', async () => {
+    it('should error with 401 a token without exp', async () => {
       const token = sign({ ...claims, typ: 'access' }, STAFF_JWT_TEST_PRIVATE_KEY, {
         algorithm: 'RS256',
         keyid: STAFF_JWT_TEST_KEY_ID,
@@ -396,7 +396,7 @@ describe('JwtStrategy', () => {
       expect(userRepository.findById).not.toHaveBeenCalled();
     });
 
-    it('errors with 401 a token whose kid differs from the configured one', async () => {
+    it('should error with 401 a token whose kid differs from the configured one', async () => {
       const outcome = await authenticate(signTestStaffToken(claims, { keyid: 'other-kid' }));
 
       expect(outcome).toEqual({ error: new UnauthorizedException('Token inválido') });

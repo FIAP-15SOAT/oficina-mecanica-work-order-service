@@ -50,14 +50,14 @@ describe('JwtTokenService', () => {
   });
 
   describe('signAccessToken', () => {
-    it('signs the access token with RS256 and the configured kid', () => {
+    it('should sign the access token with RS256 and the configured kid', () => {
       const { header } = decodeComplete(service.signAccessToken(payload));
 
       expect(header.alg).toBe('RS256');
       expect(header.kid).toBe(STAFF_JWT_TEST_KEY_ID);
     });
 
-    it('puts the staff profile claims in the access token', () => {
+    it('should put the staff profile claims in the access token', () => {
       const claims = decodeComplete(service.signAccessToken(payload)).payload;
 
       expect(claims).toMatchObject({
@@ -74,7 +74,7 @@ describe('JwtTokenService', () => {
   });
 
   describe('signRefreshToken', () => {
-    it('signs the refresh token with its own key, audience and type, without kid', () => {
+    it('should sign the refresh token with its own key, audience and type, without kid', () => {
       const token = service.signRefreshToken(payload);
       const claims = verify(token, STAFF_REFRESH_TEST_PUBLIC_KEY, {
         algorithms: ['RS256'],
@@ -90,7 +90,7 @@ describe('JwtTokenService', () => {
   });
 
   describe('signTokenPair', () => {
-    it('returns both tokens from signTokenPair', () => {
+    it('should return both tokens from signTokenPair', () => {
       const pair = service.signTokenPair(payload);
 
       expect(decodeComplete(pair.accessToken).payload.typ).toBe('access');
@@ -98,7 +98,7 @@ describe('JwtTokenService', () => {
     });
   });
 
-  it('uses the configured issuer and audience, with the issuer as refresh audience', () => {
+  it('should use the configured issuer and audience, with the issuer as refresh audience', () => {
     const custom = new JwtTokenService(
       new JwtService(),
       createConfigService({
@@ -121,17 +121,17 @@ describe('JwtTokenService', () => {
   });
 
   describe('verifyRefreshToken', () => {
-    it('verifies a refresh token it issued', () => {
+    it('should verifie a refresh token it issued', () => {
       const result = service.verifyRefreshToken(service.signRefreshToken(payload));
 
       expect(result).toMatchObject({ ...payload, typ: 'refresh' });
     });
 
-    it('rejects an access token as refresh', () => {
+    it('should reject an access token as refresh', () => {
       expect(() => service.verifyRefreshToken(service.signAccessToken(payload))).toThrow();
     });
 
-    it('rejects a refresh token signed by another key', () => {
+    it('should reject a refresh token signed by another key', () => {
       const { privateKey } = generateKeyPairSync('rsa', {
         modulusLength: 2048,
         privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
@@ -146,7 +146,7 @@ describe('JwtTokenService', () => {
       expect(() => service.verifyRefreshToken(forged)).toThrow();
     });
 
-    it('rejects a token signed with the refresh key whose typ is not refresh', () => {
+    it('should reject a token signed with the refresh key whose typ is not refresh', () => {
       const forged = sign({ ...payload, typ: 'access' }, STAFF_REFRESH_TEST_PRIVATE_KEY, {
         algorithm: 'RS256',
         issuer: 'oficina-identity',
@@ -158,7 +158,7 @@ describe('JwtTokenService', () => {
     });
   });
 
-  it('fails to start when STAFF_JWT_PRIVATE_KEY is not PEM', () => {
+  it('should fail to start when STAFF_JWT_PRIVATE_KEY is not PEM', () => {
     expect(
       () =>
         new JwtTokenService(

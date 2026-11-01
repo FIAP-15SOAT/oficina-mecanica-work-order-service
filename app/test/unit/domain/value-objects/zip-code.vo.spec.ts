@@ -7,31 +7,31 @@ describe('ZipCode VO', () => {
       ['01310100', '01310100'],
       ['01310-100', '01310100'],
       ['  01310-100  ', '01310100'],
-    ])('sanitizes and creates from %p → %p', (input, expected) => {
+    ])('should sanitize and create from %p → %p', (input, expected) => {
       expect(ZipCode.create(input).value).toBe(expected);
     });
 
-    it.each([null, undefined, '', '   '])('throws when value is %p', (value) => {
+    it.each([null, undefined, '', '   '])('should throw when value is %p', (value) => {
       expect(() => ZipCode.create(value as string)).toThrow(DomainValidationException);
       expect(() => ZipCode.create(value as string)).toThrow('CEP é obrigatório');
     });
 
-    it.each(['abc', '123', '01310-1000'])('throws on malformed zip %p', (value) => {
+    it.each(['abc', '123', '01310-1000'])('should throw on malformed zip %p', (value) => {
       expect(() => ZipCode.create(value)).toThrow(DomainValidationException);
       expect(() => ZipCode.create(value)).toThrow(/CEP inválido/);
     });
   });
 
   describe('equals', () => {
-    it('returns true for same value (regardless of input formatting)', () => {
+    it('should return true for same value (regardless of input formatting)', () => {
       expect(ZipCode.create('01310100').equals(ZipCode.create('01310-100'))).toBe(true);
     });
 
-    it('returns false for different values', () => {
+    it('should return false for different values', () => {
       expect(ZipCode.create('01310100').equals(ZipCode.create('20040020'))).toBe(false);
     });
 
-    it('returns false for non-ZipCode instance', () => {
+    it('should return false for non-ZipCode instance', () => {
       expect(ZipCode.create('01310100').equals({ value: '01310100' } as unknown as ZipCode)).toBe(
         false,
       );
@@ -39,7 +39,7 @@ describe('ZipCode VO', () => {
   });
 
   describe('toString', () => {
-    it('returns the sanitized value', () => {
+    it('should return the sanitized value', () => {
       expect(ZipCode.create('01310-100').toString()).toBe('01310100');
     });
   });
