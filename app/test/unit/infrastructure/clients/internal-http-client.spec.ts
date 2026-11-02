@@ -87,7 +87,7 @@ describe('InternalHttpClient', () => {
 
     await expect(client.request({ method: 'DELETE', url: URL })).rejects.toMatchObject({
       statusCode: 403,
-      message: 'Requisição recusada pelo serviço de destino.',
+      message: 'Requisição recusada pelo serviço de destino',
     });
   });
 
@@ -97,7 +97,7 @@ describe('InternalHttpClient', () => {
     );
 
     await expect(client.request({ method: 'GET', url: URL })).rejects.toThrow(
-      new ServiceIntegrationException('Serviço de destino indisponível.'),
+      new ServiceIntegrationException('Serviço de destino indisponível'),
     );
   });
 

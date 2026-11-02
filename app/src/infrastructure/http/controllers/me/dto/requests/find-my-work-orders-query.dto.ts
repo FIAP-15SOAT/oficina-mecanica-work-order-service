@@ -15,8 +15,8 @@ export class FindMyWorkOrdersQueryDto {
   @ApiPropertyOptional({ description: 'Número da página', minimum: 1, default: 1, example: 1 })
   @IsOptional()
   @Type(() => Number)
-  @IsInt({ message: 'A página deve ser um número inteiro.' })
-  @Min(1, { message: 'A página deve ser no mínimo 1.' })
+  @IsInt({ message: 'A página deve ser um número inteiro' })
+  @Min(1, { message: 'A página deve ser no mínimo 1' })
   page?: number;
 
   @ApiPropertyOptional({
@@ -27,7 +27,7 @@ export class FindMyWorkOrdersQueryDto {
   })
   @IsOptional()
   @Type(() => Number)
-  @IsInt({ message: 'O limite deve ser um número inteiro.' })
-  @Min(1, { message: 'O limite deve ser no mínimo 1.' })
+  @IsInt({ message: 'O limite deve ser um número inteiro' })
+  @Min(1, { message: 'O limite deve ser no mínimo 1' })
   limit?: number;
 }
