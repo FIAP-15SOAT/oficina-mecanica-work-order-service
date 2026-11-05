@@ -337,9 +337,10 @@ describe('SqsConsumerService', () => {
     });
 
     it('should not acknowledge a valid message without handler, log messaging.message.unhandled and count outcome retry', async () => {
-      await expect(service.handleMessage(createMessage())).rejects.toThrow(
-        'inventory.stock.reserved',
-      );
+      await expect(service.handleMessage(createMessage())).rejects.toMatchObject({
+        name: 'UnhandledMessageException',
+        message: 'nenhum handler registrado para inventory.stock.reserved',
+      });
 
       expect(logger.event).toHaveBeenCalledWith(TECHNICAL_EVENTS.MESSAGING_MESSAGE_UNHANDLED, {});
       expect(await consumedCounts()).toEqual({ retry: 1 });
@@ -351,8 +352,9 @@ describe('SqsConsumerService', () => {
       expect(logger.event).toHaveBeenCalledWith(
         TECHNICAL_EVENTS.MESSAGING_MESSAGE_DEAD_LETTERED,
         {},
-        expect.any(Error),
+        expect.objectContaining({ name: 'UnhandledMessageException' }),
       );
+
       expect(logger.event).not.toHaveBeenCalledWith(
         TECHNICAL_EVENTS.MESSAGING_MESSAGE_UNHANDLED,
         {},
@@ -364,13 +366,13 @@ describe('SqsConsumerService', () => {
       registry.register('inventory.stock.reserved', jest.fn(), ReservedPayload);
 
       await expect(service.handleMessage(createMessage({ messageId: undefined }))).rejects.toThrow(
-        'messageId',
+        'envelope da mensagem inválido: messageId',
       );
 
       expect(logger.event).toHaveBeenCalledWith(
         TECHNICAL_EVENTS.MESSAGING_MESSAGE_FAILED,
         {},
-        expect.any(Error),
+        expect.objectContaining({ name: 'InvalidMessageException' }),
       );
     });
 
@@ -379,38 +381,61 @@ describe('SqsConsumerService', () => {
 
       await expect(
         service.handleMessage(createMessage({ occurredAt: '05/11/2026' })),
-      ).rejects.toThrow('occurredAt');
+      ).rejects.toThrow('envelope da mensagem inválido: occurredAt');
 
       expect(logger.event).toHaveBeenCalledWith(
         TECHNICAL_EVENTS.MESSAGING_MESSAGE_FAILED,
         {},
-        expect.any(Error),
+        expect.objectContaining({ name: 'InvalidMessageException' }),
       );
     });
 
     it('should not acknowledge a body that is not JSON', async () => {
-      await expect(
-        service.handleMessage({ ...createMessage(), Body: 'not json' }),
-      ).rejects.toThrow();
+      await expect(service.handleMessage({ ...createMessage(), Body: 'not json' })).rejects.toThrow(
+        'corpo da mensagem não é um JSON válido',
+      );
 
       expect(logger.event).toHaveBeenCalledWith(
         TECHNICAL_EVENTS.MESSAGING_MESSAGE_FAILED,
         {},
-        expect.any(Error),
+        expect.objectContaining({
+          name: 'InvalidMessageException',
+          cause: expect.any(SyntaxError),
+        }),
       );
     });
 
     it('should not acknowledge a message without body', async () => {
       const { Body: _body, ...withoutBody } = createMessage();
 
-      await expect(service.handleMessage(withoutBody)).rejects.toThrow();
+      await expect(service.handleMessage(withoutBody)).rejects.toThrow(
+        'corpo da mensagem não é um JSON válido',
+      );
 
       expect(logger.event).toHaveBeenCalledWith(
         TECHNICAL_EVENTS.MESSAGING_MESSAGE_FAILED,
         {},
-        expect.any(Error),
+        expect.objectContaining({
+          name: 'InvalidMessageException',
+          cause: expect.any(SyntaxError),
+        }),
       );
     });
+
+    it.each(['null', '"texto"'])(
+      'should not acknowledge the JSON body %s, which is not an object',
+      async (body) => {
+        await expect(service.handleMessage({ ...createMessage(), Body: body })).rejects.toThrow(
+          'envelope da mensagem inválido: o corpo não é um objeto JSON',
+        );
+
+        expect(logger.event).toHaveBeenCalledWith(
+          TECHNICAL_EVENTS.MESSAGING_MESSAGE_FAILED,
+          {},
+          expect.objectContaining({ name: 'InvalidMessageException' }),
+        );
+      },
+    );
 
     it('should accept an empty payload when the handler payload class declares no fields', async () => {
       const handler = jest.fn().mockResolvedValue(undefined);
@@ -429,13 +454,14 @@ describe('SqsConsumerService', () => {
 
       await expect(
         service.handleMessage(createMessage({ payload: { quoteId: 'not-a-uuid' } })),
-      ).rejects.toThrow('quoteId');
+      ).rejects.toThrow('payload da mensagem inválido: quoteId');
 
       expect(handler).not.toHaveBeenCalled();
+
       expect(logger.event).toHaveBeenCalledWith(
         TECHNICAL_EVENTS.MESSAGING_MESSAGE_FAILED,
         {},
-        expect.any(Error),
+        expect.objectContaining({ name: 'InvalidMessageException' }),
       );
     });
 
