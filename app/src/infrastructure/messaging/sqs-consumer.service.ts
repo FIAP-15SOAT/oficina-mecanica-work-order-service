@@ -28,6 +28,7 @@ import { MessageEnvelope } from '@application/messaging/message-envelope';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { InvalidMessageException } from '@infrastructure/exceptions/invalid-message.exception';
 import { UnhandledMessageException } from '@infrastructure/exceptions/unhandled-message.exception';
+import { resolveErrorType } from '@infrastructure/logging/error-serializer';
 import { TECHNICAL_EVENTS } from '@infrastructure/logging/technical-event.catalog';
 
 import { MessageEnvelopeDto } from './message-envelope.dto';
@@ -180,7 +181,7 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
   }
 
   private recordFailure(span: Span, error: unknown, receiveCount: number): void {
-    span.recordException(error as Error);
+    span.setAttribute('error.type', resolveErrorType(error));
     span.setStatus({ code: SpanStatusCode.ERROR });
 
     this.consumedMessagesCounterMetric.add(

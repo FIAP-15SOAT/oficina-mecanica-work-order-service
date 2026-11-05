@@ -17,6 +17,8 @@ import { IsUUID } from 'class-validator';
 import { PinoLogger } from 'nestjs-pino';
 import { Consumer } from 'sqs-consumer';
 
+import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
+import { resolveErrorType } from '@infrastructure/logging/error-serializer';
 import { TECHNICAL_EVENTS } from '@infrastructure/logging/technical-event.catalog';
 import { MessageHandlerRegistry } from '@infrastructure/messaging/message-handler.registry';
 import { messagingLogBindings } from '@infrastructure/messaging/messaging-log-bindings';
@@ -344,6 +346,10 @@ describe('SqsConsumerService', () => {
 
       expect(logger.event).toHaveBeenCalledWith(TECHNICAL_EVENTS.MESSAGING_MESSAGE_UNHANDLED, {});
       expect(await consumedCounts()).toEqual({ retry: 1 });
+
+      expect(spanExporter.getFinishedSpans()[0].attributes['error.type']).toBe(
+        'UnhandledMessageException',
+      );
     });
 
     it('should log messaging.message.dead_lettered for a message without handler on its last delivery', async () => {
@@ -360,6 +366,10 @@ describe('SqsConsumerService', () => {
         {},
       );
       expect(await consumedCounts()).toEqual({ dead_lettered: 1 });
+
+      expect(spanExporter.getFinishedSpans()[0].attributes['error.type']).toBe(
+        'UnhandledMessageException',
+      );
     });
 
     it('should not acknowledge an envelope without messageId', async () => {
@@ -373,6 +383,10 @@ describe('SqsConsumerService', () => {
         TECHNICAL_EVENTS.MESSAGING_MESSAGE_FAILED,
         {},
         expect.objectContaining({ name: 'InvalidMessageException' }),
+      );
+
+      expect(spanExporter.getFinishedSpans()[0].attributes['error.type']).toBe(
+        'InvalidMessageException',
       );
     });
 
@@ -388,6 +402,10 @@ describe('SqsConsumerService', () => {
         {},
         expect.objectContaining({ name: 'InvalidMessageException' }),
       );
+
+      expect(spanExporter.getFinishedSpans()[0].attributes['error.type']).toBe(
+        'InvalidMessageException',
+      );
     });
 
     it('should not acknowledge a body that is not JSON', async () => {
@@ -402,6 +420,10 @@ describe('SqsConsumerService', () => {
           name: 'InvalidMessageException',
           cause: expect.any(SyntaxError),
         }),
+      );
+
+      expect(spanExporter.getFinishedSpans()[0].attributes['error.type']).toBe(
+        'InvalidMessageException',
       );
     });
 
@@ -420,6 +442,10 @@ describe('SqsConsumerService', () => {
           cause: expect.any(SyntaxError),
         }),
       );
+
+      expect(spanExporter.getFinishedSpans()[0].attributes['error.type']).toBe(
+        'InvalidMessageException',
+      );
     });
 
     it.each(['null', '"texto"'])(
@@ -433,6 +459,10 @@ describe('SqsConsumerService', () => {
           TECHNICAL_EVENTS.MESSAGING_MESSAGE_FAILED,
           {},
           expect.objectContaining({ name: 'InvalidMessageException' }),
+        );
+
+        expect(spanExporter.getFinishedSpans()[0].attributes['error.type']).toBe(
+          'InvalidMessageException',
         );
       },
     );
@@ -462,6 +492,10 @@ describe('SqsConsumerService', () => {
         TECHNICAL_EVENTS.MESSAGING_MESSAGE_FAILED,
         {},
         expect.objectContaining({ name: 'InvalidMessageException' }),
+      );
+
+      expect(spanExporter.getFinishedSpans()[0].attributes['error.type']).toBe(
+        'InvalidMessageException',
       );
     });
 
@@ -559,18 +593,50 @@ describe('SqsConsumerService', () => {
       expect(span.status.code).not.toBe(SpanStatusCode.ERROR);
     });
 
-    it('should mark the CONSUMER span as failed with the exception', async () => {
+    it.each([
+      ['an Error', new Error('notification failed for maria@example.com')],
+      ['a string', 'notification failed for maria@example.com'],
+    ])(
+      'should mark the CONSUMER span as failed with error.type and no error text when the handler rejects with %s',
+      async (_label, rejection) => {
+        registry.register(
+          'inventory.stock.reserved',
+          jest.fn().mockRejectedValue(rejection),
+          ReservedPayload,
+        );
+
+        await expect(service.handleMessage(createMessage())).rejects.toBe(rejection);
+
+        const [span] = spanExporter.getFinishedSpans();
+        const loggedError = logger.event.mock.lastCall?.[2];
+
+        expect(span.status).toEqual({ code: SpanStatusCode.ERROR });
+        expect(span.attributes['error.type']).toBe(resolveErrorType(loggedError));
+        expect(span.events).toEqual([]);
+        expect(JSON.stringify([span.attributes, span.events, span.status])).not.toContain(
+          'maria@example.com',
+        );
+      },
+    );
+
+    it('should set error.type to the type of the cause a generic error wraps', async () => {
       registry.register(
         'inventory.stock.reserved',
-        jest.fn().mockRejectedValue(new Error('use case failed')),
+        jest.fn().mockRejectedValue(
+          new Error('reservation failed', {
+            cause: new BusinessRuleViolationException('stock unavailable'),
+          }),
+        ),
         ReservedPayload,
       );
 
-      await expect(service.handleMessage(createMessage())).rejects.toThrow();
+      await expect(service.handleMessage(createMessage())).rejects.toThrow('reservation failed');
 
       const [span] = spanExporter.getFinishedSpans();
-      expect(span.status.code).toBe(SpanStatusCode.ERROR);
-      expect(span.events.map((event) => event.name)).toEqual(['exception']);
+      const loggedError = logger.event.mock.lastCall?.[2];
+
+      expect(span.attributes['error.type']).toBe('BusinessRuleViolationException');
+      expect(span.attributes['error.type']).toBe(resolveErrorType(loggedError));
     });
 
     it('should bind messaging fields and request.id to the processing context', async () => {
