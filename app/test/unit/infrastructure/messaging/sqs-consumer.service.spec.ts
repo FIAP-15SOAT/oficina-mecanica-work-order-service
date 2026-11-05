@@ -341,7 +341,7 @@ describe('SqsConsumerService', () => {
     it('should not acknowledge a valid message without handler, log messaging.message.unhandled and count outcome retry', async () => {
       await expect(service.handleMessage(createMessage())).rejects.toMatchObject({
         name: 'UnhandledMessageException',
-        message: 'nenhum handler registrado para inventory.stock.reserved',
+        message: 'Nenhum handler registrado para inventory.stock.reserved',
       });
 
       expect(logger.event).toHaveBeenCalledWith(TECHNICAL_EVENTS.MESSAGING_MESSAGE_UNHANDLED, {});
@@ -365,6 +365,7 @@ describe('SqsConsumerService', () => {
         TECHNICAL_EVENTS.MESSAGING_MESSAGE_UNHANDLED,
         {},
       );
+
       expect(await consumedCounts()).toEqual({ dead_lettered: 1 });
 
       expect(spanExporter.getFinishedSpans()[0].attributes['error.type']).toBe(
@@ -376,7 +377,7 @@ describe('SqsConsumerService', () => {
       registry.register('inventory.stock.reserved', jest.fn(), ReservedPayload);
 
       await expect(service.handleMessage(createMessage({ messageId: undefined }))).rejects.toThrow(
-        'envelope da mensagem inválido: messageId',
+        'Envelope da mensagem inválido: messageId',
       );
 
       expect(logger.event).toHaveBeenCalledWith(
@@ -395,7 +396,7 @@ describe('SqsConsumerService', () => {
 
       await expect(
         service.handleMessage(createMessage({ occurredAt: '05/11/2026' })),
-      ).rejects.toThrow('envelope da mensagem inválido: occurredAt');
+      ).rejects.toThrow('Envelope da mensagem inválido: occurredAt');
 
       expect(logger.event).toHaveBeenCalledWith(
         TECHNICAL_EVENTS.MESSAGING_MESSAGE_FAILED,
@@ -410,7 +411,7 @@ describe('SqsConsumerService', () => {
 
     it('should not acknowledge a body that is not JSON', async () => {
       await expect(service.handleMessage({ ...createMessage(), Body: 'not json' })).rejects.toThrow(
-        'corpo da mensagem não é um JSON válido',
+        'Corpo da mensagem não é um JSON válido',
       );
 
       expect(logger.event).toHaveBeenCalledWith(
@@ -431,7 +432,7 @@ describe('SqsConsumerService', () => {
       const { Body: _body, ...withoutBody } = createMessage();
 
       await expect(service.handleMessage(withoutBody)).rejects.toThrow(
-        'corpo da mensagem não é um JSON válido',
+        'Corpo da mensagem não é um JSON válido',
       );
 
       expect(logger.event).toHaveBeenCalledWith(
@@ -452,7 +453,7 @@ describe('SqsConsumerService', () => {
       'should not acknowledge the JSON body %s, which is not an object',
       async (body) => {
         await expect(service.handleMessage({ ...createMessage(), Body: body })).rejects.toThrow(
-          'envelope da mensagem inválido: o corpo não é um objeto JSON',
+          'Envelope da mensagem inválido: o corpo não é um objeto JSON',
         );
 
         expect(logger.event).toHaveBeenCalledWith(
@@ -484,7 +485,7 @@ describe('SqsConsumerService', () => {
 
       await expect(
         service.handleMessage(createMessage({ payload: { quoteId: 'not-a-uuid' } })),
-      ).rejects.toThrow('payload da mensagem inválido: quoteId');
+      ).rejects.toThrow('Payload da mensagem inválido: quoteId');
 
       expect(handler).not.toHaveBeenCalled();
 
@@ -613,6 +614,7 @@ describe('SqsConsumerService', () => {
         expect(span.status).toEqual({ code: SpanStatusCode.ERROR });
         expect(span.attributes['error.type']).toBe(resolveErrorType(loggedError));
         expect(span.events).toEqual([]);
+
         expect(JSON.stringify([span.attributes, span.events, span.status])).not.toContain(
           'maria@example.com',
         );

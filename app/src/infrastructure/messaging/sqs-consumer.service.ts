@@ -234,7 +234,7 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
     const entry = this.registry.find(envelope.type);
 
     if (!entry) {
-      throw new UnhandledMessageException(`nenhum handler registrado para ${envelope.type}`);
+      throw new UnhandledMessageException(`Nenhum handler registrado para ${envelope.type}`);
     }
 
     // A payload class without fields declares an empty payload; by default class-validator rejects
@@ -242,7 +242,7 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
     await this.validateOrThrow(
       entry.payloadClass,
       envelope.payload,
-      'payload da mensagem inválido',
+      'Payload da mensagem inválido',
       { forbidUnknownValues: false },
     );
 
@@ -265,17 +265,17 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
     try {
       envelope = JSON.parse(body ?? '');
     } catch (error) {
-      throw new InvalidMessageException('corpo da mensagem não é um JSON válido', { cause: error });
+      throw new InvalidMessageException('Corpo da mensagem não é um JSON válido', { cause: error });
     }
 
     // class-validator throws a TypeError on null and on a string instead of a validation error.
     if (envelope === null || typeof envelope !== 'object') {
       throw new InvalidMessageException(
-        'envelope da mensagem inválido: o corpo não é um objeto JSON',
+        'Envelope da mensagem inválido: o corpo não é um objeto JSON',
       );
     }
 
-    return this.validateOrThrow(MessageEnvelopeDto, envelope, 'envelope da mensagem inválido');
+    return this.validateOrThrow(MessageEnvelopeDto, envelope, 'Envelope da mensagem inválido');
   }
 
   // Only property names reach the error: payload values may carry PII.
