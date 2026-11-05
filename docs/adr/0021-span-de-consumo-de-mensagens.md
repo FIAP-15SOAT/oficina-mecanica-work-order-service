@@ -2,7 +2,7 @@
 
 ## Status
 
-Aceito — 2026-10-25
+Aceito — 2026-10-25; emendado em 2026-11-05 (decisão 1: a falha deixa de registrar a exceção no span).
 
 Emenda o [ADR 0005](0005-opentelemetry.md) em dois pontos: a regra "nenhum span criado por código" ganha uma exceção, o span `CONSUMER` do consumidor de mensagens; e a lista explícita de instrumentações passa a incluir `aws-sdk` e `ioredis`.
 
@@ -14,7 +14,7 @@ Com a mensageria do [ADR 0018](0018-mensageria-sns-sqs-fifo-com-outbox.md), o se
 
 ## Decisão
 
-1. **O `SqsConsumerService` abre um span `CONSUMER` por mensagem**, chamado `process <fila>`, com `messaging.system`, `messaging.destination.name`, `messaging.operation.type` = `process` e `messaging.message.id`. O pai é o contexto W3C extraído dos atributos da mensagem, que a instrumentação do SNS injeta no `Publish` a partir do contexto que o relay restaura do outbox. Falha marca o span com `ERROR` e registra a exceção.
+1. **O `SqsConsumerService` abre um span `CONSUMER` por mensagem**, chamado `process <fila>`, com `messaging.system`, `messaging.destination.name`, `messaging.operation.type` = `process` e `messaging.message.id`. O pai é o contexto W3C extraído dos atributos da mensagem, que a instrumentação do SNS injeta no `Publish` a partir do contexto que o relay restaura do outbox. Na falha, o span termina com status `ERROR`, sem descrição, e com o atributo `error.type`, igual ao `exception.type` da linha de log do mesmo erro: o primeiro nome específico da cadeia de `cause` (o erro original que um erro genérico embrulha). A exceção, a mensagem e o stack do erro ficam só no log, que os sanitiza; o span e a linha se ligam pelo `trace_id`. Os erros que o próprio consumidor detecta têm tipo próprio: `UnhandledMessageException` (tipo de mensagem sem handler) e `InvalidMessageException` (corpo ausente, que não é JSON ou que não é objeto, e envelope ou payload que não passam na validação).
 2. **É o único span manual permitido**, e ele mora na infraestrutura (`infrastructure/messaging/`), nunca em caso de uso. A regra do ADR 0005 continua valendo para todo o resto: zero `startSpan` em código de negócio e nenhuma porta `ITracer`. Um novo adaptador de entrada sem transporte instrumentado (outra fila, um agendador) precisa de nova ADR.
 3. **Duas instrumentações entram na lista explícita**: `@opentelemetry/instrumentation-aws-sdk`, com `suppressInternalInstrumentation` (sem o span HTTP repetido em cada chamada AWS), e `@opentelemetry/instrumentation-ioredis`, com um `dbStatementSerializer` que grava só o nome do comando, porque os argumentos levam o detalhe da OS com dados pessoais do cliente.
 4. **`pg` passa a `requireParentSpan: true`**: sem isso, o relay do outbox geraria um trace raiz de `pg` a cada 500 ms por réplica.
@@ -30,6 +30,8 @@ Com a mensageria do [ADR 0018](0018-mensageria-sns-sqs-fifo-com-outbox.md), o se
 | Instrumentação de processamento do próprio `sqs-consumer` ou da AWS | Sem código nosso, mas nenhuma das duas cria o span de processamento por mensagem na versão usada | Uma delas passar a criar o span de processamento |
 | Filtrar o `ReceiveMessage` vazio num sampler do preload | Preserva o span do receive que traz mensagem, mas o sampler decide no início do span, antes de saber se veio mensagem, e mexer no preload afeta todo o processo | O receive com mensagem passar a ser útil no trace |
 | Instrumentação `ioredis` com o comando completo | Mais detalhe no span, levando ao trace os dados pessoais que o log não leva | — |
+| Registrar a exceção no span (`recordException`) | A mensagem e o stack apareceriam no trace sem abrir o log, mas o SDK do OpenTelemetry os copia sem redação para um evento do span, e o Datadog Agent (o coletor que recebe os traces do serviço) leva o evento inteiro ao APM, a área de traces do Datadog: o span teria o texto que o log só grava sanitizado | — |
+| Evento de exceção com a redação do log | Custa uma linha e grava o texto já sanitizado, mas duplica esse texto num segundo armazenamento, e a sanitização reconhece dado pessoal pela forma (documento, e-mail, telefone), deixando passar placa e nome | O grupo adotar o Error Tracking do APM, que agrupa os erros pela mensagem e pelo stack do span |
 
 ## Consequências
 
