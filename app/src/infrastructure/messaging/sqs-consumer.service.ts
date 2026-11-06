@@ -26,6 +26,9 @@ import { Consumer } from 'sqs-consumer';
 
 import { MessageEnvelope } from '@application/messaging/message-envelope';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
+import { InvalidMessageException } from '@infrastructure/exceptions/invalid-message.exception';
+import { UnhandledMessageException } from '@infrastructure/exceptions/unhandled-message.exception';
+import { resolveErrorType } from '@infrastructure/logging/error-serializer';
 import { TECHNICAL_EVENTS } from '@infrastructure/logging/technical-event.catalog';
 
 import { MessageEnvelopeDto } from './message-envelope.dto';
@@ -38,8 +41,6 @@ export const MAX_RECEIVE_COUNT = 5;
 export const RECEIVE_FAILURE_PAUSE_MS = 10_000;
 
 type ConsumeOutcome = 'success' | 'retry' | 'dead_lettered';
-
-class UnhandledMessageError extends Error {}
 
 @Injectable()
 export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplicationShutdown {
@@ -180,7 +181,7 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
   }
 
   private recordFailure(span: Span, error: unknown, receiveCount: number): void {
-    span.recordException(error as Error);
+    span.setAttribute('error.type', resolveErrorType(error));
     span.setStatus({ code: SpanStatusCode.ERROR });
 
     this.consumedMessagesCounterMetric.add(
@@ -233,14 +234,17 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
     const entry = this.registry.find(envelope.type);
 
     if (!entry) {
-      throw new UnhandledMessageError(`no handler registered for ${envelope.type}`);
+      throw new UnhandledMessageException(`Nenhum handler registrado para ${envelope.type}`);
     }
 
     // A payload class without fields declares an empty payload; by default class-validator rejects
     // an instance with no validation metadata.
-    await this.validateOrThrow(entry.payloadClass, envelope.payload, 'invalid message payload', {
-      forbidUnknownValues: false,
-    });
+    await this.validateOrThrow(
+      entry.payloadClass,
+      envelope.payload,
+      'Payload da mensagem inválido',
+      { forbidUnknownValues: false },
+    );
 
     await entry.handler(envelope as MessageEnvelope);
   }
@@ -248,7 +252,7 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
   private logFailure(error: unknown, receiveCount: number): void {
     if (receiveCount >= MAX_RECEIVE_COUNT) {
       this.logger.event(TECHNICAL_EVENTS.MESSAGING_MESSAGE_DEAD_LETTERED, {}, error);
-    } else if (error instanceof UnhandledMessageError) {
+    } else if (error instanceof UnhandledMessageException) {
       this.logger.event(TECHNICAL_EVENTS.MESSAGING_MESSAGE_UNHANDLED, {});
     } else {
       this.logger.event(TECHNICAL_EVENTS.MESSAGING_MESSAGE_FAILED, {}, error);
@@ -256,8 +260,22 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
   }
 
   private async parseEnvelope(body: string | undefined): Promise<MessageEnvelopeDto> {
-    const envelope = JSON.parse(body ?? '') as object;
-    return this.validateOrThrow(MessageEnvelopeDto, envelope, 'invalid message envelope');
+    let envelope: unknown;
+
+    try {
+      envelope = JSON.parse(body ?? '');
+    } catch (error) {
+      throw new InvalidMessageException('Corpo da mensagem não é um JSON válido', { cause: error });
+    }
+
+    // class-validator throws a TypeError on null and on a string instead of a validation error.
+    if (envelope === null || typeof envelope !== 'object') {
+      throw new InvalidMessageException(
+        'Envelope da mensagem inválido: o corpo não é um objeto JSON',
+      );
+    }
+
+    return this.validateOrThrow(MessageEnvelopeDto, envelope, 'Envelope da mensagem inválido');
   }
 
   // Only property names reach the error: payload values may carry PII.
@@ -271,7 +289,9 @@ export class SqsConsumerService implements OnApplicationBootstrap, BeforeApplica
     const errors = await validate(instance, options);
 
     if (errors.length > 0) {
-      throw new Error(`${reason}: ${errors.map((error) => error.property).join(', ')}`);
+      throw new InvalidMessageException(
+        `${reason}: ${errors.map((error) => error.property).join(', ')}`,
+      );
     }
 
     return instance;
