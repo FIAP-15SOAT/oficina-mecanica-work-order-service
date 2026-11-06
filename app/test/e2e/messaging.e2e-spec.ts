@@ -107,11 +107,11 @@ describe('Messaging (E2E)', () => {
     return workOrder.id;
   }
 
-  function addMessage(message: OutboxMessage): Promise<void> {
+  function createOutboxMessage(message: OutboxMessage): Promise<void> {
     return unitOfWork.executeTransaction((repositories) => repositories.outbox.add(message));
   }
 
-  function countOutbox(workOrderId: string): Promise<number> {
+  function countOutboxMessagesByWorkOrderId(workOrderId: string): Promise<number> {
     return ctx.prisma.outboxMessage.count({ where: { workOrderId } });
   }
 
@@ -145,7 +145,11 @@ describe('Messaging (E2E)', () => {
 
     const release = await holdRelayLock();
 
-    await addMessage({ type: 'inventory.stock.reserved', workOrderId, payload: { quoteId } });
+    await createOutboxMessage({
+      type: 'inventory.stock.reserved',
+      workOrderId,
+      payload: { quoteId },
+    });
 
     const row = await ctx.prisma.outboxMessage.findFirstOrThrow({ where: { workOrderId } });
 
@@ -161,7 +165,7 @@ describe('Messaging (E2E)', () => {
       payload: { quoteId },
     });
 
-    expect(await countOutbox(workOrderId)).toBe(0);
+    expect(await countOutboxMessagesByWorkOrderId(workOrderId)).toBe(0);
 
     await waitFor(async () => {
       const { Attributes } = await sqs.send(
@@ -195,7 +199,7 @@ describe('Messaging (E2E)', () => {
       }),
     ).rejects.toThrow('rollback');
 
-    expect(await countOutbox(workOrderId)).toBe(0);
+    expect(await countOutboxMessagesByWorkOrderId(workOrderId)).toBe(0);
 
     await release();
   });
@@ -204,7 +208,7 @@ describe('Messaging (E2E)', () => {
     const workOrderId = await createWorkOrder();
     const release = await holdRelayLock();
 
-    await addMessage({
+    await createOutboxMessage({
       type: 'inventory.stock.reserve',
       workOrderId,
       payload: { quoteId: randomUUID(), items: [] },
@@ -212,11 +216,11 @@ describe('Messaging (E2E)', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 2_000));
 
-    expect(await countOutbox(workOrderId)).toBe(1);
+    expect(await countOutboxMessagesByWorkOrderId(workOrderId)).toBe(1);
 
     await release();
 
-    await waitFor(async () => (await countOutbox(workOrderId)) === 0, 5_000);
+    await waitFor(async () => (await countOutboxMessagesByWorkOrderId(workOrderId)) === 0, 5_000);
   });
 
   it('should keep the group order when the first message fails', async () => {
@@ -272,7 +276,7 @@ describe('Messaging (E2E)', () => {
             line['oficina.work_order.id'] === workOrderId,
         );
 
-    await addMessage({
+    await createOutboxMessage({
       type: 'inventory.stock.reservation_failed',
       workOrderId,
       payload: { quoteId: randomUUID(), missing: [] },
