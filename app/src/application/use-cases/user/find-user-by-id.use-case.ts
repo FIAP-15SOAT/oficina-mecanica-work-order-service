@@ -1,10 +1,8 @@
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IUserCustomerRepository } from '@domain/interfaces/repositories/user-customer.repository.interface';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
-import {
-  FindUserByIdOutput,
-  IFindUserByIdUseCase,
-} from '@application/ports/input/user/find-user-by-id.use-case.interface';
+import { IFindUserByIdUseCase } from '@application/ports/input/user/find-user-by-id.use-case.interface';
+import { FindUserByIdOutput } from '@application/ports/input/user/dto/find-user-by-id.dto';
 
 export class FindUserByIdUseCase implements IFindUserByIdUseCase {
   constructor(

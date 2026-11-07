@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { FindCatalogItemsOutputDto } from '@application/ports/input/catalog/dto/find-catalog-items.dto';
 
 import { MeController } from '@infrastructure/http/controllers/me/me.controller';
 import { MeController as MeCleanController } from '@interface-adapters/me/me.controller';
@@ -18,6 +19,8 @@ import { createMockQuote } from '../../../../../helpers/quote-mock.factory';
 import { createMockWorkOrder } from '../../../../../helpers/work-order-mock.factory';
 
 describe('MeController', () => {
+  const emptyCatalog: FindCatalogItemsOutputDto = { services: [], partsSupplies: [] };
+
   let httpController: MeController;
   let cleanController: MeCleanController;
 
@@ -34,6 +37,7 @@ describe('MeController', () => {
 
   beforeEach(() => {
     cleanController = new MeCleanController(
+      { execute: jest.fn() },
       { execute: jest.fn() },
       { execute: jest.fn() },
       { execute: jest.fn() },
@@ -150,7 +154,8 @@ describe('MeController', () => {
 
   describe('getQuote', () => {
     it('should delegate to the clean controller and return its result', async () => {
-      const response = MePresenter.toQuoteDataResponse(quoteStub);
+      const response = MePresenter.toQuoteDataResponse(quoteStub, emptyCatalog);
+
       jest.spyOn(cleanController, 'getQuote').mockResolvedValue(response);
 
       const result = await httpController.getQuote(quoteStub.id, principal);
@@ -166,7 +171,9 @@ describe('MeController', () => {
         action: QuoteDecisionAction.REJECT,
         reason: 'Valor acima do previsto',
       };
-      const response = MePresenter.toQuoteDataResponse(quoteStub);
+
+      const response = MePresenter.toQuoteDataResponse(quoteStub, emptyCatalog);
+
       jest.spyOn(cleanController, 'decideQuote').mockResolvedValue(response);
 
       const result = await httpController.decideQuote(quoteStub.id, request, principal);

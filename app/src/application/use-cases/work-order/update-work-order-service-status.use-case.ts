@@ -112,7 +112,6 @@ export class UpdateWorkOrderServiceStatusUseCase {
       workOrderId,
       workOrderNumber,
       workOrderServiceId: item.serviceId,
-      workOrderServiceName: item.service?.name,
       previousWorkOrderServiceStatus: previousServiceStatus,
       currentWorkOrderServiceStatus: item.status,
       previousWorkOrderStatus: previousStatus,

@@ -21,6 +21,7 @@ import { METRIC_VIEWS } from '@infrastructure/telemetry/metric-registry';
 
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
+import { InternalServicesStub, startInternalServicesStub } from '../helpers/internal-services-stub';
 import { LogCapture, TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 
 const ACCESS_LOG_MESSAGE = 'http request';
@@ -71,6 +72,7 @@ describe('Telemetry (E2E)', () => {
   let tracerProvider: NodeTracerProvider;
   let meterProvider: MeterProvider;
   let collect: () => Promise<ResourceMetrics>;
+  let stub: InternalServicesStub;
 
   beforeAll(async () => {
     spanExporter = new InMemorySpanExporter();
@@ -92,13 +94,21 @@ describe('Telemetry (E2E)', () => {
     metrics.setGlobalMeterProvider(meterProvider);
     collect = async () => (await reader.collect()).resourceMetrics;
 
-    ctx = await setupTestApp({ captureBootstrap: true, configure: openServerSpan });
+    stub = await startInternalServicesStub();
+
+    ctx = await setupTestApp({
+      captureBootstrap: true,
+      configure: openServerSpan,
+      internalServicesUrl: stub.url,
+    });
+
     httpServer = ctx.httpServer;
     capture = ctx.logCapture!;
   });
 
   afterAll(async () => {
     await teardownTestApp(ctx);
+    await stub.close();
     await meterProvider.shutdown();
     await tracerProvider.shutdown();
     metrics.disable();

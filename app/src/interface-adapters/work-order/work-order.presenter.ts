@@ -6,6 +6,11 @@ import { Customer } from '@domain/entities/customer.entity';
 import { Vehicle } from '@domain/entities/vehicle.entity';
 import { User } from '@domain/entities/user.entity';
 import { PaginatedResult } from '@domain/interfaces/common/pagination.interface';
+import { FindCatalogItemsOutputDto } from '@application/ports/input/catalog/dto/find-catalog-items.dto';
+import {
+  InventoryPartSupplyGatewayResponse,
+  InventoryServiceGatewayResponse,
+} from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.response';
 import {
   WorkOrderAssignedUserResponse,
   WorkOrderCustomerResponse,
@@ -46,16 +51,29 @@ export class WorkOrderPresenter {
     };
   }
 
-  static toResponse(workOrder: WorkOrder): WorkOrderResponse {
+  static toResponse(workOrder: WorkOrder, catalog: FindCatalogItemsOutputDto): WorkOrderResponse {
     return {
       ...WorkOrderPresenter.toSummaryResponse(workOrder),
-      services: workOrder.services.map((s) => WorkOrderPresenter.toServiceItem(s)),
-      partSupplies: workOrder.partSupplies.map((p) => WorkOrderPresenter.toPartSupplyItem(p)),
+      services: workOrder.services.map((item) =>
+        WorkOrderPresenter.toServiceItem(
+          item,
+          catalog.services.find((service) => service.id === item.serviceId),
+        ),
+      ),
+      partSupplies: workOrder.partSupplies.map((item) =>
+        WorkOrderPresenter.toPartSupplyItem(
+          item,
+          catalog.partsSupplies.find((partSupply) => partSupply.id === item.partSupplyId),
+        ),
+      ),
     };
   }
 
-  static toDataResponse(workOrder: WorkOrder): WorkOrderDataResponse {
-    return { data: WorkOrderPresenter.toResponse(workOrder) };
+  static toDataResponse(
+    workOrder: WorkOrder,
+    catalog: FindCatalogItemsOutputDto,
+  ): WorkOrderDataResponse {
+    return { data: WorkOrderPresenter.toResponse(workOrder, catalog) };
   }
 
   static toPaginatedResponse(
@@ -83,8 +101,16 @@ export class WorkOrderPresenter {
     };
   }
 
-  static toServiceItemDataResponse(item: WorkOrderService): WorkOrderServiceItemDataResponse {
-    return { data: WorkOrderPresenter.toServiceItem(item) };
+  static toServiceItemDataResponse(
+    item: WorkOrderService,
+    catalog: FindCatalogItemsOutputDto,
+  ): WorkOrderServiceItemDataResponse {
+    return {
+      data: WorkOrderPresenter.toServiceItem(
+        item,
+        catalog.services.find((service) => service.id === item.serviceId),
+      ),
+    };
   }
 
   private static toCustomer(customer: Customer): WorkOrderCustomerResponse {
@@ -119,11 +145,14 @@ export class WorkOrderPresenter {
     };
   }
 
-  static toServiceItem(this: void, item: WorkOrderService): WorkOrderServiceItemResponse {
+  private static toServiceItem(
+    item: WorkOrderService,
+    service: InventoryServiceGatewayResponse | undefined,
+  ): WorkOrderServiceItemResponse {
     return {
       id: item.serviceId,
-      name: item.service!.name,
-      description: item.service!.description,
+      name: service?.name ?? null,
+      description: service?.description ?? null,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       totalPrice: item.totalPrice,
@@ -136,17 +165,17 @@ export class WorkOrderPresenter {
   }
 
   private static toPartSupplyItem(
-    this: void,
     item: WorkOrderPartSupply,
+    partSupply: InventoryPartSupplyGatewayResponse | undefined,
   ): WorkOrderPartSupplyItemResponse {
     return {
       id: item.partSupplyId,
-      name: item.partSupply!.name,
-      description: item.partSupply!.description ?? null,
-      sku: item.partSupply!.sku,
-      partNumber: item.partSupply!.partNumber ?? null,
-      category: item.partSupply!.category,
-      unit: item.partSupply!.unit,
+      name: partSupply?.name ?? null,
+      description: partSupply?.description ?? null,
+      sku: partSupply?.sku ?? null,
+      partNumber: partSupply?.partNumber ?? null,
+      category: partSupply?.category ?? null,
+      unit: partSupply?.unit ?? null,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       totalPrice: item.totalPrice,

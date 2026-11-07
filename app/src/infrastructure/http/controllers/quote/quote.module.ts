@@ -13,6 +13,8 @@ import { ApproveQuoteUseCase } from '@application/use-cases/quote/approve-quote.
 import { RejectQuoteUseCase } from '@application/use-cases/quote/reject-quote.use-case';
 import { UpdateQuoteStatusUseCase } from '@application/use-cases/quote/update-quote-status.use-case';
 import { FindAllQuotesPaginatedUseCase } from '@application/use-cases/quote/find-all-quotes-paginated.use-case';
+import { FindCatalogItemsUseCase } from '@application/use-cases/catalog/find-catalog-items.use-case';
+import { IInventoryCatalogGateway } from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.interface';
 import { InfrastructureServicesModule } from '@infrastructure/services/infrastructure-services.module';
 
 import { IQuoteRepository } from '@domain/interfaces/repositories/quote.repository.interface';
@@ -41,6 +43,7 @@ import { QuoteController } from './quote.controller';
         metrics: IMetrics,
         statusHistoryRepository: IStatusHistoryRepository,
         cache: ICache,
+        inventoryCatalogGateway: IInventoryCatalogGateway,
       ) => {
         const approveQuoteUseCase = new ApproveQuoteUseCase(
           unitOfWork,
@@ -76,6 +79,7 @@ import { QuoteController } from './quote.controller';
           ),
           new UpdateQuoteStatusUseCase(approveQuoteUseCase, rejectQuoteUseCase),
           new FindAllQuotesPaginatedUseCase(quoteRepository),
+          new FindCatalogItemsUseCase(inventoryCatalogGateway),
         );
       },
       inject: [
@@ -86,6 +90,7 @@ import { QuoteController } from './quote.controller';
         'IMetrics',
         'IStatusHistoryRepository',
         'ICache',
+        'IInventoryCatalogGateway',
       ],
     },
   ],

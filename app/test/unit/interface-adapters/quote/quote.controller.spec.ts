@@ -18,8 +18,17 @@ import { IUpdateQuotePartSupplyQuantityUseCase } from '@application/ports/input/
 import { ISubmitQuoteUseCase } from '@application/ports/input/quote/submit-quote.use-case.interface';
 import { IUpdateQuoteStatusUseCase } from '@application/ports/input/quote/update-quote-status.use-case.interface';
 import { IFindAllQuotesPaginatedUseCase } from '@application/ports/input/quote/find-all-quotes-paginated.use-case.interface';
+import { IFindCatalogItemsUseCase } from '@application/ports/input/catalog/find-catalog-items.use-case.interface';
 
-import { createMockQuote } from '../../../helpers/quote-mock.factory';
+import {
+  createMockQuote,
+  createMockQuotePartSupply,
+  createMockQuoteService,
+} from '../../../helpers/quote-mock.factory';
+import {
+  createMockInventoryPartSupplyGatewayResponse,
+  createMockInventoryServiceGatewayResponse,
+} from '../../../helpers/inventory-catalog-gateway-mock.factory';
 import { createMockWorkOrder } from '../../../helpers/work-order-mock.factory';
 import { createMockCustomer } from '../../../helpers/customer-mock.factory';
 import { createMockVehicle } from '../../../helpers/vehicle-mock.factory';
@@ -46,6 +55,7 @@ describe('QuoteController', () => {
   let submitQuoteUseCase: jest.Mocked<ISubmitQuoteUseCase>;
   let updateQuoteStatusUseCase: jest.Mocked<IUpdateQuoteStatusUseCase>;
   let findAllQuotesPaginatedUseCase: jest.Mocked<IFindAllQuotesPaginatedUseCase>;
+  let findCatalogItemsUseCase: jest.Mocked<IFindCatalogItemsUseCase>;
 
   beforeEach(() => {
     createQuoteUseCase = { execute: jest.fn() };
@@ -59,6 +69,7 @@ describe('QuoteController', () => {
     submitQuoteUseCase = { execute: jest.fn() };
     updateQuoteStatusUseCase = { execute: jest.fn() };
     findAllQuotesPaginatedUseCase = { execute: jest.fn() };
+    findCatalogItemsUseCase = { execute: jest.fn() };
 
     controller = new QuoteController(
       createQuoteUseCase,
@@ -72,6 +83,7 @@ describe('QuoteController', () => {
       submitQuoteUseCase,
       updateQuoteStatusUseCase,
       findAllQuotesPaginatedUseCase,
+      findCatalogItemsUseCase,
     );
   });
 
@@ -86,17 +98,35 @@ describe('QuoteController', () => {
     expect(createQuoteUseCase.execute).toHaveBeenCalledWith(dto);
   });
 
-  it('should find one quote', async () => {
-    const id = randomUUID();
+  it('should find one quote with the catalog of its items', async () => {
+    const service = createMockInventoryServiceGatewayResponse();
+    const partSupply = createMockInventoryPartSupplyGatewayResponse();
 
-    const quote = buildMockQuoteWithWorkOrder();
+    const quote = createMockQuote({
+      services: [createMockQuoteService({ serviceId: service.id })],
+      partsSupplies: [createMockQuotePartSupply({ partSupplyId: partSupply.id })],
+    });
+
+    quote.workOrder = createMockWorkOrder({
+      customer: createMockCustomer(),
+      vehicle: createMockVehicle(),
+    });
+
+    const catalog = { services: [service], partsSupplies: [partSupply] };
 
     findQuoteByIdUseCase.execute.mockResolvedValue(quote);
+    findCatalogItemsUseCase.execute.mockResolvedValue(catalog);
 
-    const result = await controller.findOne(id);
+    const result = await controller.findOne(quote.id);
 
-    expect(result).toEqual(QuotePresenter.toWithItemsResponse(quote));
-    expect(findQuoteByIdUseCase.execute).toHaveBeenCalledWith(id);
+    expect(findQuoteByIdUseCase.execute).toHaveBeenCalledWith(quote.id);
+
+    expect(findCatalogItemsUseCase.execute).toHaveBeenCalledWith({
+      serviceIds: [service.id],
+      partSupplyIds: [partSupply.id],
+    });
+
+    expect(result).toEqual(QuotePresenter.toWithItemsResponse(quote, catalog));
   });
 
   it('should add a service', async () => {

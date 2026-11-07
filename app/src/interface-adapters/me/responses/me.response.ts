@@ -52,7 +52,7 @@ export interface MyWorkOrderPaginatedResponse {
 
 export interface MyQuoteItemResponse {
   id: string;
-  name: string;
+  name: string | null;
   quantity: number;
   unitPrice: number;
   totalPrice: number;

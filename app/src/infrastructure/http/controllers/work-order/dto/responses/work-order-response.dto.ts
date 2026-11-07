@@ -2,8 +2,6 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { CustomerType } from '@domain/enums/customer-type.enum';
 import { UserRole } from '@domain/enums/user-role.enum';
-import { PartSupplyCategory } from '@domain/enums/part-supply-category.enum';
-import { Unit } from '@domain/enums/unit.enum';
 import { WorkOrderServiceStatus } from '@domain/enums/work-order-service-status.enum';
 import { PaginatedResponseDto } from '@infrastructure/http/common/dto/paginated-response.dto';
 import {
@@ -104,8 +102,12 @@ export class WorkOrderServiceItemResponseDto implements WorkOrderServiceItemResp
   })
   id!: string;
 
-  @ApiProperty({ description: 'Nome do Serviço', example: 'Troca de óleo' })
-  name!: string;
+  @ApiPropertyOptional({
+    description: 'Nome do Serviço',
+    example: 'Troca de óleo',
+    nullable: true,
+  })
+  name!: string | null;
 
   @ApiPropertyOptional({
     description: 'Descrição do Serviço',
@@ -175,8 +177,12 @@ export class WorkOrderPartSupplyItemResponseDto implements WorkOrderPartSupplyIt
   })
   id!: string;
 
-  @ApiProperty({ description: 'Nome da Peça ou Insumo', example: 'Filtro de Óleo' })
-  name!: string;
+  @ApiPropertyOptional({
+    description: 'Nome da Peça ou Insumo',
+    example: 'Filtro de Óleo',
+    nullable: true,
+  })
+  name!: string | null;
 
   @ApiPropertyOptional({
     description: 'Descrição detalhada',
@@ -185,8 +191,8 @@ export class WorkOrderPartSupplyItemResponseDto implements WorkOrderPartSupplyIt
   })
   description!: string | null;
 
-  @ApiProperty({ description: 'SKU único no Estoque', example: 'FO-001' })
-  sku!: string;
+  @ApiPropertyOptional({ description: 'SKU único no Estoque', example: 'FO-001', nullable: true })
+  sku!: string | null;
 
   @ApiPropertyOptional({
     description: 'Número de referência do fabricante',
@@ -195,15 +201,21 @@ export class WorkOrderPartSupplyItemResponseDto implements WorkOrderPartSupplyIt
   })
   partNumber!: string | null;
 
-  @ApiProperty({
-    enum: PartSupplyCategory,
+  @ApiPropertyOptional({
+    enum: ['PART', 'SUPPLY'],
     description: 'Categoria: PART (Peça) ou SUPPLY (Insumo)',
-    example: PartSupplyCategory.PART,
+    example: 'PART',
+    nullable: true,
   })
-  category!: PartSupplyCategory;
+  category!: string | null;
 
-  @ApiProperty({ enum: Unit, description: 'Unidade de medida', example: Unit.UN })
-  unit!: Unit;
+  @ApiPropertyOptional({
+    enum: ['UN', 'KG', 'L', 'ML', 'M', 'CX', 'PC', 'JG'],
+    description: 'Unidade de medida',
+    example: 'UN',
+    nullable: true,
+  })
+  unit!: string | null;
 
   @ApiProperty({ description: 'Quantidade utilizada', example: 2 })
   quantity!: number;

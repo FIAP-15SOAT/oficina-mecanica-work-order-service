@@ -103,6 +103,13 @@ describe('HttpInventoryCatalogGateway', () => {
     });
   });
 
+  it('should not call the inventory for an empty id list', async () => {
+    await expect(gateway.findServicesByIds([])).resolves.toEqual([]);
+    await expect(gateway.findPartsSuppliesByIds([])).resolves.toEqual([]);
+
+    expect(internalHttpClient.request).not.toHaveBeenCalled();
+  });
+
   it('should refuse to start without INVENTORY_SERVICE_URL', () => {
     expect(
       () =>

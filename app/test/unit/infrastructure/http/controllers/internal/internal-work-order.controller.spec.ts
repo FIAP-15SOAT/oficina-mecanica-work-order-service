@@ -1,17 +1,21 @@
 import { InternalWorkOrderController } from '@infrastructure/http/controllers/internal/internal-work-order.controller';
 import { WorkOrderController as WorkOrderCleanController } from '@interface-adapters/work-order/work-order.controller';
 import { WorkOrderPresenter } from '@interface-adapters/work-order/work-order.presenter';
+import { FindCatalogItemsOutputDto } from '@application/ports/input/catalog/dto/find-catalog-items.dto';
 
 import { createMockCustomer } from '../../../../../helpers/customer-mock.factory';
 import { createMockVehicle } from '../../../../../helpers/vehicle-mock.factory';
 import { createMockWorkOrder } from '../../../../../helpers/work-order-mock.factory';
 
 describe('InternalWorkOrderController', () => {
+  const emptyCatalog: FindCatalogItemsOutputDto = { services: [], partsSupplies: [] };
+
   let httpController: InternalWorkOrderController;
   let cleanController: WorkOrderCleanController;
 
   beforeEach(() => {
     cleanController = new WorkOrderCleanController(
+      { execute: jest.fn() },
       { execute: jest.fn() },
       { execute: jest.fn() },
       { execute: jest.fn() },
@@ -31,7 +35,7 @@ describe('InternalWorkOrderController', () => {
         vehicle: createMockVehicle(),
       });
 
-      const response = WorkOrderPresenter.toDataResponse(workOrder);
+      const response = WorkOrderPresenter.toDataResponse(workOrder, emptyCatalog);
 
       jest.spyOn(cleanController, 'findOne').mockResolvedValue(response);
 

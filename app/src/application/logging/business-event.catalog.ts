@@ -109,7 +109,6 @@ export const BUSINESS_EVENTS = {
     workOrderId: string;
     workOrderNumber: string;
     workOrderServiceId: string;
-    workOrderServiceName?: string;
     previousWorkOrderServiceStatus?: string;
     currentWorkOrderServiceStatus: string;
     previousWorkOrderStatus: string;

@@ -136,13 +136,6 @@ export const LOGICAL_FIELDS: Readonly<Record<LogicalFieldName, LogicalFieldDefin
     owner: 'use-case',
     sensitivity: 'identifier',
   },
-  workOrderServiceName: {
-    key: 'oficina.work_order.service.name',
-    type: 'string',
-    cardinality: 'medium',
-    owner: 'use-case',
-    sensitivity: 'clear',
-  },
   previousWorkOrderServiceStatus: {
     key: 'oficina.work_order.service.status.previous',
     type: 'string',

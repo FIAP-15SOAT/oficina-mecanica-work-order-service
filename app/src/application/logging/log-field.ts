@@ -11,7 +11,6 @@ export type LogicalFieldName =
   | 'previousWorkOrderStatus'
   | 'currentWorkOrderStatus'
   | 'workOrderServiceId'
-  | 'workOrderServiceName'
   | 'previousWorkOrderServiceStatus'
   | 'currentWorkOrderServiceStatus'
   | 'partSupplyId'

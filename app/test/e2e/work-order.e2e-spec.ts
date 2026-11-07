@@ -5,15 +5,22 @@ import request from 'supertest';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
+import { InternalServicesStub, startInternalServicesStub } from '../helpers/internal-services-stub';
+import {
+  readInternalPartSupplyFixture,
+  readInternalServiceFixture,
+} from '../helpers/inventory-catalog-gateway-mock.factory';
 
 describe('WorkOrder (E2E)', () => {
   let ctx: TestContext;
   let httpServer: Server;
   let adminAuth: AuthTokens;
   let redis: Redis;
+  let stub: InternalServicesStub;
 
   beforeAll(async () => {
-    ctx = await setupTestApp({ captureLogs: true });
+    stub = await startInternalServicesStub();
+    ctx = await setupTestApp({ captureLogs: true, internalServicesUrl: stub.url });
     httpServer = ctx.httpServer;
     redis = new Redis(ctx.valkeyContainer.getConnectionUrl());
   });
@@ -21,6 +28,7 @@ describe('WorkOrder (E2E)', () => {
   afterAll(async () => {
     await redis.quit();
     await teardownTestApp(ctx);
+    await stub.close();
   });
 
   beforeEach(async () => {
@@ -656,6 +664,127 @@ describe('WorkOrder (E2E)', () => {
         .expect(200);
 
       expect(res.body.data.id).toBe(wo.id);
+    });
+
+    // The local catalog rows stay while the foreign keys exist; the stub serves the same ids.
+    async function createApprovedWorkOrder(serviceId: string, partSupplyId: string) {
+      const customer = await createCustomer();
+      const vehicle = await createVehicle(customer.id);
+      const wo = await createWorkOrder(customer.id, vehicle.id);
+
+      await request(httpServer)
+        .patch(`/api/work-orders/${wo.id}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ status: 'IN_DIAGNOSIS' })
+        .expect(200);
+
+      const quoteRes = await request(httpServer)
+        .post('/api/quotes')
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ workOrderId: wo.id })
+        .expect(201);
+
+      const quoteId = quoteRes.body.data.id;
+
+      await request(httpServer)
+        .post(`/api/quotes/${quoteId}/services`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ serviceId, quantity: 2 })
+        .expect(200);
+
+      await request(httpServer)
+        .post(`/api/quotes/${quoteId}/parts-supplies`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ partSupplyId, quantity: 3 })
+        .expect(200);
+
+      await request(httpServer)
+        .post(`/api/quotes/${quoteId}/submissions`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .expect(200);
+
+      await request(httpServer)
+        .patch(`/api/quotes/${quoteId}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ status: 'APPROVED' })
+        .expect(200);
+
+      return wo;
+    }
+
+    it('should present the items of an approved work order with the inventory catalog', async () => {
+      const service = await createService();
+      const partSupply = await createPartSupply();
+
+      const catalogService = { ...readInternalServiceFixture().data, id: service.id };
+
+      const catalogPartSupply = { ...readInternalPartSupplyFixture().data, id: partSupply.id };
+
+      stub.services.set(service.id, catalogService);
+      stub.partsSupplies.set(partSupply.id, catalogPartSupply);
+
+      const wo = await createApprovedWorkOrder(service.id, partSupply.id);
+
+      const res = await request(httpServer)
+        .get(`/api/work-orders/${wo.id}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .expect(200);
+
+      expect(res.body.data.services).toEqual([
+        expect.objectContaining({
+          id: service.id,
+          name: catalogService.name,
+          description: catalogService.description,
+          quantity: 2,
+          unitPrice: 150,
+          totalPrice: 300,
+          status: 'PENDING',
+        }),
+      ]);
+
+      expect(res.body.data.partSupplies).toEqual([
+        {
+          id: partSupply.id,
+          name: catalogPartSupply.name,
+          description: catalogPartSupply.description,
+          sku: catalogPartSupply.sku,
+          partNumber: catalogPartSupply.partNumber,
+          category: catalogPartSupply.category,
+          unit: catalogPartSupply.unit,
+          quantity: 3,
+          unitPrice: 45,
+          totalPrice: 135,
+        },
+      ]);
+    });
+
+    it('should present null display fields for an item the inventory no longer has', async () => {
+      const service = await createService();
+      const partSupply = await createPartSupply();
+
+      stub.services.set(service.id, { ...readInternalServiceFixture().data, id: service.id });
+
+      const wo = await createApprovedWorkOrder(service.id, partSupply.id);
+
+      const res = await request(httpServer)
+        .get(`/api/work-orders/${wo.id}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .expect(200);
+
+      expect(res.body.data.partSupplies).toEqual([
+        {
+          id: partSupply.id,
+          name: null,
+          description: null,
+          sku: null,
+          partNumber: null,
+          category: null,
+          unit: null,
+          quantity: 3,
+          unitPrice: 45,
+          totalPrice: 135,
+        },
+      ]);
     });
 
     it('should return 404 for non-existent id', async () => {
@@ -1666,98 +1795,6 @@ describe('WorkOrder (E2E)', () => {
 
       expect(res.body.data.status).toBe('DELIVERED');
       expect(res.body.data.deliveredAt).toBeTruthy();
-    });
-  });
-
-  // ─── GET /api/work-orders/:id — service.description and partSupply details ───
-
-  describe('GET /api/work-orders/:id — service description and partSupply description/partNumber', () => {
-    it('should return work order with service description and partSupply description and partNumber', async () => {
-      const customer = await createCustomer();
-      const vehicle = await createVehicle(customer.id);
-      const wo = await createWorkOrder(customer.id, vehicle.id);
-
-      await request(httpServer)
-        .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ status: 'IN_DIAGNOSIS' })
-        .expect(200);
-
-      const serviceRes = await request(httpServer)
-        .post('/api/services')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          name: 'Revisão Com Descrição',
-          basePrice: 200,
-          estimatedTimeMin: 60,
-          description: 'Revisão completa do motor',
-        })
-        .expect(201);
-
-      const serviceId = serviceRes.body.data.id as string;
-
-      const partRes = await request(httpServer)
-        .post('/api/parts-supplies')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          name: 'Filtro Detalhado',
-          sku: `FLT-DET-${Date.now()}`,
-          category: 'PART',
-          unit: 'UN',
-          costPrice: 25,
-          salePrice: 50,
-          stock: 20,
-          minStock: 3,
-          description: 'Filtro de ar original',
-          partNumber: 'FA-9999',
-        })
-        .expect(201);
-
-      const partId = partRes.body.data.id as string;
-
-      const quoteRes = await request(httpServer)
-        .post('/api/quotes')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ workOrderId: wo.id })
-        .expect(201);
-      const quoteId = quoteRes.body.data.id as string;
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/services`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ serviceId, quantity: 1 })
-        .expect(200);
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/parts-supplies`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ partSupplyId: partId, quantity: 1 })
-        .expect(200);
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/submissions`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      await request(httpServer)
-        .patch(`/api/quotes/${quoteId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ status: 'APPROVED' })
-        .expect(200);
-
-      const res = await request(httpServer)
-        .get(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      const serviceItem = res.body.data.services.find((s: { id: string }) => s.id === serviceId);
-      const partItem = res.body.data.partSupplies.find((p: { id: string }) => p.id === partId);
-
-      expect(serviceItem).toBeDefined();
-      expect(serviceItem.description).toBe('Revisão completa do motor');
-      expect(partItem).toBeDefined();
-      expect(partItem.description).toBe('Filtro de ar original');
-      expect(partItem.partNumber).toBe('FA-9999');
     });
   });
 

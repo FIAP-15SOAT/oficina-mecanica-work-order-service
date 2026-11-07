@@ -6,19 +6,28 @@ import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
 import { signTestCustomerToken } from '../helpers/customer-jwt.helper';
+import { InternalServicesStub, startInternalServicesStub } from '../helpers/internal-services-stub';
+import {
+  readInternalPartSupplyFixture,
+  readInternalServiceFixture,
+} from '../helpers/inventory-catalog-gateway-mock.factory';
 
 describe('Me (E2E)', () => {
   let ctx: TestContext;
   let httpServer: Server;
   let adminAuth: AuthTokens;
 
+  let stub: InternalServicesStub;
+
   beforeAll(async () => {
-    ctx = await setupTestApp();
+    stub = await startInternalServicesStub();
+    ctx = await setupTestApp({ internalServicesUrl: stub.url });
     httpServer = ctx.httpServer;
   });
 
   afterAll(async () => {
     await teardownTestApp(ctx);
+    await stub.close();
   });
 
   beforeEach(async () => {
@@ -560,6 +569,18 @@ describe('Me (E2E)', () => {
           minStock: 2,
         })
         .expect(201);
+
+      stub.services.set(serviceRes.body.data.id, {
+        ...readInternalServiceFixture().data,
+        id: serviceRes.body.data.id,
+        name: 'Troca de óleo',
+      });
+
+      stub.partsSupplies.set(partSupplyRes.body.data.id, {
+        ...readInternalPartSupplyFixture().data,
+        id: partSupplyRes.body.data.id,
+        name: 'Filtro de óleo',
+      });
 
       const quote = await ctx.prisma.quote.create({
         data: { workOrderId: workOrder.id, status: 'SENT', totalAmount: 130 },

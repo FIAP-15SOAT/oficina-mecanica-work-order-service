@@ -1,7 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { QuoteStatus } from '@domain/enums/quote-status.enum';
-import { PartSupplyCategory } from '@domain/enums/part-supply-category.enum';
-import { Unit } from '@domain/enums/unit.enum';
 import { PaginatedResponseDto } from '@infrastructure/http/common/dto/paginated-response.dto';
 import { WorkOrderResponseDto } from '@infrastructure/http/controllers/work-order/dto/responses/work-order-response.dto';
 import {
@@ -23,8 +21,12 @@ export class QuoteServiceItemResponseDto implements QuoteServiceItemResponse {
   })
   id!: string;
 
-  @ApiProperty({ description: 'Nome do serviço', example: 'Troca de óleo' })
-  name!: string;
+  @ApiPropertyOptional({
+    description: 'Nome do serviço',
+    example: 'Troca de óleo',
+    nullable: true,
+  })
+  name!: string | null;
 
   @ApiPropertyOptional({
     description: 'Descrição do serviço',
@@ -60,8 +62,12 @@ export class QuotePartSupplyItemResponseDto implements QuotePartSupplyItemRespon
   })
   id!: string;
 
-  @ApiProperty({ description: 'Nome da peça/insumo', example: 'Filtro de Óleo' })
-  name!: string;
+  @ApiPropertyOptional({
+    description: 'Nome da peça/insumo',
+    example: 'Filtro de Óleo',
+    nullable: true,
+  })
+  name!: string | null;
 
   @ApiPropertyOptional({
     description: 'Descrição detalhada',
@@ -70,8 +76,8 @@ export class QuotePartSupplyItemResponseDto implements QuotePartSupplyItemRespon
   })
   description!: string | null;
 
-  @ApiProperty({ description: 'SKU único no Estoque', example: 'FO-001' })
-  sku!: string;
+  @ApiPropertyOptional({ description: 'SKU único no Estoque', example: 'FO-001', nullable: true })
+  sku!: string | null;
 
   @ApiPropertyOptional({
     description: 'Número de referência do fabricante',
@@ -80,15 +86,21 @@ export class QuotePartSupplyItemResponseDto implements QuotePartSupplyItemRespon
   })
   partNumber!: string | null;
 
-  @ApiProperty({
-    enum: PartSupplyCategory,
+  @ApiPropertyOptional({
+    enum: ['PART', 'SUPPLY'],
     description: 'Categoria: PART (Peça) ou SUPPLY (Insumo)',
-    example: PartSupplyCategory.PART,
+    example: 'PART',
+    nullable: true,
   })
-  category!: PartSupplyCategory;
+  category!: string | null;
 
-  @ApiProperty({ enum: Unit, description: 'Unidade de medida', example: Unit.UN })
-  unit!: Unit;
+  @ApiPropertyOptional({
+    enum: ['UN', 'KG', 'L', 'ML', 'M', 'CX', 'PC', 'JG'],
+    description: 'Unidade de medida',
+    example: 'UN',
+    nullable: true,
+  })
+  unit!: string | null;
 
   @ApiProperty({ description: 'Quantidade', example: 1 })
   quantity!: number;

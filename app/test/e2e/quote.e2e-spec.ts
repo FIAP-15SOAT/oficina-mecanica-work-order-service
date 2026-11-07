@@ -4,6 +4,11 @@ import request from 'supertest';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
+import { InternalServicesStub, startInternalServicesStub } from '../helpers/internal-services-stub';
+import {
+  readInternalPartSupplyFixture,
+  readInternalServiceFixture,
+} from '../helpers/inventory-catalog-gateway-mock.factory';
 
 interface MailhogResponse {
   items: {
@@ -44,13 +49,17 @@ describe('Quote (E2E)', () => {
   let httpServer: Server;
   let adminAuth: AuthTokens;
 
+  let stub: InternalServicesStub;
+
   beforeAll(async () => {
-    ctx = await setupTestApp();
+    stub = await startInternalServicesStub();
+    ctx = await setupTestApp({ internalServicesUrl: stub.url });
     httpServer = ctx.httpServer;
   });
 
   afterAll(async () => {
     await teardownTestApp(ctx);
+    await stub.close();
   });
 
   beforeEach(async () => {
@@ -443,10 +452,17 @@ describe('Quote (E2E)', () => {
         .expect(404);
     });
 
-    it('should return quote with populated services and partsSupplies arrays', async () => {
+    it('should return quote with its items presented with the inventory catalog', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
       const service = await createService();
       const part = await createPartSupply();
+
+      const catalogService = { ...readInternalServiceFixture().data, id: service.id };
+
+      const catalogPartSupply = { ...readInternalPartSupplyFixture().data, id: part.id };
+
+      stub.services.set(service.id, catalogService);
+      stub.partsSupplies.set(part.id, catalogPartSupply);
 
       const createRes = await request(httpServer)
         .post('/api/quotes')
@@ -472,15 +488,27 @@ describe('Quote (E2E)', () => {
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .expect(200);
 
-      expect(res.body.data.services).toHaveLength(1);
-      expect(res.body.data.partsSupplies).toHaveLength(1);
-      expect(res.body.data.services[0].id).toBe(service.id);
-      expect(res.body.data.services[0].name).toBeDefined();
-      expect(res.body.data.services[0].quantity).toBe(2);
-      expect(res.body.data.partsSupplies[0].id).toBe(part.id);
-      expect(res.body.data.partsSupplies[0].name).toBeDefined();
-      expect(res.body.data.partsSupplies[0].sku).toBeDefined();
-      expect(res.body.data.partsSupplies[0].quantity).toBe(3);
+      expect(res.body.data.services).toEqual([
+        expect.objectContaining({
+          id: service.id,
+          name: catalogService.name,
+          description: catalogService.description,
+          quantity: 2,
+        }),
+      ]);
+
+      expect(res.body.data.partsSupplies).toEqual([
+        expect.objectContaining({
+          id: part.id,
+          name: catalogPartSupply.name,
+          description: catalogPartSupply.description,
+          sku: catalogPartSupply.sku,
+          partNumber: catalogPartSupply.partNumber,
+          category: catalogPartSupply.category,
+          unit: catalogPartSupply.unit,
+          quantity: 3,
+        }),
+      ]);
     });
   });
 
