@@ -5,11 +5,7 @@ import { QuotePartSupply } from '@domain/entities/quote-part-supply.entity';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
 import { DomainValidationException } from '@domain/exceptions/domain-validation.exception';
 import { EntityNotFoundException } from '@domain/exceptions/entity-not-found.exception';
-import { Service } from '@domain/entities/service.entity';
-import { PartSupply } from '@domain/entities/part-supply.entity';
 import { randomUUID } from 'node:crypto';
-import { PartSupplyCategory } from '@domain/enums/part-supply-category.enum';
-import { Unit } from '@domain/enums/unit.enum';
 
 function makeQuote(
   status: QuoteStatus,
@@ -44,37 +40,12 @@ function makeQuote(
 }
 
 describe('Quote Entity', () => {
-  function makeService(basePrice = 100): Service {
-    return Service.reconstitute({
-      id: randomUUID(),
-      name: 'Troca de óleo',
-      description: null,
-      basePrice,
-      estimatedTimeMin: 60,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+  function makeService(unitPrice = 100): { serviceId: string; unitPrice: number } {
+    return { serviceId: randomUUID(), unitPrice };
   }
 
-  function makePartSupply(salePrice = 50): PartSupply {
-    return PartSupply.reconstitute({
-      id: randomUUID(),
-      name: 'Filtro de óleo',
-      description: null,
-      sku: 'SKU-001',
-      partNumber: null,
-      category: PartSupplyCategory.PART,
-      unit: Unit.UN,
-      costPrice: 30,
-      salePrice,
-      stock: 10,
-      minStock: 1,
-      reservedStock: 0,
-      version: 0,
-      expiresAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+  function makePartSupply(unitPrice = 50): { partSupplyId: string; unitPrice: number } {
+    return { partSupplyId: randomUUID(), unitPrice };
   }
 
   describe('create()', () => {
@@ -131,7 +102,7 @@ describe('Quote Entity', () => {
       const svc = makeService(200);
       const quote = Quote.create({
         workOrderId: '550e8400-e29b-41d4-a716-446655440111',
-        services: [{ service: svc, quantity: 2 }],
+        services: [{ ...svc, quantity: 2 }],
       });
 
       expect(quote.services).toHaveLength(1);
@@ -146,8 +117,8 @@ describe('Quote Entity', () => {
       const part = makePartSupply(50);
       const quote = Quote.create({
         workOrderId: '550e8400-e29b-41d4-a716-446655440111',
-        services: [{ service: svc, quantity: 1 }],
-        partsSupplies: [{ partSupply: part, quantity: 3 }],
+        services: [{ ...svc, quantity: 1 }],
+        partsSupplies: [{ ...part, quantity: 3 }],
       });
 
       expect(quote.services).toHaveLength(1);
@@ -162,7 +133,7 @@ describe('Quote Entity', () => {
       expect(() =>
         Quote.create({
           workOrderId: '550e8400-e29b-41d4-a716-446655440111',
-          partsSupplies: [{ partSupply: part, quantity: 1 }],
+          partsSupplies: [{ ...part, quantity: 1 }],
         }),
       ).toThrow(BusinessRuleViolationException);
     });
@@ -173,8 +144,8 @@ describe('Quote Entity', () => {
         Quote.create({
           workOrderId: '550e8400-e29b-41d4-a716-446655440111',
           services: [
-            { service: svc, quantity: 1 },
-            { service: svc, quantity: 2 },
+            { ...svc, quantity: 1 },
+            { ...svc, quantity: 2 },
           ],
         }),
       ).toThrow(BusinessRuleViolationException);
@@ -186,10 +157,10 @@ describe('Quote Entity', () => {
       expect(() =>
         Quote.create({
           workOrderId: '550e8400-e29b-41d4-a716-446655440111',
-          services: [{ service: svc, quantity: 1 }],
+          services: [{ ...svc, quantity: 1 }],
           partsSupplies: [
-            { partSupply: part, quantity: 1 },
-            { partSupply: part, quantity: 2 },
+            { ...part, quantity: 1 },
+            { ...part, quantity: 2 },
           ],
         }),
       ).toThrow(BusinessRuleViolationException);
@@ -313,9 +284,9 @@ describe('Quote Entity', () => {
       const quote = makeQuote(QuoteStatus.PENDING);
       const service = makeService(200);
 
-      const item = quote.addService(service, 2);
+      const item = quote.addService({ ...service, quantity: 2 });
 
-      expect(item.serviceId).toBe(service.id);
+      expect(item.serviceId).toBe(service.serviceId);
       expect(item.totalPrice).toBe(400);
       expect(quote.services).toHaveLength(1);
       expect(quote.servicesAmount).toBe(400);
@@ -326,14 +297,16 @@ describe('Quote Entity', () => {
       const quote = makeQuote(QuoteStatus.SENT, { services: [] });
       const service = makeService();
 
-      expect(() => quote.addService(service, 1)).toThrow(BusinessRuleViolationException);
+      expect(() => quote.addService({ ...service, quantity: 1 })).toThrow(
+        BusinessRuleViolationException,
+      );
     });
 
     it('should throw when service already added', () => {
       const service = makeService();
       const existing = QuoteService.reconstitute({
         quoteId: randomUUID(),
-        serviceId: service.id,
+        serviceId: service.serviceId,
         quantity: 1,
         unitPrice: 100,
         totalPrice: 100,
@@ -343,7 +316,9 @@ describe('Quote Entity', () => {
 
       const quote = makeQuote(QuoteStatus.PENDING, { services: [existing] });
 
-      expect(() => quote.addService(service, 1)).toThrow(BusinessRuleViolationException);
+      expect(() => quote.addService({ ...service, quantity: 1 })).toThrow(
+        BusinessRuleViolationException,
+      );
     });
   });
 
@@ -354,7 +329,7 @@ describe('Quote Entity', () => {
 
       const item = QuoteService.reconstitute({
         quoteId,
-        serviceId: service.id,
+        serviceId: service.serviceId,
         quantity: 1,
         unitPrice: 150,
         totalPrice: 150,
@@ -364,7 +339,7 @@ describe('Quote Entity', () => {
 
       const quote = makeQuote(QuoteStatus.PENDING, { id: quoteId, services: [item] });
 
-      quote.removeService(service.id);
+      quote.removeService(service.serviceId);
 
       expect(quote.services).toHaveLength(0);
       expect(quote.servicesAmount).toBe(0);
@@ -421,9 +396,9 @@ describe('Quote Entity', () => {
       const quote = makeQuote(QuoteStatus.PENDING);
       const part = makePartSupply(50);
 
-      const item = quote.addPartSupply(part, 3);
+      const item = quote.addPartSupply({ ...part, quantity: 3 });
 
-      expect(item.partSupplyId).toBe(part.id);
+      expect(item.partSupplyId).toBe(part.partSupplyId);
       expect(item.totalPrice).toBe(150);
       expect(quote.partsSupplies).toHaveLength(1);
       expect(quote.partsAmount).toBe(150);
@@ -433,14 +408,16 @@ describe('Quote Entity', () => {
       const quote = makeQuote(QuoteStatus.APPROVED, { partsSupplies: [] });
       const part = makePartSupply();
 
-      expect(() => quote.addPartSupply(part, 1)).toThrow(BusinessRuleViolationException);
+      expect(() => quote.addPartSupply({ ...part, quantity: 1 })).toThrow(
+        BusinessRuleViolationException,
+      );
     });
 
     it('should throw when part supply already added', () => {
       const part = makePartSupply();
       const existing = QuotePartSupply.reconstitute({
         quoteId: randomUUID(),
-        partSupplyId: part.id,
+        partSupplyId: part.partSupplyId,
         quantity: 1,
         unitPrice: 50,
         totalPrice: 50,
@@ -450,7 +427,9 @@ describe('Quote Entity', () => {
 
       const quote = makeQuote(QuoteStatus.PENDING, { partsSupplies: [existing] });
 
-      expect(() => quote.addPartSupply(part, 1)).toThrow(BusinessRuleViolationException);
+      expect(() => quote.addPartSupply({ ...part, quantity: 1 })).toThrow(
+        BusinessRuleViolationException,
+      );
     });
   });
 

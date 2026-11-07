@@ -3,99 +3,126 @@ import { QuoteStatus } from '@domain/enums/quote-status.enum';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
 import { IQuoteRepository } from '@domain/interfaces/repositories/quote.repository.interface';
-import { IServiceRepository } from '@domain/interfaces/repositories/service.repository.interface';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
-import { createMockQuote, createMockQuoteService } from '../../../../helpers/quote-mock.factory';
-import { createMockService } from '../../../../helpers/service-mock.factory';
+import { IInventoryCatalogGateway } from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.interface';
+import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
+import {
+  createMockQuote,
+  createMockQuoteRepository,
+  createMockQuoteService,
+} from '../../../../helpers/quote-mock.factory';
 import { createMockUnitOfWorkWithRepos } from '../../../../helpers/unit-of-work-mock.factory';
+import {
+  createMockInventoryCatalogGateway,
+  createMockInventoryServiceGatewayResponse,
+} from '../../../../helpers/inventory-catalog-gateway-mock.factory';
 
 describe('AddQuoteServiceUseCase', () => {
   let useCase: AddQuoteServiceUseCase;
-  let unitOfWork: jest.Mocked<IUnitOfWork>;
   let quoteRepository: jest.Mocked<IQuoteRepository>;
-  let serviceRepository: jest.Mocked<IServiceRepository>;
+  let unitOfWork: jest.Mocked<IUnitOfWork>;
+  let transactionQuoteRepository: jest.Mocked<IQuoteRepository>;
+  let inventoryCatalogGateway: jest.Mocked<IInventoryCatalogGateway>;
 
   beforeEach(() => {
     const mock = createMockUnitOfWorkWithRepos();
     unitOfWork = mock.unitOfWork;
-    quoteRepository = mock.repos.quote as jest.Mocked<IQuoteRepository>;
-    serviceRepository = mock.repos.service as jest.Mocked<IServiceRepository>;
-    useCase = new AddQuoteServiceUseCase(unitOfWork);
+
+    transactionQuoteRepository = mock.repos.quote as jest.Mocked<IQuoteRepository>;
+    transactionQuoteRepository.update.mockImplementation((quote) => Promise.resolve(quote));
+
+    quoteRepository = createMockQuoteRepository();
+
+    inventoryCatalogGateway = createMockInventoryCatalogGateway();
+
+    useCase = new AddQuoteServiceUseCase(quoteRepository, unitOfWork, inventoryCatalogGateway);
   });
 
-  it('should add a service and recalculate totals', async () => {
+  it('should add the service with the Inventory base price and recalculate the totals', async () => {
     const quote = createMockQuote({ status: QuoteStatus.PENDING, services: [] });
-    const service = createMockService({ basePrice: 150 });
-    const updatedQuote = createMockQuote({ status: QuoteStatus.PENDING, servicesAmount: 150 });
+
+    const service = createMockInventoryServiceGatewayResponse({ basePrice: 150 });
 
     quoteRepository.findByIdWithDetails.mockResolvedValue(quote);
-    serviceRepository.findById.mockResolvedValue(service);
-    quoteRepository.addServiceItem.mockResolvedValue(undefined);
-    quoteRepository.update.mockResolvedValue(updatedQuote);
+    inventoryCatalogGateway.findServicesByIds.mockResolvedValue([service]);
 
-    const result = await useCase.execute({
-      quoteId: quote.id,
-      serviceId: service.id,
-      quantity: 1,
-    });
+    const result = await useCase.execute({ quoteId: quote.id, serviceId: service.id, quantity: 1 });
 
-    expect(unitOfWork.executeTransaction).toHaveBeenCalledTimes(1);
-    expect(quoteRepository.addServiceItem).toHaveBeenCalledTimes(1);
-    expect(quoteRepository.update).toHaveBeenCalledTimes(1);
+    expect(inventoryCatalogGateway.findServicesByIds).toHaveBeenCalledWith([service.id]);
+    expect(transactionQuoteRepository.addServiceItem).toHaveBeenCalledTimes(1);
+    expect(transactionQuoteRepository.update).toHaveBeenCalledWith(quote);
     expect(result.servicesAmount).toBe(150);
   });
 
-  it('should throw ResourceNotFoundException when quote not found', async () => {
+  it('should answer 404 for an unknown quote before reading the Inventory', async () => {
     quoteRepository.findByIdWithDetails.mockResolvedValue(null);
 
     await expect(
-      useCase.execute({ quoteId: 'bad', serviceId: 'any', quantity: 1 }),
-    ).rejects.toThrow(ResourceNotFoundException);
+      useCase.execute({ quoteId: 'unknown-id', serviceId: 'any', quantity: 1 }),
+    ).rejects.toThrow(new ResourceNotFoundException('Orçamento', 'unknown-id'));
 
-    expect(quoteRepository.addServiceItem).not.toHaveBeenCalled();
-    expect(quoteRepository.update).not.toHaveBeenCalled();
+    expect(inventoryCatalogGateway.findServicesByIds).not.toHaveBeenCalled();
   });
 
-  it('should throw ResourceNotFoundException when service not found', async () => {
-    const quote = createMockQuote({ status: QuoteStatus.PENDING, services: [] });
-    quoteRepository.findByIdWithDetails.mockResolvedValue(quote);
-    serviceRepository.findById.mockResolvedValue(null);
+  it('should answer 404 when the Inventory does not know the item', async () => {
+    quoteRepository.findByIdWithDetails.mockResolvedValue(
+      createMockQuote({ status: QuoteStatus.PENDING, services: [] }),
+    );
+
+    inventoryCatalogGateway.findServicesByIds.mockResolvedValue([]);
 
     await expect(
-      useCase.execute({ quoteId: quote.id, serviceId: 'bad', quantity: 1 }),
-    ).rejects.toThrow(ResourceNotFoundException);
+      useCase.execute({ quoteId: 'quote-id', serviceId: 'unknown-id', quantity: 1 }),
+    ).rejects.toThrow(new ResourceNotFoundException('Serviço', 'unknown-id'));
 
-    expect(quoteRepository.addServiceItem).not.toHaveBeenCalled();
-    expect(quoteRepository.update).not.toHaveBeenCalled();
+    expect(unitOfWork.executeTransaction).not.toHaveBeenCalled();
+  });
+
+  it('should answer 503 and write nothing when the Inventory is unavailable', async () => {
+    const unavailable = new ServiceIntegrationException('Serviço de destino indisponível');
+
+    quoteRepository.findByIdWithDetails.mockResolvedValue(
+      createMockQuote({ status: QuoteStatus.PENDING, services: [] }),
+    );
+    inventoryCatalogGateway.findServicesByIds.mockRejectedValue(unavailable);
+
+    await expect(
+      useCase.execute({ quoteId: 'quote-id', serviceId: 'service-id', quantity: 1 }),
+    ).rejects.toBe(unavailable);
+
+    expect(unitOfWork.executeTransaction).not.toHaveBeenCalled();
   });
 
   it('should throw BusinessRuleViolationException when quote is not PENDING', async () => {
-    const quote = createMockQuote({ status: QuoteStatus.SENT, services: [] });
-    const service = createMockService();
-    quoteRepository.findByIdWithDetails.mockResolvedValue(quote);
-    serviceRepository.findById.mockResolvedValue(service);
+    const service = createMockInventoryServiceGatewayResponse();
+
+    quoteRepository.findByIdWithDetails.mockResolvedValue(
+      createMockQuote({ status: QuoteStatus.SENT, services: [] }),
+    );
+    inventoryCatalogGateway.findServicesByIds.mockResolvedValue([service]);
 
     await expect(
-      useCase.execute({ quoteId: quote.id, serviceId: service.id, quantity: 1 }),
+      useCase.execute({ quoteId: 'quote-id', serviceId: service.id, quantity: 1 }),
     ).rejects.toThrow(BusinessRuleViolationException);
 
-    expect(quoteRepository.addServiceItem).not.toHaveBeenCalled();
-    expect(quoteRepository.update).not.toHaveBeenCalled();
+    expect(transactionQuoteRepository.addServiceItem).not.toHaveBeenCalled();
+    expect(transactionQuoteRepository.update).not.toHaveBeenCalled();
   });
 
   it('should throw BusinessRuleViolationException when service already exists in quote', async () => {
-    const service = createMockService({ basePrice: 150 });
+    const service = createMockInventoryServiceGatewayResponse();
     const existing = createMockQuoteService({ serviceId: service.id });
-    const quote = createMockQuote({ status: QuoteStatus.PENDING, services: [existing] });
 
-    quoteRepository.findByIdWithDetails.mockResolvedValue(quote);
-    serviceRepository.findById.mockResolvedValue(service);
+    quoteRepository.findByIdWithDetails.mockResolvedValue(
+      createMockQuote({ status: QuoteStatus.PENDING, services: [existing] }),
+    );
+    inventoryCatalogGateway.findServicesByIds.mockResolvedValue([service]);
 
     await expect(
-      useCase.execute({ quoteId: quote.id, serviceId: service.id, quantity: 1 }),
+      useCase.execute({ quoteId: 'quote-id', serviceId: service.id, quantity: 1 }),
     ).rejects.toThrow(BusinessRuleViolationException);
 
-    expect(quoteRepository.addServiceItem).not.toHaveBeenCalled();
-    expect(quoteRepository.update).not.toHaveBeenCalled();
+    expect(transactionQuoteRepository.addServiceItem).not.toHaveBeenCalled();
+    expect(transactionQuoteRepository.update).not.toHaveBeenCalled();
   });
 });

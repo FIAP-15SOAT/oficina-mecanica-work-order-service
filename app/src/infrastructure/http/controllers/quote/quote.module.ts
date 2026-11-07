@@ -15,6 +15,7 @@ import { UpdateQuoteStatusUseCase } from '@application/use-cases/quote/update-qu
 import { FindAllQuotesPaginatedUseCase } from '@application/use-cases/quote/find-all-quotes-paginated.use-case';
 import { FindCatalogItemsUseCase } from '@application/use-cases/catalog/find-catalog-items.use-case';
 import { IInventoryCatalogGateway } from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.interface';
+import { QuoteItemValidator } from '@application/services/quote-item-validator';
 import { InfrastructureServicesModule } from '@infrastructure/services/infrastructure-services.module';
 
 import { IQuoteRepository } from '@domain/interfaces/repositories/quote.repository.interface';
@@ -61,11 +62,11 @@ import { QuoteController } from './quote.controller';
         );
 
         return new QuoteCleanController(
-          new CreateQuoteUseCase(unitOfWork),
+          new CreateQuoteUseCase(unitOfWork, new QuoteItemValidator(inventoryCatalogGateway)),
           new FindQuoteByIdUseCase(quoteRepository),
-          new AddQuoteServiceUseCase(unitOfWork),
+          new AddQuoteServiceUseCase(quoteRepository, unitOfWork, inventoryCatalogGateway),
           new RemoveQuoteServiceUseCase(unitOfWork),
-          new AddQuotePartSupplyUseCase(unitOfWork),
+          new AddQuotePartSupplyUseCase(quoteRepository, unitOfWork, inventoryCatalogGateway),
           new RemoveQuotePartSupplyUseCase(unitOfWork),
           new UpdateQuoteServiceQuantityUseCase(unitOfWork),
           new UpdateQuotePartSupplyQuantityUseCase(unitOfWork),

@@ -22,6 +22,7 @@ import { METRIC_VIEWS } from '@infrastructure/telemetry/metric-registry';
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import { InternalServicesStub, startInternalServicesStub } from '../helpers/internal-services-stub';
+import { readInternalServiceFixture } from '../helpers/inventory-catalog-gateway-mock.factory';
 import { LogCapture, TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 
 const ACCESS_LOG_MESSAGE = 'http request';
@@ -289,7 +290,11 @@ describe('Telemetry (E2E)', () => {
         })
         .expect(201);
 
-      return service.body.data.id as string;
+      const serviceId = service.body.data.id as string;
+
+      stub.services.set(serviceId, { ...readInternalServiceFixture().data, id: serviceId });
+
+      return serviceId;
     }
 
     async function submitQuote(workOrderId: string, serviceId: string): Promise<string> {

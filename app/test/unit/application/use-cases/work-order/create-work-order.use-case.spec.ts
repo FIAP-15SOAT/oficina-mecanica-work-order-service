@@ -9,23 +9,38 @@ import { createMockUnitOfWorkWithRepos } from '../../../../helpers/unit-of-work-
 import { IUnitOfWork, IRepositories } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { UserRole } from '@domain/enums/user-role.enum';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
-import { createMockService } from '../../../../helpers/service-mock.factory';
-import { createMockPartSupply } from '../../../../helpers/part-supply-mock.factory';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
+import { IInventoryCatalogGateway } from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.interface';
+import { QuoteItemValidator } from '@application/services/quote-item-validator';
+import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
 import { createMockMetrics } from '../../../../helpers/metrics-mock.factory';
+import {
+  createMockInventoryCatalogGateway,
+  createMockInventoryPartSupplyGatewayResponse,
+  createMockInventoryServiceGatewayResponse,
+} from '../../../../helpers/inventory-catalog-gateway-mock.factory';
 
 describe('CreateWorkOrderUseCase', () => {
   let useCase: CreateWorkOrderUseCase;
   let mockRepos: jest.Mocked<IRepositories>;
   let mockUow: jest.Mocked<IUnitOfWork>;
   let metrics: jest.Mocked<IMetrics>;
+  let inventoryCatalogGateway: jest.Mocked<IInventoryCatalogGateway>;
 
   beforeEach(() => {
     const { unitOfWork, repos } = createMockUnitOfWorkWithRepos();
     mockRepos = repos;
     mockUow = unitOfWork;
+
     metrics = createMockMetrics();
-    useCase = new CreateWorkOrderUseCase(mockUow, metrics);
+
+    inventoryCatalogGateway = createMockInventoryCatalogGateway();
+
+    useCase = new CreateWorkOrderUseCase(
+      mockUow,
+      new QuoteItemValidator(inventoryCatalogGateway),
+      metrics,
+    );
   });
 
   it('should create a work order and initial status history', async () => {
@@ -208,7 +223,7 @@ describe('CreateWorkOrderUseCase', () => {
   it('should create work order with inline services and persist quote via create', async () => {
     const customer = createMockCustomer();
     const vehicle = createMockVehicle({ customerId: customer.id });
-    const service = createMockService({ basePrice: 100 });
+    const service = createMockInventoryServiceGatewayResponse({ basePrice: 100 });
     const createdWO = createMockWorkOrder({ customerId: customer.id, vehicleId: vehicle.id });
 
     (mockRepos.customer.findById as jest.Mock).mockResolvedValue(customer);
@@ -216,7 +231,7 @@ describe('CreateWorkOrderUseCase', () => {
     (mockRepos.workOrder.generateNextNumber as jest.Mock).mockResolvedValue('000001');
     (mockRepos.workOrder.create as jest.Mock).mockResolvedValue(createdWO);
     (mockRepos.statusHistory.create as jest.Mock).mockResolvedValue({});
-    (mockRepos.service.findByIds as jest.Mock).mockResolvedValue([service]);
+    inventoryCatalogGateway.findServicesByIds.mockResolvedValue([service]);
     (mockRepos.quote.create as jest.Mock).mockResolvedValue({});
 
     const result = await useCase.execute({
@@ -233,8 +248,8 @@ describe('CreateWorkOrderUseCase', () => {
   it('should create work order with services + parts via create', async () => {
     const customer = createMockCustomer();
     const vehicle = createMockVehicle({ customerId: customer.id });
-    const service = createMockService({ basePrice: 100 });
-    const part = createMockPartSupply({ salePrice: 50 });
+    const service = createMockInventoryServiceGatewayResponse({ basePrice: 100 });
+    const part = createMockInventoryPartSupplyGatewayResponse({ salePrice: 50 });
     const createdWO = createMockWorkOrder({ customerId: customer.id, vehicleId: vehicle.id });
 
     (mockRepos.customer.findById as jest.Mock).mockResolvedValue(customer);
@@ -242,8 +257,8 @@ describe('CreateWorkOrderUseCase', () => {
     (mockRepos.workOrder.generateNextNumber as jest.Mock).mockResolvedValue('000001');
     (mockRepos.workOrder.create as jest.Mock).mockResolvedValue(createdWO);
     (mockRepos.statusHistory.create as jest.Mock).mockResolvedValue({});
-    (mockRepos.service.findByIds as jest.Mock).mockResolvedValue([service]);
-    (mockRepos.partSupply.findByIds as jest.Mock).mockResolvedValue([part]);
+    inventoryCatalogGateway.findServicesByIds.mockResolvedValue([service]);
+    inventoryCatalogGateway.findPartsSuppliesByIds.mockResolvedValue([part]);
     (mockRepos.quote.create as jest.Mock).mockResolvedValue({});
 
     await useCase.execute({
@@ -255,6 +270,62 @@ describe('CreateWorkOrderUseCase', () => {
     });
 
     expect(mockRepos.quote.create).toHaveBeenCalledTimes(1);
+    expect((mockRepos.quote.create as jest.Mock).mock.calls[0][0].totalAmount).toBe(200);
+  });
+
+  it('should validate the items in the Inventory before opening the transaction', async () => {
+    const customer = createMockCustomer();
+    const vehicle = createMockVehicle({ customerId: customer.id });
+    const service = createMockInventoryServiceGatewayResponse();
+
+    (mockRepos.customer.findById as jest.Mock).mockResolvedValue(customer);
+    (mockRepos.vehicle.findById as jest.Mock).mockResolvedValue(vehicle);
+    (mockRepos.workOrder.generateNextNumber as jest.Mock).mockResolvedValue('000001');
+    (mockRepos.workOrder.create as jest.Mock).mockResolvedValue(createMockWorkOrder());
+    inventoryCatalogGateway.findServicesByIds.mockResolvedValue([service]);
+
+    await useCase.execute({
+      customerId: customer.id,
+      vehicleId: vehicle.id,
+      userId: randomUUID(),
+      services: [{ serviceId: service.id, quantity: 1 }],
+    });
+
+    expect(inventoryCatalogGateway.findServicesByIds.mock.invocationCallOrder[0]).toBeLessThan(
+      mockUow.executeTransaction.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('should answer 503 and write nothing when the Inventory is unavailable', async () => {
+    const unavailable = new ServiceIntegrationException('Serviço de destino indisponível');
+
+    inventoryCatalogGateway.findServicesByIds.mockRejectedValue(unavailable);
+
+    await expect(
+      useCase.execute({
+        customerId: randomUUID(),
+        vehicleId: randomUUID(),
+        userId: randomUUID(),
+        services: [{ serviceId: randomUUID(), quantity: 1 }],
+      }),
+    ).rejects.toBe(unavailable);
+
+    expect(mockUow.executeTransaction).not.toHaveBeenCalled();
+  });
+
+  it('should not call the Inventory for a work order without items', async () => {
+    const customer = createMockCustomer();
+    const vehicle = createMockVehicle({ customerId: customer.id });
+
+    (mockRepos.customer.findById as jest.Mock).mockResolvedValue(customer);
+    (mockRepos.vehicle.findById as jest.Mock).mockResolvedValue(vehicle);
+    (mockRepos.workOrder.generateNextNumber as jest.Mock).mockResolvedValue('000001');
+    (mockRepos.workOrder.create as jest.Mock).mockResolvedValue(createMockWorkOrder());
+
+    await useCase.execute({ customerId: customer.id, vehicleId: vehicle.id, userId: randomUUID() });
+
+    expect(inventoryCatalogGateway.findServicesByIds).not.toHaveBeenCalled();
+    expect(inventoryCatalogGateway.findPartsSuppliesByIds).not.toHaveBeenCalled();
   });
 
   it('should NOT create a quote when no items are provided', async () => {
@@ -279,7 +350,7 @@ describe('CreateWorkOrderUseCase', () => {
 
     (mockRepos.customer.findById as jest.Mock).mockResolvedValue(customer);
     (mockRepos.vehicle.findById as jest.Mock).mockResolvedValue(vehicle);
-    (mockRepos.service.findByIds as jest.Mock).mockResolvedValue([]);
+    inventoryCatalogGateway.findServicesByIds.mockResolvedValue([]);
 
     await expect(
       useCase.execute({
@@ -298,12 +369,12 @@ describe('CreateWorkOrderUseCase', () => {
   it('should throw ResourceNotFoundException when inline part supply id is unknown — no write, no number consumed', async () => {
     const customer = createMockCustomer();
     const vehicle = createMockVehicle({ customerId: customer.id });
-    const service = createMockService({ basePrice: 100 });
+    const service = createMockInventoryServiceGatewayResponse({ basePrice: 100 });
 
     (mockRepos.customer.findById as jest.Mock).mockResolvedValue(customer);
     (mockRepos.vehicle.findById as jest.Mock).mockResolvedValue(vehicle);
-    (mockRepos.service.findByIds as jest.Mock).mockResolvedValue([service]);
-    (mockRepos.partSupply.findByIds as jest.Mock).mockResolvedValue([]);
+    inventoryCatalogGateway.findServicesByIds.mockResolvedValue([service]);
+    inventoryCatalogGateway.findPartsSuppliesByIds.mockResolvedValue([]);
 
     await expect(
       useCase.execute({
@@ -323,7 +394,7 @@ describe('CreateWorkOrderUseCase', () => {
   it('should throw BusinessRuleViolationException when only parts are provided (no service) — no write, no number consumed', async () => {
     const customer = createMockCustomer();
     const vehicle = createMockVehicle({ customerId: customer.id });
-    const part = createMockPartSupply();
+    const part = createMockInventoryPartSupplyGatewayResponse();
 
     (mockRepos.customer.findById as jest.Mock).mockResolvedValue(customer);
     (mockRepos.vehicle.findById as jest.Mock).mockResolvedValue(vehicle);
@@ -376,7 +447,7 @@ describe('CreateWorkOrderUseCase', () => {
       }),
     ).rejects.toThrow(BusinessRuleViolationException);
 
-    expect(mockRepos.service.findByIds).not.toHaveBeenCalled();
+    expect(inventoryCatalogGateway.findServicesByIds).not.toHaveBeenCalled();
     expect(mockRepos.workOrder.generateNextNumber).not.toHaveBeenCalled();
     expect(mockRepos.workOrder.create).not.toHaveBeenCalled();
     expect(mockRepos.quote.create).not.toHaveBeenCalled();

@@ -4,7 +4,11 @@ import request from 'supertest';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
-import { InternalServicesStub, startInternalServicesStub } from '../helpers/internal-services-stub';
+import {
+  InternalServicesStub,
+  startInternalServicesStub,
+  stubService,
+} from '../helpers/internal-services-stub';
 import {
   readInternalPartSupplyFixture,
   readInternalServiceFixture,
@@ -184,7 +188,13 @@ describe('Quote (E2E)', () => {
         estimatedTimeMin: 30,
       })
       .expect(201);
-    return res.body.data as { id: string };
+
+    const service = res.body.data as { id: string };
+
+    // The local copy stays while approval still reserves stock in the local catalog.
+    stub.services.set(service.id, { ...readInternalServiceFixture().data, ...service });
+
+    return service;
   }
 
   async function createPartSupply() {
@@ -202,7 +212,15 @@ describe('Quote (E2E)', () => {
         minStock: 5,
       })
       .expect(201);
-    return res.body.data as { id: string };
+
+    const partSupply = res.body.data as { id: string };
+
+    stub.partsSupplies.set(partSupply.id, {
+      ...readInternalPartSupplyFixture().data,
+      ...partSupply,
+    });
+
+    return partSupply;
   }
 
   // ─── POST /api/quotes ────────────────────────────────────────────────────────
@@ -534,6 +552,38 @@ describe('Quote (E2E)', () => {
 
       expect(res.body.data.servicesAmount).toBeGreaterThan(0);
       expect(res.body.data.totalAmount).toBeGreaterThan(0);
+    });
+
+    it('should keep the price read at inclusion after the catalog price changes', async () => {
+      const { workOrderId } = await createWorkOrderInDiagnosis();
+      const service = stubService(stub, { basePrice: 120 });
+
+      const createRes = await request(httpServer)
+        .post('/api/quotes')
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ workOrderId })
+        .expect(201);
+
+      const quoteId = createRes.body.data.id as string;
+
+      await request(httpServer)
+        .post(`/api/quotes/${quoteId}/services`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ serviceId: service.id, quantity: 2 })
+        .expect(200);
+
+      stub.services.set(service.id, { ...service, basePrice: 999 });
+
+      const res = await request(httpServer)
+        .get(`/api/quotes/${quoteId}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .expect(200);
+
+      expect(res.body.data.services).toEqual([
+        expect.objectContaining({ id: service.id, unitPrice: 120, totalPrice: 240 }),
+      ]);
+
+      expect(res.body.data.totalAmount).toBe(240);
     });
 
     it('should return 409 when adding to a non-PENDING quote', async () => {
@@ -1318,6 +1368,12 @@ describe('Quote (E2E)', () => {
         })
         .expect(201);
       const partId = partRes.body.data.id;
+
+      // The local copy stays while approval still reserves stock in the local catalog.
+      stub.partsSupplies.set(partId, {
+        ...readInternalPartSupplyFixture().data,
+        ...partRes.body.data,
+      });
       const service = await createService();
 
       const createRes = await request(httpServer)
@@ -1325,6 +1381,7 @@ describe('Quote (E2E)', () => {
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ workOrderId })
         .expect(201);
+
       const quoteId = createRes.body.data.id;
 
       await request(httpServer)

@@ -5,20 +5,33 @@ import { BusinessRuleViolationException } from '@domain/exceptions/business-rule
 import { IUnitOfWork, IRepositories } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { createMockQuote } from '../../../../helpers/quote-mock.factory';
 import { createMockWorkOrder } from '../../../../helpers/work-order-mock.factory';
-import { createMockService } from '../../../../helpers/service-mock.factory';
-import { createMockPartSupply } from '../../../../helpers/part-supply-mock.factory';
 import { createMockUnitOfWorkWithRepos } from '../../../../helpers/unit-of-work-mock.factory';
+import { IInventoryCatalogGateway } from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.interface';
+import { QuoteItemValidator } from '@application/services/quote-item-validator';
+import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
+import {
+  createMockInventoryCatalogGateway,
+  createMockInventoryPartSupplyGatewayResponse,
+  createMockInventoryServiceGatewayResponse,
+} from '../../../../helpers/inventory-catalog-gateway-mock.factory';
 
 describe('CreateQuoteUseCase', () => {
   let useCase: CreateQuoteUseCase;
   let mockRepos: jest.Mocked<IRepositories>;
   let mockUnitOfWork: jest.Mocked<IUnitOfWork>;
+  let inventoryCatalogGateway: jest.Mocked<IInventoryCatalogGateway>;
 
   beforeEach(() => {
     const { unitOfWork, repos } = createMockUnitOfWorkWithRepos();
     mockRepos = repos;
     mockUnitOfWork = unitOfWork;
-    useCase = new CreateQuoteUseCase(mockUnitOfWork);
+
+    inventoryCatalogGateway = createMockInventoryCatalogGateway();
+
+    useCase = new CreateQuoteUseCase(
+      mockUnitOfWork,
+      new QuoteItemValidator(inventoryCatalogGateway),
+    );
   });
 
   it('should create an empty quote when WO is IN_DIAGNOSIS (no items)', async () => {
@@ -35,11 +48,13 @@ describe('CreateQuoteUseCase', () => {
 
   it('should create a quote with items when services are provided', async () => {
     const workOrder = createMockWorkOrder({ status: WorkOrderStatus.IN_DIAGNOSIS });
-    const service = createMockService({ basePrice: 100 });
+
+    const service = createMockInventoryServiceGatewayResponse({ basePrice: 100 });
+
     const quote = createMockQuote({ workOrderId: workOrder.id });
 
     (mockRepos.workOrder.findById as jest.Mock).mockResolvedValue(workOrder);
-    (mockRepos.service.findByIds as jest.Mock).mockResolvedValue([service]);
+    inventoryCatalogGateway.findServicesByIds.mockResolvedValue([service]);
     (mockRepos.quote.create as jest.Mock).mockResolvedValue(quote);
 
     const result = await useCase.execute({
@@ -48,12 +63,13 @@ describe('CreateQuoteUseCase', () => {
     });
 
     expect(result).toBe(quote);
-    expect(mockRepos.quote.create).toHaveBeenCalledTimes(1);
+    expect((mockRepos.quote.create as jest.Mock).mock.calls[0][0].totalAmount).toBe(100);
   });
 
   it('should reject parts-only payload (no service) with BusinessRuleViolationException', async () => {
     const workOrder = createMockWorkOrder({ status: WorkOrderStatus.IN_DIAGNOSIS });
-    const part = createMockPartSupply();
+
+    const part = createMockInventoryPartSupplyGatewayResponse();
 
     (mockRepos.workOrder.findById as jest.Mock).mockResolvedValue(workOrder);
 
@@ -65,11 +81,11 @@ describe('CreateQuoteUseCase', () => {
     ).rejects.toThrow(BusinessRuleViolationException);
   });
 
-  it('should throw ResourceNotFoundException for unknown service id', async () => {
+  it('should answer 404 when the Inventory does not know the item', async () => {
     const workOrder = createMockWorkOrder({ status: WorkOrderStatus.IN_DIAGNOSIS });
 
     (mockRepos.workOrder.findById as jest.Mock).mockResolvedValue(workOrder);
-    (mockRepos.service.findByIds as jest.Mock).mockResolvedValue([]);
+    inventoryCatalogGateway.findServicesByIds.mockResolvedValue([]);
 
     await expect(
       useCase.execute({
@@ -77,15 +93,32 @@ describe('CreateQuoteUseCase', () => {
         services: [{ serviceId: 'non-existent-id', quantity: 1 }],
       }),
     ).rejects.toThrow(ResourceNotFoundException);
+
+    expect(mockRepos.quote.create).not.toHaveBeenCalled();
+  });
+
+  it('should answer 503 and write nothing when the Inventory is unavailable', async () => {
+    const unavailable = new ServiceIntegrationException('Serviço de destino indisponível');
+
+    inventoryCatalogGateway.findServicesByIds.mockRejectedValue(unavailable);
+
+    await expect(
+      useCase.execute({
+        workOrderId: createMockWorkOrder().id,
+        services: [{ serviceId: 'service-id', quantity: 1 }],
+      }),
+    ).rejects.toBe(unavailable);
+
+    expect(mockUnitOfWork.executeTransaction).not.toHaveBeenCalled();
   });
 
   it('should throw ResourceNotFoundException for unknown part id', async () => {
     const workOrder = createMockWorkOrder({ status: WorkOrderStatus.IN_DIAGNOSIS });
-    const service = createMockService();
+    const service = createMockInventoryServiceGatewayResponse();
 
     (mockRepos.workOrder.findById as jest.Mock).mockResolvedValue(workOrder);
-    (mockRepos.service.findByIds as jest.Mock).mockResolvedValue([service]);
-    (mockRepos.partSupply.findByIds as jest.Mock).mockResolvedValue([]);
+    inventoryCatalogGateway.findServicesByIds.mockResolvedValue([service]);
+    inventoryCatalogGateway.findPartsSuppliesByIds.mockResolvedValue([]);
 
     await expect(
       useCase.execute({
@@ -139,7 +172,7 @@ describe('CreateQuoteUseCase', () => {
       }),
     ).rejects.toThrow(BusinessRuleViolationException);
 
-    expect(mockRepos.service.findByIds).not.toHaveBeenCalled();
+    expect(inventoryCatalogGateway.findServicesByIds).not.toHaveBeenCalled();
     expect(mockRepos.quote.create).not.toHaveBeenCalled();
   });
 });

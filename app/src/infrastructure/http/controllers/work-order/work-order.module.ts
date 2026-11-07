@@ -10,6 +10,7 @@ import { FindWorkOrderStatusHistoryUseCase } from '@application/use-cases/work-o
 import { FindWorkOrderQuotesUseCase } from '@application/use-cases/quote/find-work-order-quotes.use-case';
 import { FindCatalogItemsUseCase } from '@application/use-cases/catalog/find-catalog-items.use-case';
 import { IInventoryCatalogGateway } from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.interface';
+import { QuoteItemValidator } from '@application/services/quote-item-validator';
 
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
@@ -40,7 +41,11 @@ import { WorkOrderController } from './work-order.controller';
         inventoryCatalogGateway: IInventoryCatalogGateway,
       ) =>
         new WorkOrderCleanController(
-          new CreateWorkOrderUseCase(unitOfWork, metrics),
+          new CreateWorkOrderUseCase(
+            unitOfWork,
+            new QuoteItemValidator(inventoryCatalogGateway),
+            metrics,
+          ),
           new FindWorkOrderByIdUseCase(workOrderRepository, userRepository, cache),
           new FindAllWorkOrdersPaginatedUseCase(workOrderRepository),
           new UpdateWorkOrderUseCase(workOrderRepository, userRepository, cache),

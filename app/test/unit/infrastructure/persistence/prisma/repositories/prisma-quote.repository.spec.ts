@@ -74,24 +74,8 @@ describe('PrismaQuoteRepository', () => {
 
       const quote = Quote.create({
         workOrderId,
-        services: [
-          {
-            service: {
-              id: serviceId,
-              basePrice: 100,
-            } as never,
-            quantity: 1,
-          },
-        ],
-        partsSupplies: [
-          {
-            partSupply: {
-              id: partSupplyId,
-              salePrice: 50,
-            } as never,
-            quantity: 2,
-          },
-        ],
+        services: [{ serviceId, unitPrice: 100, quantity: 1 }],
+        partsSupplies: [{ partSupplyId, unitPrice: 50, quantity: 2 }],
       });
 
       const mockRecord = {

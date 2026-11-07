@@ -1,119 +1,87 @@
 import { QuoteItemValidator } from '@application/services/quote-item-validator';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
+import { IInventoryCatalogGateway } from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.interface';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
-import { IServiceRepository } from '@domain/interfaces/repositories/service.repository.interface';
-import { IPartSupplyRepository } from '@domain/interfaces/repositories/part-supply.repository.interface';
+
 import {
-  createMockService,
-  createMockServiceRepository,
-} from '../../../helpers/service-mock.factory';
-import {
-  createMockPartSupply,
-  createMockPartSupplyRepository,
-} from '../../../helpers/part-supply-mock.factory';
+  createMockInventoryCatalogGateway,
+  createMockInventoryPartSupplyGatewayResponse,
+  createMockInventoryServiceGatewayResponse,
+} from '../../../helpers/inventory-catalog-gateway-mock.factory';
 
 describe('QuoteItemValidator', () => {
-  let serviceRepo: jest.Mocked<IServiceRepository>;
-  let partSupplyRepo: jest.Mocked<IPartSupplyRepository>;
   let validator: QuoteItemValidator;
+  let inventoryCatalogGateway: jest.Mocked<IInventoryCatalogGateway>;
 
   beforeEach(() => {
-    serviceRepo = createMockServiceRepository();
-    partSupplyRepo = createMockPartSupplyRepository();
-    validator = new QuoteItemValidator(serviceRepo, partSupplyRepo);
-  });
+    inventoryCatalogGateway = createMockInventoryCatalogGateway();
 
-  describe('resolveServiceItems()', () => {
-    it('should return [] when inputs are empty', async () => {
-      const result = await validator.resolveServiceItems([]);
-
-      expect(result).toEqual([]);
-      expect(serviceRepo.findByIds).not.toHaveBeenCalled();
-    });
-
-    it('should return assembled items for valid service ids', async () => {
-      const service = createMockService({ basePrice: 100 });
-
-      serviceRepo.findByIds.mockResolvedValue([service]);
-
-      const result = await validator.resolveServiceItems([{ serviceId: service.id, quantity: 2 }]);
-
-      expect(result).toHaveLength(1);
-      expect(result[0].service).toBe(service);
-      expect(result[0].quantity).toBe(2);
-    });
-
-    it('should throw ResourceNotFoundException for unknown serviceId', async () => {
-      serviceRepo.findByIds.mockResolvedValue([]);
-
-      await expect(
-        validator.resolveServiceItems([{ serviceId: 'unknown-service-id', quantity: 1 }]),
-      ).rejects.toThrow(ResourceNotFoundException);
-    });
-  });
-
-  describe('resolvePartSupplyItems()', () => {
-    it('should return [] when inputs are empty', async () => {
-      const result = await validator.resolvePartSupplyItems([]);
-
-      expect(result).toEqual([]);
-      expect(partSupplyRepo.findByIds).not.toHaveBeenCalled();
-    });
-
-    it('should return assembled items for valid part supply ids', async () => {
-      const part = createMockPartSupply({ salePrice: 50 });
-
-      partSupplyRepo.findByIds.mockResolvedValue([part]);
-
-      const result = await validator.resolvePartSupplyItems([
-        { partSupplyId: part.id, quantity: 3 },
-      ]);
-
-      expect(result).toHaveLength(1);
-      expect(result[0].partSupply).toBe(part);
-      expect(result[0].quantity).toBe(3);
-    });
-
-    it('should throw ResourceNotFoundException for unknown partSupplyId', async () => {
-      partSupplyRepo.findByIds.mockResolvedValue([]);
-
-      await expect(
-        validator.resolvePartSupplyItems([{ partSupplyId: 'unknown-part-id', quantity: 1 }]),
-      ).rejects.toThrow(ResourceNotFoundException);
-    });
+    validator = new QuoteItemValidator(inventoryCatalogGateway);
   });
 
   describe('validateAndResolve()', () => {
-    it('should validate then return resolved services and parts', async () => {
-      const service = createMockService({ basePrice: 100 });
-      const part = createMockPartSupply({ salePrice: 50 });
+    it('should price services with the base price and parts with the sale price', async () => {
+      const service = createMockInventoryServiceGatewayResponse({ basePrice: 100 });
 
-      serviceRepo.findByIds.mockResolvedValue([service]);
-      partSupplyRepo.findByIds.mockResolvedValue([part]);
+      const partSupply = createMockInventoryPartSupplyGatewayResponse({ salePrice: 50 });
 
-      const result = await validator.validateAndResolve(
-        [{ serviceId: service.id, quantity: 1 }],
-        [{ partSupplyId: part.id, quantity: 2 }],
-      );
-
-      expect(result.services).toHaveLength(1);
-      expect(result.services[0].service).toBe(service);
-      expect(result.partsSupplies).toHaveLength(1);
-      expect(result.partsSupplies[0].partSupply).toBe(part);
-    });
-
-    it('should throw BusinessRuleViolationException for parts without a service before any lookup', async () => {
-      const part = createMockPartSupply();
+      inventoryCatalogGateway.findServicesByIds.mockResolvedValue([service]);
+      inventoryCatalogGateway.findPartsSuppliesByIds.mockResolvedValue([partSupply]);
 
       await expect(
-        validator.validateAndResolve([], [{ partSupplyId: part.id, quantity: 1 }]),
-      ).rejects.toThrow(BusinessRuleViolationException);
-
-      expect(serviceRepo.findByIds).not.toHaveBeenCalled();
-      expect(partSupplyRepo.findByIds).not.toHaveBeenCalled();
+        validator.validateAndResolve(
+          [{ serviceId: service.id, quantity: 1 }],
+          [{ partSupplyId: partSupply.id, quantity: 2 }],
+        ),
+      ).resolves.toEqual({
+        services: [{ serviceId: service.id, unitPrice: 100, quantity: 1 }],
+        partsSupplies: [{ partSupplyId: partSupply.id, unitPrice: 50, quantity: 2 }],
+      });
     });
 
-    it('should throw BusinessRuleViolationException for duplicate service ids before any lookup', async () => {
+    it('should not read the inventory when there are no items', async () => {
+      await expect(validator.validateAndResolve([], [])).resolves.toEqual({
+        services: [],
+        partsSupplies: [],
+      });
+
+      expect(inventoryCatalogGateway.findServicesByIds).not.toHaveBeenCalled();
+      expect(inventoryCatalogGateway.findPartsSuppliesByIds).not.toHaveBeenCalled();
+    });
+
+    it('should throw not found for a service absent from the inventory', async () => {
+      inventoryCatalogGateway.findServicesByIds.mockResolvedValue([]);
+
+      await expect(
+        validator.validateAndResolve([{ serviceId: 'unknown-service-id', quantity: 1 }], []),
+      ).rejects.toThrow(new ResourceNotFoundException('Serviço', 'unknown-service-id'));
+    });
+
+    it('should throw not found for a part supply absent from the inventory', async () => {
+      const service = createMockInventoryServiceGatewayResponse();
+
+      inventoryCatalogGateway.findServicesByIds.mockResolvedValue([service]);
+      inventoryCatalogGateway.findPartsSuppliesByIds.mockResolvedValue([]);
+
+      await expect(
+        validator.validateAndResolve(
+          [{ serviceId: service.id, quantity: 1 }],
+          [{ partSupplyId: 'unknown-part-id', quantity: 1 }],
+        ),
+      ).rejects.toThrow(new ResourceNotFoundException('Peça/Insumo', 'unknown-part-id'));
+    });
+
+    it('should reject parts without a service before any lookup', async () => {
+      await expect(
+        validator.validateAndResolve([], [{ partSupplyId: 'part-id', quantity: 1 }]),
+      ).rejects.toThrow(BusinessRuleViolationException);
+
+      expect(inventoryCatalogGateway.findServicesByIds).not.toHaveBeenCalled();
+
+      expect(inventoryCatalogGateway.findPartsSuppliesByIds).not.toHaveBeenCalled();
+    });
+
+    it('should reject duplicate service ids before any lookup', async () => {
       await expect(
         validator.validateAndResolve(
           [
@@ -124,7 +92,7 @@ describe('QuoteItemValidator', () => {
         ),
       ).rejects.toThrow(BusinessRuleViolationException);
 
-      expect(serviceRepo.findByIds).not.toHaveBeenCalled();
+      expect(inventoryCatalogGateway.findServicesByIds).not.toHaveBeenCalled();
     });
   });
 });
