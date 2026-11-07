@@ -32,6 +32,7 @@ import { InternalModule } from './infrastructure/http/controllers/internal/inter
 import { MessagingModule } from './infrastructure/messaging/messaging.module';
 import { CacheModule } from './infrastructure/cache/cache.module';
 import { ClientsModule } from './infrastructure/clients/clients.module';
+import { GatewaysModule } from './infrastructure/gateways/gateways.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { ClientsModule } from './infrastructure/clients/clients.module';
     MessagingModule,
     CacheModule,
     ClientsModule,
+    GatewaysModule,
     HealthModule,
     AuthModule,
     UserModule,

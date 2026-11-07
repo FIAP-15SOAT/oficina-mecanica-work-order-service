@@ -1,0 +1,21 @@
+{
+  "$source": "oficina-mecanica-inventory-service app/test/contracts/internal-part-supply.json",
+  "$description": "GET /internal/parts-supplies/:id responde 200 com este corpo; o e2e internal.e2e-spec.ts confere a resposta real contra ele.",
+  "data": {
+    "id": "7c2d8e3f-9b5e-4d74-8f2c-4e3b7a9d0c12",
+    "name": "Filtro de Óleo Interno",
+    "description": "Filtro para motor 1.0",
+    "sku": "FO-INT-001",
+    "partNumber": "MANN-W712",
+    "category": "PART",
+    "unit": "UN",
+    "costPrice": 25,
+    "salePrice": 45,
+    "stock": 10,
+    "minStock": 2,
+    "reservedStock": 3,
+    "expiresAt": null,
+    "createdAt": "2026-10-25T10:00:00.000-03:00",
+    "updatedAt": "2026-10-25T10:00:00.000-03:00"
+  }
+}

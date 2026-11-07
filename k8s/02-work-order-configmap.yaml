@@ -28,6 +28,7 @@ data:
   # SNS does not resolve an ARN by name: the CD renders it with the account from `aws sts get-caller-identity`.
   MESSAGING_TOPIC_ARN: "${MESSAGING_TOPIC_ARN}"
   CACHE_TTL_SECONDS: "43200"
+  INVENTORY_SERVICE_URL: "http://inventory-service.inventory.svc.cluster.local:3000"
   OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT}"
   OTEL_LOGS_EXPORTER: "none"
   OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE: "delta"

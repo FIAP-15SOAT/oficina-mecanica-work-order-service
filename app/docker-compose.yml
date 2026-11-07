@@ -70,7 +70,11 @@ services:
       MESSAGING_TOPIC_ARN: arn:aws:sns:us-east-1:000000000000:oficina-events.fifo
       CACHE_URL: redis://:valkey@valkey:6379
       CACHE_TTL_SECONDS: 43200
+      INVENTORY_SERVICE_URL: http://host.docker.internal:3003
       TZ: America/Sao_Paulo
+    # The other services run in their own compose stacks, published on the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health/ready"]
       interval: 5s
