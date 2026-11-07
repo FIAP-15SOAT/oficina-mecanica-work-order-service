@@ -59,8 +59,8 @@ describe('PrismaQuoteRepository', () => {
             partsSupplies: { create: [] },
           }),
           include: expect.objectContaining({
-            services: { include: { service: true } },
-            partsSupplies: { include: { partSupply: true } },
+            services: true,
+            partsSupplies: true,
             workOrder: expect.any(Object),
           }),
         }),
@@ -116,15 +116,6 @@ describe('PrismaQuoteRepository', () => {
             totalPrice: new Prisma.Decimal(100),
             createdAt: new Date(),
             updatedAt: new Date(),
-            service: {
-              id: serviceId,
-              name: 'Test',
-              basePrice: new Prisma.Decimal(100),
-              estimatedTimeMin: 30,
-              description: null,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            },
           },
         ],
         partsSupplies: [
@@ -136,7 +127,6 @@ describe('PrismaQuoteRepository', () => {
             totalPrice: new Prisma.Decimal(100),
             createdAt: new Date(),
             updatedAt: new Date(),
-            partSupply: null,
           },
         ],
         workOrder: null,
@@ -158,8 +148,8 @@ describe('PrismaQuoteRepository', () => {
             partsSupplies: { create: expect.any(Array) },
           }),
           include: expect.objectContaining({
-            services: { include: { service: true } },
-            partsSupplies: { include: { partSupply: true } },
+            services: true,
+            partsSupplies: true,
           }),
         }),
       );
@@ -215,8 +205,8 @@ describe('PrismaQuoteRepository', () => {
         expect.objectContaining({
           where: { id },
           include: expect.objectContaining({
-            services: { include: { service: true } },
-            partsSupplies: { include: { partSupply: true } },
+            services: true,
+            partsSupplies: true,
             workOrder: expect.objectContaining({ include: expect.any(Object) }),
           }),
         }),

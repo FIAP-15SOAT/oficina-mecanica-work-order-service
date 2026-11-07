@@ -63,8 +63,8 @@ export class PrismaQuoteRepository implements IQuoteRepository {
         },
       },
       include: {
-        services: { include: { service: true } },
-        partsSupplies: { include: { partSupply: true } },
+        services: true,
+        partsSupplies: true,
         workOrder: { include: QUOTE_WORK_ORDER_INCLUDE },
       },
     });
@@ -81,8 +81,8 @@ export class PrismaQuoteRepository implements IQuoteRepository {
     const record = await this.prisma.quote.findUnique({
       where: { id },
       include: {
-        services: { include: { service: true } },
-        partsSupplies: { include: { partSupply: true } },
+        services: true,
+        partsSupplies: true,
         workOrder: { include: QUOTE_WORK_ORDER_INCLUDE },
       },
     });

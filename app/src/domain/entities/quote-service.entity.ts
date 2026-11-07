@@ -1,7 +1,6 @@
 import { validate as isUuid } from 'uuid';
 import { DomainValidationException } from '../exceptions/domain-validation.exception';
 import { LineItemPrice } from '../value-objects/line-item-price.vo';
-import { Service } from './service.entity';
 
 export interface CreateQuoteServiceProps {
   quoteId: string;
@@ -34,8 +33,6 @@ export class QuoteService {
   private _lineItem: LineItemPrice;
   readonly createdAt: Date;
   updatedAt: Date;
-
-  service?: Service;
 
   private constructor(props: QuoteServiceProps) {
     this.quoteId = props.quoteId;

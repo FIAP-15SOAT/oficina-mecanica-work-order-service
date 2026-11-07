@@ -38,6 +38,7 @@ describe('PrismaUnitOfWork', () => {
       expect(repos).toHaveProperty('customer');
       expect(repos).toHaveProperty('stockMovement');
       expect(repos).toHaveProperty('outbox');
+      expect(repos).toHaveProperty('sagaInstance');
     });
 
     it('should propagate errors from the work function', async () => {

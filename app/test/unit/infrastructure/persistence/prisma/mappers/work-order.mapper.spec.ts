@@ -6,8 +6,6 @@ import { WorkOrderMapper } from '@infrastructure/persistence/prisma/mappers/work
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { WorkOrderServiceStatus } from '@domain/enums/work-order-service-status.enum';
 import { CustomerType } from '@domain/enums/customer-type.enum';
-import { PartSupplyCategory } from '@domain/enums/part-supply-category.enum';
-import { Unit } from '@domain/enums/unit.enum';
 import { UserRole } from '@domain/enums/user-role.enum';
 
 describe('WorkOrderMapper', () => {
@@ -165,15 +163,6 @@ describe('WorkOrderMapper', () => {
             finishedAt: null,
             createdAt: now,
             updatedAt: now,
-            service: {
-              id: serviceId,
-              name: 'Alinhamento',
-              description: null,
-              basePrice: new Prisma.Decimal(150),
-              estimatedTimeMin: 60,
-              createdAt: now,
-              updatedAt: now,
-            },
           },
         ],
         partSupplies: [
@@ -185,24 +174,6 @@ describe('WorkOrderMapper', () => {
             totalPrice: new Prisma.Decimal(60),
             createdAt: now,
             updatedAt: now,
-            partSupply: {
-              id: partSupplyId,
-              name: 'Parafuso',
-              description: null,
-              sku: 'PAR-001',
-              partNumber: null,
-              category: PartSupplyCategory.PART,
-              unit: Unit.UN,
-              costPrice: new Prisma.Decimal(10),
-              salePrice: new Prisma.Decimal(30),
-              stock: 100,
-              minStock: 10,
-              reservedStock: 2,
-              version: 0,
-              expiresAt: null,
-              createdAt: now,
-              updatedAt: now,
-            },
           },
         ],
       };
@@ -216,9 +187,9 @@ describe('WorkOrderMapper', () => {
       expect(domainEntity.assignedUser).toBeDefined();
       expect(domainEntity.assignedUser!.id).toBe(userId);
       expect(domainEntity.services).toHaveLength(1);
-      expect(domainEntity.services[0].service!.id).toBe(serviceId);
+      expect(domainEntity.services[0].serviceId).toBe(serviceId);
       expect(domainEntity.partSupplies).toHaveLength(1);
-      expect(domainEntity.partSupplies[0].partSupply!.id).toBe(partSupplyId);
+      expect(domainEntity.partSupplies[0].partSupplyId).toBe(partSupplyId);
     });
   });
 });

@@ -3,7 +3,6 @@ import { WorkOrderServiceStatus } from '../enums/work-order-service-status.enum'
 import { DomainValidationException } from '../exceptions/domain-validation.exception';
 import { BusinessRuleViolationException } from '../exceptions/business-rule-violation.exception';
 import { LineItemPrice } from '../value-objects/line-item-price.vo';
-import { Service } from './service.entity';
 
 export interface CreateWorkOrderServiceProps {
   workOrderId: string;
@@ -45,8 +44,6 @@ export class WorkOrderService {
   finishedAt: Date | null;
   readonly createdAt: Date;
   updatedAt: Date;
-
-  service?: Service;
 
   private constructor(props: WorkOrderServiceProps) {
     this.workOrderId = props.workOrderId;

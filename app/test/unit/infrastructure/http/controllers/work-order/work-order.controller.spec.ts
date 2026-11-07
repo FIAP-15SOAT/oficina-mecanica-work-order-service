@@ -23,7 +23,6 @@ import { createMockCustomer } from '../../../../../helpers/customer-mock.factory
 import { createMockVehicle } from '../../../../../helpers/vehicle-mock.factory';
 import { createMockWorkOrder } from '../../../../../helpers/work-order-mock.factory';
 import { createMockWorkOrderService } from '../../../../../helpers/work-order-service-mock.factory';
-import { createMockService } from '../../../../../helpers/service-mock.factory';
 import { createMockQuote } from '../../../../../helpers/quote-mock.factory';
 
 describe('WorkOrderController', () => {
@@ -157,9 +156,7 @@ describe('WorkOrderController', () => {
   describe('updateServiceStatus', () => {
     it('should delegate to the clean controller with the current user id', async () => {
       const workOrderId = randomUUID();
-      const service = createMockService();
-      const workOrderService = createMockWorkOrderService({ workOrderId, serviceId: service.id });
-      workOrderService.service = service;
+      const workOrderService = createMockWorkOrderService({ workOrderId });
 
       const serviceStatusRequestStub: UpdateWorkOrderServiceStatusRequestDto = {
         status: WorkOrderServiceStatus.COMPLETED,

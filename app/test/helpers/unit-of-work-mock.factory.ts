@@ -9,6 +9,7 @@ import { createMockStockReservationRepository } from './stock-reservation-mock.f
 import { createMockQuoteRepository } from './quote-mock.factory';
 import { createMockPartSupplyRepository } from './part-supply-mock.factory';
 import { createMockOutboxRepository } from './outbox-mock.factory';
+import { createMockSagaInstanceRepository } from './saga-instance-mock.factory';
 
 export function createMockRepositories(): jest.Mocked<IRepositories> {
   return {
@@ -77,6 +78,7 @@ export function createMockRepositories(): jest.Mocked<IRepositories> {
       delete: jest.fn(),
     },
     outbox: createMockOutboxRepository(),
+    sagaInstance: createMockSagaInstanceRepository(),
   };
 }
 

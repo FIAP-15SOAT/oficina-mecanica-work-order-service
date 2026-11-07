@@ -32,8 +32,8 @@ const WORK_ORDER_DETAIL_INCLUDE = {
   customer: true,
   vehicle: true,
   assignedUser: true,
-  services: { include: { service: true } },
-  partSupplies: { include: { partSupply: true } },
+  services: true,
+  partSupplies: true,
 } as const;
 
 @Injectable()

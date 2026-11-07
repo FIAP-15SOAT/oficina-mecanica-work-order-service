@@ -5,8 +5,6 @@ import type {
   User as PrismaUser,
   WorkOrderService as PrismaWorkOrderService,
   WorkOrderPartSupply as PrismaWorkOrderPartSupply,
-  Service as PrismaService,
-  PartSupply as PrismaPartSupply,
 } from '@generated/client';
 import { WorkOrder } from '@domain/entities/work-order.entity';
 import { WorkOrderNumber } from '@domain/value-objects/work-order-number.vo';
@@ -21,8 +19,8 @@ type PrismaWorkOrderRecord = PrismaWorkOrder & {
   customer?: PrismaCustomer | null;
   vehicle?: PrismaVehicle | null;
   assignedUser?: PrismaUser | null;
-  services?: (PrismaWorkOrderService & { service: PrismaService })[];
-  partSupplies?: (PrismaWorkOrderPartSupply & { partSupply: PrismaPartSupply })[];
+  services?: PrismaWorkOrderService[];
+  partSupplies?: PrismaWorkOrderPartSupply[];
 };
 
 export class WorkOrderMapper {

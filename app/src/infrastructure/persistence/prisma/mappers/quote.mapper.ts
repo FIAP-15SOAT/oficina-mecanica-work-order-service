@@ -2,8 +2,6 @@ import type {
   Quote as PrismaQuote,
   QuoteService as PrismaQuoteService,
   QuotePartSupply as PrismaQuotePartSupply,
-  Service as PrismaService,
-  PartSupply as PrismaPartSupply,
   WorkOrder as PrismaWorkOrder,
   Customer as PrismaCustomer,
   Vehicle as PrismaVehicle,
@@ -15,12 +13,6 @@ import { QuoteServiceMapper } from './quote-service.mapper';
 import { QuotePartSupplyMapper } from './quote-part-supply.mapper';
 import { WorkOrderMapper } from './work-order.mapper';
 
-type PrismaQuoteServiceWithRelation = PrismaQuoteService & { service?: PrismaService | null };
-
-type PrismaQuotePartSupplyWithRelation = PrismaQuotePartSupply & {
-  partSupply?: PrismaPartSupply | null;
-};
-
 type PrismaWorkOrderForQuote = PrismaWorkOrder & {
   customer?: PrismaCustomer | null;
   vehicle?: PrismaVehicle | null;
@@ -28,8 +20,8 @@ type PrismaWorkOrderForQuote = PrismaWorkOrder & {
 };
 
 export type PrismaQuoteWithItems = PrismaQuote & {
-  services?: PrismaQuoteServiceWithRelation[];
-  partsSupplies?: PrismaQuotePartSupplyWithRelation[];
+  services?: PrismaQuoteService[];
+  partsSupplies?: PrismaQuotePartSupply[];
   workOrder?: PrismaWorkOrderForQuote | null;
 };
 
@@ -60,11 +52,11 @@ export class QuoteMapper {
     return quote;
   }
 
-  private static mapServicesToDomain(services: PrismaQuoteServiceWithRelation[]) {
+  private static mapServicesToDomain(services: PrismaQuoteService[]) {
     return services.map((s) => QuoteServiceMapper.toDomain(s));
   }
 
-  private static mapPartsToDomain(parts: PrismaQuotePartSupplyWithRelation[]) {
+  private static mapPartsToDomain(parts: PrismaQuotePartSupply[]) {
     return parts.map((p) => QuotePartSupplyMapper.toDomain(p));
   }
 }
