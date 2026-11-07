@@ -2,15 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { Prisma, Service as PrismaServiceModel } from '@generated/client';
 import { ResourceConflictException } from '@application/exceptions/resource-conflict.exception';
 import { Service } from '@domain/entities/service.entity';
-import { WorkOrderServiceStatus } from '@domain/enums/work-order-service-status.enum';
 import {
   IServiceRepository,
   ServiceFilters,
-  ServiceMetrics,
 } from '@domain/interfaces/repositories/service.repository.interface';
 import { PrismaService } from '../prisma.service';
 import { ServiceMapper } from '@infrastructure/persistence/prisma/mappers/service.mapper';
-import { DatabaseOperationException } from '@infrastructure/exceptions/database-operation.exception';
 import {
   PaginatedRepositoryResult,
   PaginationInput,
@@ -114,95 +111,5 @@ export class PrismaServiceRepository implements IServiceRepository {
     ]);
 
     return workOrderUsage || quoteUsage;
-  }
-
-  async findServiceMetrics(serviceId: string): Promise<ServiceMetrics> {
-    const rows = await this.prisma.$queryRaw<
-      {
-        service_id: string;
-        service_name: string;
-        execution_count: bigint;
-        avg_minutes: number | null;
-      }[]
-    >`
-      SELECT
-        s.id AS service_id,
-        s.name AS service_name,
-        COUNT(wos.service_id) AS execution_count,
-        AVG(
-          EXTRACT(EPOCH FROM (wos.finished_at - wos.started_at)) / 60.0
-        ) AS avg_minutes
-      FROM services s
-      LEFT JOIN work_order_services wos
-        ON wos.service_id = s.id
-        AND wos.status = ${WorkOrderServiceStatus.COMPLETED}::"WorkOrderServiceStatus"
-        AND wos.started_at IS NOT NULL
-        AND wos.finished_at IS NOT NULL
-      WHERE s.id = ${serviceId}
-      GROUP BY s.id, s.name
-    `;
-
-    if (rows.length === 0) {
-      throw new DatabaseOperationException(`Métricas não encontradas para o serviço: ${serviceId}`);
-    }
-
-    const row = rows[0];
-
-    return {
-      serviceId,
-      serviceName: row.service_name,
-      executionCount: Number(row.execution_count),
-      averageTimeMinutes:
-        row?.avg_minutes == null ? null : Number.parseFloat(Number(row.avg_minutes).toFixed(2)),
-    };
-  }
-
-  async findAllServicesMetrics(
-    input: PaginationInput,
-  ): Promise<PaginatedRepositoryResult<ServiceMetrics>> {
-    const { page, limit } = input;
-
-    const [rows, total] = await Promise.all([
-      this.prisma.$queryRaw<
-        {
-          service_id: string;
-          service_name: string;
-          execution_count: bigint;
-          avg_minutes: number | null;
-        }[]
-      >`
-        SELECT
-          s.id AS service_id,
-          s.name AS service_name,
-          COUNT(wos.service_id) AS execution_count,
-          AVG(
-            CASE WHEN wos.started_at IS NOT NULL AND wos.finished_at IS NOT NULL
-              THEN EXTRACT(EPOCH FROM (wos.finished_at - wos.started_at)) / 60.0
-              ELSE NULL
-            END
-          ) AS avg_minutes
-        FROM services s
-        LEFT JOIN work_order_services wos
-          ON wos.service_id = s.id AND wos.status = ${WorkOrderServiceStatus.COMPLETED}::"WorkOrderServiceStatus"
-          AND wos.started_at IS NOT NULL
-          AND wos.finished_at IS NOT NULL
-        GROUP BY s.id, s.name
-        ORDER BY s.name ASC
-        LIMIT ${limit} OFFSET ${(page - 1) * limit}
-      `,
-
-      this.prisma.service.count(),
-    ]);
-
-    return {
-      items: rows.map((row) => ({
-        serviceId: row.service_id,
-        serviceName: row.service_name,
-        executionCount: Number(row.execution_count),
-        averageTimeMinutes:
-          row.avg_minutes == null ? null : Number.parseFloat(Number(row.avg_minutes).toFixed(2)),
-      })),
-      total,
-    };
   }
 }

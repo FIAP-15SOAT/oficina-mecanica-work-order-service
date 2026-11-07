@@ -10,14 +10,14 @@ export class ServiceMetricsResponseDto implements ServiceMetricsResponse {
   @ApiProperty({ example: '550e8400-e29b-41d4-a716-446655440000', format: 'uuid' })
   serviceId!: string;
 
-  @ApiProperty({ example: 'Troca de óleo' })
-  serviceName!: string;
+  @ApiProperty({ example: 'Troca de óleo', nullable: true })
+  serviceName!: string | null;
 
   @ApiProperty({ example: 10 })
   executionCount!: number;
 
-  @ApiProperty({ example: 45, nullable: true })
-  averageTimeMinutes!: number | null;
+  @ApiProperty({ example: 45 })
+  averageTimeMinutes!: number;
 }
 
 export class ServiceMetricsDataResponseDto implements ServiceMetricsDataResponse {

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { ServiceMetrics } from '@domain/interfaces/repositories/service.repository.interface';
+import { ServiceMetrics } from '@application/ports/input/service/dto/find-service-metrics.dto';
 import { ServiceMetricsPresenter } from '@interface-adapters/service/service-metrics.presenter';
 
 describe('ServiceMetricsPresenter', () => {
@@ -16,14 +16,6 @@ describe('ServiceMetricsPresenter', () => {
       const response = ServiceMetricsPresenter.toResponse(metricsStub);
 
       expect(response).toEqual(metricsStub);
-    });
-
-    it('should preserve a null average time', () => {
-      const metrics: ServiceMetrics = { ...metricsStub, averageTimeMinutes: null };
-
-      const response = ServiceMetricsPresenter.toResponse(metrics);
-
-      expect(response.averageTimeMinutes).toBeNull();
     });
   });
 

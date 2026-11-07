@@ -1,4 +1,4 @@
-import { ServiceMetrics } from '@domain/interfaces/repositories/service.repository.interface';
+import { ServiceMetrics } from '@application/ports/input/service/dto/find-service-metrics.dto';
 import { PaginatedResult, PaginationInput } from '@domain/interfaces/common/pagination.interface';
 
 export interface IFindAllServicesMetricsUseCase {

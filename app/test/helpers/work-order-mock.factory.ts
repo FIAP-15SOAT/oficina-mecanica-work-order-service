@@ -51,6 +51,8 @@ export function createMockWorkOrderRepository(): jest.Mocked<IWorkOrderRepositor
     addServiceItems: jest.fn(),
     updateServiceItemStatus: jest.fn(),
     addPartSupplyItems: jest.fn(),
+    findServiceExecutionMetrics: jest.fn(),
+    findAllServiceExecutionMetrics: jest.fn(),
     findByCustomerId: jest.fn().mockResolvedValue([]),
     findByVehicleId: jest.fn().mockResolvedValue([]),
   };

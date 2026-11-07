@@ -1,21 +1,30 @@
+import { randomUUID } from 'node:crypto';
 import type { Server } from 'http';
 import request from 'supertest';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
+import {
+  InternalServicesStub,
+  startInternalServicesStub,
+  stubService,
+} from '../helpers/internal-services-stub';
 
 describe('Service (E2E)', () => {
   let ctx: TestContext;
+  let stub: InternalServicesStub;
   let httpServer: Server;
   let adminAuth: AuthTokens;
 
   beforeAll(async () => {
-    ctx = await setupTestApp();
+    stub = await startInternalServicesStub();
+    ctx = await setupTestApp({ internalServicesUrl: stub.url });
     httpServer = ctx.httpServer;
   });
 
   afterAll(async () => {
     await teardownTestApp(ctx);
+    await stub.close();
   });
 
   beforeEach(async () => {
@@ -388,141 +397,21 @@ describe('Service (E2E)', () => {
     });
   });
 
-  // ─── GET /api/services/metrics ───────────────────────────────────────────
+  // ─── Service metrics ─────────────────────────────────────────────────────
 
   describe('Service Metrics', () => {
-    it('should return metrics for all services', async () => {
-      await request(httpServer)
-        .post('/api/services')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send(validService)
-        .expect(201);
-
-      const res = await request(httpServer)
-        .get('/api/services-metrics')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`);
-
-      expect(res.status).toBe(200);
-
-      expect(res.body.data).toBeInstanceOf(Array);
-      expect(res.body.data.length).toBeGreaterThanOrEqual(1);
-
-      for (const item of res.body.data) {
-        expect(
-          item.averageTimeMinutes === null || typeof item.averageTimeMinutes === 'number',
-        ).toBe(true);
-
-        if (item.averageTimeMinutes !== null) {
-          const decimalPart = item.averageTimeMinutes.toString().split('.')[1] ?? '';
-          expect(decimalPart.length).toBeLessThanOrEqual(2);
-        }
-      }
-    });
-
-    it('should return metrics list with averageTimeMinutes filled when there are completed executions', async () => {
-      const createRes = await request(httpServer)
-        .post('/api/services')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ name: 'Balanceamento', basePrice: 70, estimatedTimeMin: 45 })
-        .expect(201);
-      const serviceId = createRes.body.data.id;
-
+    async function createWorkOrderWithServiceItems(
+      items: { serviceId: string; status: 'COMPLETED' | 'IN_PROGRESS'; minutes: number }[],
+    ): Promise<void> {
       const customer = await ctx.prisma.customer.create({
         data: {
-          name: 'Métricas Lista',
-          document: '12345678909',
-          type: 'INDIVIDUAL',
-          email: `metrics-list${Date.now()}@test.com`,
-          phone: '11999999999',
-          address: {
-            create: {
-              street: 'Rua Teste',
-              city: 'São Paulo',
-              state: 'SP',
-              zipCode: '01234-567',
-            },
-          },
-        },
-      });
-
-      const vehicle = await ctx.prisma.vehicle.create({
-        data: {
-          customerId: customer.id,
-          plate: 'MET-LST1',
-          brand: 'Test',
-          model: 'Test',
-          year: 2020,
-        },
-      });
-
-      const workOrder = await ctx.prisma.workOrder.create({
-        data: {
-          customerId: customer.id,
-          vehicleId: vehicle.id,
-          number: '910001',
-          status: 'COMPLETED',
-        },
-      });
-
-      await ctx.prisma.workOrderService.create({
-        data: {
-          workOrderId: workOrder.id,
-          serviceId,
-          quantity: 1,
-          unitPrice: 70,
-          totalPrice: 70,
-          status: 'COMPLETED',
-          startedAt: new Date(Date.now() - 30 * 60 * 1000), // 30 minutes ago
-          finishedAt: new Date(),
-        },
-      });
-
-      const res = await request(httpServer)
-        .get('/api/services-metrics')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      const metric = res.body.data.find((m: { serviceId: string }) => m.serviceId === serviceId);
-      expect(metric).toBeDefined();
-      expect(typeof metric.averageTimeMinutes).toBe('number');
-      expect(metric.averageTimeMinutes).toBeCloseTo(30, 0);
-      expect(metric.executionCount).toBeGreaterThanOrEqual(1);
-    });
-
-    it('should use default pagination (page=1, limit=10) for metrics when not provided', async () => {
-      const res = await request(httpServer)
-        .get('/api/services-metrics')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      expect(res.body.pagination).toBeDefined();
-      expect(res.body.pagination.page).toBe(1);
-      expect(res.body.pagination.limit).toBe(10);
-    });
-
-    it('should return metrics for a specific service', async () => {
-      const createRes = await request(httpServer)
-        .post('/api/services')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ name: 'Troca de Pneu', basePrice: 50, estimatedTimeMin: 30 })
-        .expect(201);
-      const serviceId = createRes.body.data.id;
-
-      // Create a customer and vehicle for the work order
-      const customer = await ctx.prisma.customer.create({
-        data: {
-          name: 'Métricas',
+          name: 'Cliente Métricas',
           document: '12345678909',
           type: 'INDIVIDUAL',
           email: 'metrics@test.com',
           phone: '11999999999',
           address: {
-            create: {
-              street: 'Rua Teste',
-              city: 'São Paulo',
-              state: 'SP',
-              zipCode: '01234-567',
-            },
+            create: { street: 'Rua Teste', city: 'São Paulo', state: 'SP', zipCode: '01234-567' },
           },
         },
       });
@@ -541,102 +430,166 @@ describe('Service (E2E)', () => {
         data: {
           customerId: customer.id,
           vehicleId: vehicle.id,
-          number: '910002',
-          status: 'COMPLETED',
+          number: '910001',
+          status: 'IN_PROGRESS',
         },
       });
 
-      // Manually create a completed service in DB to have metrics
-      await ctx.prisma.workOrderService.create({
-        data: {
+      const finishedAt = new Date();
+
+      await ctx.prisma.workOrderService.createMany({
+        data: items.map(({ serviceId, status, minutes }) => ({
           workOrderId: workOrder.id,
           serviceId,
           quantity: 1,
-          unitPrice: 50,
-          totalPrice: 50,
-          status: 'COMPLETED',
-          startedAt: new Date(Date.now() - 3600000), // 1 hour ago
-          finishedAt: new Date(),
-        },
+          unitPrice: 100,
+          totalPrice: 100,
+          status,
+          startedAt: new Date(finishedAt.getTime() - minutes * 60_000),
+          finishedAt: status === 'COMPLETED' ? finishedAt : null,
+        })),
       });
+    }
 
-      const res = await request(httpServer)
-        .get(`/api/services/${serviceId}/metrics`)
+    it('should list only executed services, sorted by name and paged', async () => {
+      const balancing = stubService(stub, { name: 'Balanceamento' });
+      const alignment = stubService(stub, { name: 'Alinhamento' });
+      const tireChange = stubService(stub, { name: 'Troca de pneu' });
+
+      stubService(stub, { name: 'Polimento' });
+
+      await createWorkOrderWithServiceItems([
+        { serviceId: balancing.id, status: 'COMPLETED', minutes: 30 },
+        { serviceId: alignment.id, status: 'COMPLETED', minutes: 60 },
+        { serviceId: tireChange.id, status: 'IN_PROGRESS', minutes: 10 },
+      ]);
+
+      const firstPage = await request(httpServer)
+        .get('/api/services-metrics')
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .expect(200);
+      const secondPage = await request(httpServer)
+        .get('/api/services-metrics?page=2&limit=1')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .expect(200);
 
-      expect(res.body.data.executionCount).toBeGreaterThanOrEqual(1);
-      expect(typeof res.body.data.averageTimeMinutes).toBe('number');
-      expect(res.body.data.averageTimeMinutes).toBeCloseTo(60, 0);
-      const decimalStr = res.body.data.averageTimeMinutes.toString();
-      const decimalPart = decimalStr.includes('.') ? decimalStr.split('.')[1] : '';
-      expect(decimalPart.length).toBeLessThanOrEqual(2);
+      expect(firstPage.body).toEqual({
+        data: [
+          {
+            serviceId: alignment.id,
+            serviceName: 'Alinhamento',
+            executionCount: 1,
+            averageTimeMinutes: 60,
+          },
+          {
+            serviceId: balancing.id,
+            serviceName: 'Balanceamento',
+            executionCount: 1,
+            averageTimeMinutes: 30,
+          },
+        ],
+        pagination: { totalRecords: 2, totalPages: 1, page: 1, limit: 10 },
+      });
+
+      expect(secondPage.body).toEqual({
+        data: [
+          {
+            serviceId: balancing.id,
+            serviceName: 'Balanceamento',
+            executionCount: 1,
+            averageTimeMinutes: 30,
+          },
+        ],
+        pagination: { totalRecords: 2, totalPages: 2, page: 2, limit: 1 },
+      });
     });
 
-    it('should return zero executions for a service without completed executions', async () => {
-      const createRes = await request(httpServer)
-        .post('/api/services')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ name: 'Alinhamento', basePrice: 80, estimatedTimeMin: 40 })
-        .expect(201);
+    it('should list a service the Inventory no longer has last, with a null name', async () => {
+      const alignment = stubService(stub, { name: 'Alinhamento' });
+      const removedServiceId = randomUUID();
 
-      const serviceId = createRes.body.data.id;
-
-      const customer = await ctx.prisma.customer.create({
-        data: {
-          name: 'Métricas Vazias',
-          document: '52998224725',
-          type: 'INDIVIDUAL',
-          email: 'metrics-empty@test.com',
-          phone: '11999999999',
-          address: {
-            create: { street: 'Rua Teste', city: 'São Paulo', state: 'SP', zipCode: '01234-567' },
-          },
-        },
-      });
-
-      const vehicle = await ctx.prisma.vehicle.create({
-        data: {
-          customerId: customer.id,
-          plate: 'MET-0002',
-          brand: 'Test',
-          model: 'Test',
-          year: 2020,
-        },
-      });
-
-      const workOrder = await ctx.prisma.workOrder.create({
-        data: {
-          customerId: customer.id,
-          vehicleId: vehicle.id,
-          number: '910003',
-          status: 'IN_PROGRESS',
-        },
-      });
-
-      // An execution still in progress must not count.
-      await ctx.prisma.workOrderService.create({
-        data: {
-          workOrderId: workOrder.id,
-          serviceId,
-          quantity: 1,
-          unitPrice: 80,
-          totalPrice: 80,
-          status: 'IN_PROGRESS',
-          startedAt: new Date(),
-        },
-      });
+      await createWorkOrderWithServiceItems([
+        { serviceId: removedServiceId, status: 'COMPLETED', minutes: 20 },
+        { serviceId: alignment.id, status: 'COMPLETED', minutes: 60 },
+      ]);
 
       const res = await request(httpServer)
-        .get(`/api/services/${serviceId}/metrics`)
+        .get('/api/services-metrics')
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .expect(200);
+
+      expect(res.body.data).toEqual([
+        {
+          serviceId: alignment.id,
+          serviceName: 'Alinhamento',
+          executionCount: 1,
+          averageTimeMinutes: 60,
+        },
+        {
+          serviceId: removedServiceId,
+          serviceName: null,
+          executionCount: 1,
+          averageTimeMinutes: 20,
+        },
+      ]);
+    });
+
+    it('should return the executions of a known service with its Inventory name', async () => {
+      const alignment = stubService(stub, { name: 'Alinhamento' });
+
+      await createWorkOrderWithServiceItems([
+        { serviceId: alignment.id, status: 'COMPLETED', minutes: 45 },
+      ]);
+
+      const res = await request(httpServer)
+        .get(`/api/services/${alignment.id}/metrics`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .expect(200);
 
       expect(res.body.data).toEqual({
-        serviceId,
+        serviceId: alignment.id,
+        serviceName: 'Alinhamento',
+        executionCount: 1,
+        averageTimeMinutes: 45,
+      });
+    });
+
+    it('should return zero executions for a known service without completed executions', async () => {
+      const alignment = stubService(stub, { name: 'Alinhamento' });
+
+      await createWorkOrderWithServiceItems([
+        { serviceId: alignment.id, status: 'IN_PROGRESS', minutes: 10 },
+      ]);
+
+      const res = await request(httpServer)
+        .get(`/api/services/${alignment.id}/metrics`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .expect(200);
+
+      expect(res.body.data).toEqual({
+        serviceId: alignment.id,
         serviceName: 'Alinhamento',
         executionCount: 0,
-        averageTimeMinutes: null,
+        averageTimeMinutes: 0,
+      });
+    });
+
+    it('should answer 404 when the Inventory does not know the service', async () => {
+      await request(httpServer)
+        .get(`/api/services/${randomUUID()}/metrics`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .expect(404);
+    });
+
+    it('should use default pagination (page=1, limit=10) for metrics when not provided', async () => {
+      const res = await request(httpServer)
+        .get('/api/services-metrics')
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .expect(200);
+
+      expect(res.body).toEqual({
+        data: [],
+        pagination: { totalRecords: 0, totalPages: 0, page: 1, limit: 10 },
       });
     });
 
@@ -652,16 +605,9 @@ describe('Service (E2E)', () => {
       );
 
       await request(httpServer)
-        .get('/api/services/metrics')
+        .get('/api/services-metrics')
         .set('Authorization', `Bearer ${mechanicAuth.accessToken}`)
         .expect(403);
-    });
-
-    it('should return 404 for metrics of non-existent service', async () => {
-      await request(httpServer)
-        .get('/api/services/00000000-0000-0000-0000-000000000000/metrics')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(404);
     });
   });
 

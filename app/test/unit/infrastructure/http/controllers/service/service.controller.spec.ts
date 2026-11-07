@@ -9,7 +9,7 @@ import { ServiceMetricsPresenter } from '@interface-adapters/service/service-met
 import { CreateServiceRequestDto } from '@infrastructure/http/controllers/service/dto/requests/create-service-request.dto';
 import { FindAllServicesQueryDto } from '@infrastructure/http/controllers/service/dto/requests/filter-services.dto';
 
-import { ServiceMetrics } from '@domain/interfaces/repositories/service.repository.interface';
+import { ServiceMetrics } from '@application/ports/input/service/dto/find-service-metrics.dto';
 
 import { createMockService } from '../../../../../helpers/service-mock.factory';
 

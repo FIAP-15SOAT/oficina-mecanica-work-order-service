@@ -1,6 +1,6 @@
 export interface ServiceMetrics {
   serviceId: string;
-  serviceName: string;
+  serviceName: string | null;
   executionCount: number;
-  averageTimeMinutes: number | null;
+  averageTimeMinutes: number;
 }

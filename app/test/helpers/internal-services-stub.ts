@@ -66,7 +66,7 @@ export async function startInternalServicesStub(): Promise<InternalServicesStub>
 
 export function stubService(
   stub: InternalServicesStub,
-  overrides: { basePrice?: number } = {},
+  overrides: { basePrice?: number; name?: string } = {},
 ): { id: string; name: string; basePrice: number } {
   const service = { ...readInternalServiceFixture().data, id: randomUUID(), ...overrides };
 

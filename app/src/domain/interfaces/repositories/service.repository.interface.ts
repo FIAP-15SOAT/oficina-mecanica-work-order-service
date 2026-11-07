@@ -5,13 +5,6 @@ export interface ServiceFilters {
   name?: string;
 }
 
-export interface ServiceMetrics {
-  serviceId: string;
-  serviceName: string;
-  executionCount: number;
-  averageTimeMinutes: number | null;
-}
-
 export interface IServiceRepository {
   create(service: Service): Promise<Service>;
   findById(id: string): Promise<Service | null>;
@@ -24,8 +17,4 @@ export interface IServiceRepository {
   update(service: Service): Promise<Service>;
   delete(id: string): Promise<void>;
   isServiceInUse(serviceId: string): Promise<boolean>;
-  findServiceMetrics(serviceId: string): Promise<ServiceMetrics>;
-  findAllServicesMetrics(
-    input: PaginationInput,
-  ): Promise<PaginatedRepositoryResult<ServiceMetrics>>;
 }

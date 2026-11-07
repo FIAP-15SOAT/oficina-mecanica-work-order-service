@@ -15,6 +15,12 @@ export interface WorkOrderFilters {
   statusNotIn?: WorkOrderStatus[];
 }
 
+export interface ServiceExecutionMetrics {
+  serviceId: string;
+  executionCount: number;
+  averageTimeMinutes: number | null;
+}
+
 export interface IWorkOrderRepository {
   create(workOrder: WorkOrder): Promise<WorkOrder>;
   findById(id: string): Promise<WorkOrder | null>;
@@ -31,4 +37,6 @@ export interface IWorkOrderRepository {
   addServiceItems(items: WorkOrderService[]): Promise<void>;
   updateServiceItemStatus(workOrder: WorkOrder, item: WorkOrderService): Promise<void>;
   addPartSupplyItems(items: WorkOrderPartSupply[]): Promise<void>;
+  findServiceExecutionMetrics(serviceId: string): Promise<ServiceExecutionMetrics>;
+  findAllServiceExecutionMetrics(): Promise<ServiceExecutionMetrics[]>;
 }

@@ -15,7 +15,7 @@ import { ServiceMetricsPresenter } from '@interface-adapters/service/service-met
 
 import { CreateServiceRequest } from '@interface-adapters/service/requests/create-service-request';
 import { UpdateServiceRequest } from '@interface-adapters/service/requests/update-service-request';
-import { ServiceMetrics } from '@domain/interfaces/repositories/service.repository.interface';
+import { ServiceMetrics } from '@application/ports/input/service/dto/find-service-metrics.dto';
 
 import { createMockService } from '../../../helpers/service-mock.factory';
 
