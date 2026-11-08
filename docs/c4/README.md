@@ -33,6 +33,7 @@ Convenções seguidas em todos os diagramas, para leitura consistente entre os n
 - **Pessoas com silhueta.** Os atores usam a silhueta oficial de pessoa (círculo + corpo), como nos exemplos de [c4model.com/diagrams/system-context](https://c4model.com/diagrams/system-context) e [.../container](https://c4model.com/diagrams/container).
 - **Ícone de componente.** No diagrama de Componente, cada componente leva o ícone UML clássico (dois retângulos), igual à legenda de [c4model.com/diagrams/component](https://c4model.com/diagrams/component), na mesma paleta azul dos demais elementos.
 - **Tecnologia só ao cruzar fronteira.** O rótulo de tecnologia/protocolo (HTTP, JWT, SQL, SMTP…) aparece nas setas apenas a partir do nível de Container. No Contexto as setas trazem só a ação; no Componente, a tecnologia surge quando a relação cruza a fronteira da API, como no acesso do cliente, no Banco de Dados e no Servidor SMTP.
+- **Imagem com o fonte.** As imagens são geradas pelo PlantUML com a biblioteca [C4-PlantUML](https://github.com/plantuml-stdlib/C4-PlantUML) v2.14.0, e o fonte de cada diagrama fica embutido no próprio PNG.
 
 ## Nível 1 — Contexto do Sistema
 
@@ -55,33 +56,34 @@ As caixas de pessoa descrevem **quem** cada ator é (não o que faz — a ação
 
 Um zoom para dentro da fronteira do sistema: os blocos executáveis/implantáveis e como se comunicam.
 
-<p align="center"><img src="images/c4-container.png" alt="Diagrama de Container C4: o API Gateway encaminha a autenticação externa à Lambda Customer Auth e o tráfego da API ao EKS; a API REST persiste no Amazon RDS, lê e invalida o detalhe da OS no ElastiCache, publica e consome mensagens no SNS e SQS FIFO, envia e-mails ao Servidor SMTP e emite telemetria ao Datadog Agent, que a encaminha ao Datadog" width="100%"></p>
+<p align="center"><img src="images/c4-container.png" alt="Diagrama de Container C4: o API Gateway encaminha a autenticação externa à Lambda Customer Auth, as rotas de catálogo e estoque ao Inventory e o restante da API à API REST, no EKS; a API REST persiste no Amazon RDS, lê e invalida o detalhe da OS no ElastiCache, valida itens e lê o catálogo no Inventory, publica e consome mensagens no SNS e SQS FIFO, envia e-mails ao Servidor SMTP e emite telemetria ao Datadog Agent, que a encaminha ao Datadog; o Inventory consome os comandos de estoque e publica as respostas no SNS e SQS FIFO" width="100%"></p>
 
-Dentro do **Sistema da Oficina Mecânica** estão os sete blocos implantáveis ou gerenciados que participam do fluxo atual: **API Gateway**, **API REST**, **Customer Auth**, **Banco de Dados**, **Cache**, **Mensageria** e **Coleta de Telemetria**. O **Servidor SMTP** e o **Datadog** são sistemas externos. É neste nível que aparecem **tecnologia e protocolo** nas setas, como recomendado. O relay do outbox e o consumidor da fila rodam dentro do processo da API, sem worker separado; o Job de migração do Kubernetes reutiliza a mesma imagem da API e por isso não é modelado como container à parte.
+Dentro do **Sistema da Oficina Mecânica** estão os sete blocos implantáveis ou gerenciados que participam do fluxo atual: **API Gateway**, **API REST**, **Customer Auth**, **Banco de Dados**, **Cache**, **Mensageria** e **Coleta de Telemetria**. O **Inventory**, o **Servidor SMTP** e o **Datadog** são sistemas externos. O Inventory é outro serviço da solução, com banco e cache próprios, dono do catálogo de serviços e peças e do estoque; a API REST depende dele para validar itens e ler os dados de exibição deles, e para reservar o estoque na aprovação de orçamento. É neste nível que aparecem **tecnologia e protocolo** nas setas, como recomendado. O relay do outbox e o consumidor da fila rodam dentro do processo da API, sem worker separado; o Job de migração do Kubernetes reutiliza a mesma imagem da API e por isso não é modelado como container à parte.
 
 | Container | Tecnologia | Responsabilidade |
 |---|---|---|
-| **API Gateway** | AWS HTTP API | Entrada pública; encaminha `/customer-auth/login` à Lambda e `/api/{proxy+}` ao NLB interno pelo VPC Link |
+| **API Gateway** | AWS HTTP API | Entrada pública; encaminha `/customer-auth/login` à Lambda, `/api/services`, `/api/parts-supplies` e `/api/stock` ao Inventory e o restante de `/api/{proxy+}` à API REST, pelo VPC Link e pelo NLB interno |
 | **API REST** | NestJS 12 · Node.js 24 · TypeScript no EKS | Expõe `/api`, concentra a lógica de negócio em Clean Architecture e envia notificações |
 | **Customer Auth** | AWS Lambda · Node.js 24 | Valida CPF, senha e status e emite `customer-jwt` RS256 |
-| **Banco de Dados** | PostgreSQL 18 (Amazon RDS) | Armazena todas as entidades de negócio (clientes, veículos, ordens de serviço, peças/insumos, orçamentos, estoque, usuários) e o outbox das mensagens; serviço **gerenciado, fora do cluster**, alcançado pela rede a partir das subnets privadas |
+| **Banco de Dados** | PostgreSQL 18 (Amazon RDS) | Armazena as entidades de negócio da API (clientes, veículos, ordens de serviço, orçamentos, usuários), o estado das Sagas e o outbox das mensagens; serviço **gerenciado, fora do cluster**, alcançado pela rede a partir das subnets privadas |
 | **Cache** | Valkey 9.1 (Amazon ElastiCache) | Guarda o detalhe das ordens de serviço (cache-aside, TTL de 12 h); serviço gerenciado, fora do cluster, com TLS e senha |
-| **Mensageria** | Amazon SNS + SQS FIFO | Tópico `oficina-events.fifo` e fila `work-order.fifo` com DLQ, para as mensagens entre os serviços da oficina |
+| **Mensageria** | Amazon SNS + SQS FIFO | Tópico `oficina-events.fifo` e filas `work-order.fifo` e `inventory.fifo`, cada uma com a sua DLQ (fila de mensagens que falharam), para as mensagens entre os serviços da oficina |
 | **Coleta de Telemetria** | Datadog Agent no EKS | Coleta `stdout`, kubelet e OTLP da API e envia a telemetria ao Datadog |
+| **Inventory** | Serviço externo · NestJS 12 no EKS | Dono do catálogo de serviços e peças e do estoque, com a reserva por OS; atende a API REST pelas rotas `/internal` e os comandos de estoque pela fila `inventory.fifo` |
 | **Servidor SMTP** | MailHog (externo) | Recebe e entrega os e-mails de orçamento (sink SMTP de desenvolvimento) |
 | **Datadog** | Serviço externo | Apresenta dashboards, alertas, logs, métricas e traces |
 
-Os protocolos nas setas: os atores entram por **HTTPS** no API Gateway; a autenticação de cliente usa integração **AWS_PROXY** com a Lambda; a API segue por **VPC Link → NLB interno → NodePort**; API e Lambda acessam o RDS por **SQL/TLS**; a API acessa o ElastiCache por **RESP sobre TLS** e o SNS e o SQS por **HTTPS** (AWS SDK); a API notifica por **SMTP** e emite telemetria por `stdout` e **OTLP**. A estratégia Passport externa (`customer-jwt`, RS256) permanece separada da usada pelos funcionários (`jwt`, RS256 com outra chave, emissor e audiência).
+Os protocolos nas setas: os atores entram por **HTTPS** no API Gateway; a autenticação de cliente usa integração **AWS_PROXY** com a Lambda; a API segue por **VPC Link → NLB interno → NodePort**; API e Lambda acessam o RDS por **SQL/TLS**; a API acessa o ElastiCache por **RESP sobre TLS**, o Inventory por **HTTP/JSON** nas rotas `/internal` e o SNS e o SQS por **HTTPS** (AWS SDK), como o Inventory; a API notifica por **SMTP** e emite telemetria por `stdout` e **OTLP**. A estratégia Passport externa (`customer-jwt`, RS256) permanece separada da usada pelos funcionários (`jwt`, RS256 com outra chave, emissor e audiência).
 
 ## Nível 3 — Componente da API REST
 
 O zoom mais interno: as peças que compõem o container **API REST**.
 
-<p align="center"><img src="images/c4-component.png" alt="Diagrama de Componente C4 da API REST: onze módulos de negócio (Auth, Usuários, Clientes, Veículos, Serviços, Peças/Insumos, Ordens de Serviço, Orçamentos, Estoque, Minha Conta e Rotas Internas) e cinco componentes transversais (Guards/Segurança, Repositories, Cache, Mensageria e Cliente Interno); Ordens de Serviço e Orçamentos se relacionam nos dois sentidos e invalidam o Cache, os Orçamentos criam reservas no Estoque e enviam e-mail pelo Servidor SMTP, o Cliente da Oficina passa por Guards/Segurança até Minha Conta, os Serviços da Oficina leem a OS pelas Rotas Internas, e Repositories, Cache e Mensageria usam o PostgreSQL, o ElastiCache e o SNS/SQS FIFO" width="100%"></p>
+<p align="center"><img src="images/c4-component.png" alt="Diagrama de Componente C4 da API REST: nove módulos de negócio (Minha Conta, Auth, Usuários, Clientes, Veículos, Serviços, Ordens de Serviço, Orçamentos e Rotas Internas) e cinco componentes transversais (Guards/Segurança, Repositories, Cache, Mensageria e Gateways); Ordens de Serviço e Orçamentos se relacionam nos dois sentidos, invalidam o Cache e validam itens e leem os dados de exibição pelos Gateways, que chamam as rotas /internal do Inventory; Serviços lê o catálogo pelos Gateways; a Mensageria entrega aos Orçamentos as respostas da reserva de estoque; os Orçamentos enviam e-mail pelo Servidor SMTP; o Cliente da Oficina passa por Guards/Segurança até Minha Conta; o Billing lê a OS e o Inventory consulta o uso de item em orçamento pelas Rotas Internas; Repositories, Cache e Mensageria usam o PostgreSQL, o ElastiCache e o SNS/SQS FIFO" width="100%"></p>
 
-São **onze módulos de negócio** e **cinco componentes transversais**, com as dependências reais entre módulos levantadas no código. Destaques do fluxo: **Ordens de Serviço ↔ Orçamentos** se relacionam nos dois sentidos (a OS cria e lista orçamentos; o orçamento lê e atualiza o status da OS); os **Orçamentos** criam reservas no **Estoque** ao aprovar e disparam e-mail pelo **Servidor SMTP**; o **Cliente da Oficina** apresenta o `customer-jwt` ao componente **Guards/Segurança**, que o vincula ao módulo **Minha Conta**; os **Serviços da Oficina** leem a OS pelas **Rotas Internas**; e **Ordens de Serviço** e **Orçamentos** leem e invalidam o detalhe da OS no **Cache**.
+São **nove módulos de negócio** e **cinco componentes transversais**, com as dependências reais entre módulos levantadas no código. Destaques do fluxo: **Ordens de Serviço ↔ Orçamentos** se relacionam nos dois sentidos (a OS cria e lista orçamentos; o orçamento lê e atualiza o status da OS); os dois validam os itens e leem os dados de exibição deles no **Inventory**, o serviço dono do catálogo e do estoque, pelos **Gateways**; a aprovação de um orçamento com peças é a Saga de aprovação, em que o comando de reserva sai pelo outbox e a **Mensageria** entrega aos **Orçamentos** as respostas do Inventory (ver [Arquitetura](../architecture.md#aprovação-de-orçamento-com-reserva-de-estoque)); os **Orçamentos** disparam e-mail pelo **Servidor SMTP**; o **Cliente da Oficina** apresenta o `customer-jwt` ao componente **Guards / Segurança**, que o vincula ao módulo **Minha Conta**; o **Billing** lê a OS e o **Inventory** consulta o uso de item em orçamento pelas **Rotas Internas**; e **Ordens de Serviço** e **Orçamentos** leem e invalidam o detalhe da OS no **Cache**.
 
-As dependências de quase todos os módulos em relação a **Guards / Segurança** e **Repositories**, e as de **Clientes** e **Veículos** em relação ao **Cache**, estão descritas no texto desses componentes, e **não desenhadas como setas** — isso evita cerca de 18 setas repetidas que poluiriam o diagrama sem agregar informação. Como no exemplo oficial (Figura 3 do material da aula), as setas entre componentes do mesmo container não levam rótulo de tecnologia; a tecnologia aparece somente nas relações que cruzam a fronteira da API, como cliente, Banco de Dados, Cache Distribuído, Mensageria AWS, Servidor SMTP e Serviços da Oficina.
+As dependências de quase todos os módulos em relação a **Guards / Segurança** e **Repositories**, e as de **Clientes** e **Veículos** em relação ao **Cache**, estão descritas no texto desses componentes, e **não desenhadas como setas** — isso evita cerca de 18 setas repetidas que poluiriam o diagrama sem agregar informação. Como no exemplo oficial (Figura 3 do material da aula), as setas entre componentes do mesmo container não levam rótulo de tecnologia; a tecnologia aparece somente nas relações que cruzam a fronteira da API, como cliente, Banco de Dados, Cache Distribuído, Mensageria AWS, Servidor SMTP, Billing e Inventory.
 
 **Módulos de negócio**
 
@@ -91,13 +93,11 @@ As dependências de quase todos os módulos em relação a **Guards / Segurança
 | **Usuários** | NestJS Module | CRUD de usuários e mecânicos (perfis ADMIN, MECHANIC, ATTENDANT) |
 | **Clientes** | NestJS Module | CRUD de clientes (pessoa física/jurídica) |
 | **Veículos** | NestJS Module | CRUD de veículos e listagem de veículos por cliente |
-| **Serviços** | NestJS Module | CRUD de tipos de serviço e métricas |
-| **Peças/Insumos** | NestJS Module | CRUD de peças/insumos e ajuste manual de estoque |
-| **Ordens de Serviço** | NestJS Module | Criação e gestão de ordens de serviço, status e histórico |
-| **Orçamentos** | NestJS Module | Itens de orçamento, submissão e notificação por e-mail (decisão via Minha Conta) |
-| **Estoque** | NestJS Module | Consulta de movimentações e reservas de estoque (somente leitura) |
+| **Serviços** | NestJS Module | Métricas por serviço sobre os itens executados (`GET /services/:id/metrics`); o catálogo de serviços é do Inventory |
+| **Ordens de Serviço** | NestJS Module | Criação e gestão de ordens de serviço, status, histórico e execução dos itens; ao iniciar a execução de uma OS com peças, pede ao Inventory a baixa da reserva |
+| **Orçamentos** | NestJS Module | Itens de orçamento, submissão e notificação por e-mail (decisão via Minha Conta) e a Saga de aprovação com reserva de estoque no Inventory |
 | **Minha Conta** | NestJS Module | Rotas autenticadas do usuário externo: identidade, senha, ordens e orçamentos vinculados, decisão de orçamento |
-| **Rotas Internas** | NestJS Module | Rotas `/internal` para os outros serviços, sem token e fora do prefixo `/api`; delegam ao Clean Controller existente (`GET /internal/work-orders/:id`) |
+| **Rotas Internas** | NestJS Module | Rotas `/internal` para os outros serviços, sem token e fora do prefixo `/api`; delegam ao Clean Controller existente (`GET /internal/work-orders/:id`, lido pelo Billing, e o uso de serviço ou peça em orçamento, consultado pelo Inventory) |
 
 **Componentes transversais**
 
@@ -106,8 +106,8 @@ As dependências de quase todos os módulos em relação a **Guards / Segurança
 | **Guards / Segurança** | NestJS Guards | `AuthenticationGuard` global que nega por padrão (token de funcionário, salvo `@Public()` ou `@CustomerArea()`), `RolesGuard` (RBAC interno) e as estratégias separadas `jwt` (RS256, funcionário) e `customer-jwt` (RS256) |
 | **Repositories** | Prisma | Acesso a dados centralizado e global; todos os módulos de negócio persistem através dele, com o outbox gravado no mesmo Unit of Work |
 | **Cache** | NestJS Module · ioredis | Cache-aside do detalhe da OS no Valkey; invalidado depois do commit pelas escritas em OS, orçamentos, clientes e veículos |
-| **Mensageria** | NestJS Module · AWS SDK | Relay do outbox para o SNS FIFO e consumidor da fila SQS FIFO, com o span `CONSUMER` |
-| **Cliente Interno** | @nestjs/axios | Chamadas REST a outros serviços, com prazo, `x-request-id` e `traceparent` |
+| **Mensageria** | NestJS Module · AWS SDK | Relay do outbox para o SNS FIFO e consumidor da fila SQS `work-order.fifo`, com o span `CONSUMER` e os handlers das respostas da reserva de estoque (`inventory.stock.reserved` e `inventory.stock.reservation_failed`) |
+| **Gateways** | @nestjs/axios | `HttpInventoryCatalogGateway` sobre o `InternalHttpClient`: lê serviços e peças nas rotas `/internal` do Inventory, com prazo de 2 s, `x-request-id` e `traceparent` |
 
 ## Documentação relacionada
 

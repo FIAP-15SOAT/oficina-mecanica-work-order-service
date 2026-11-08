@@ -337,7 +337,7 @@ A solução é composta por **sete repositórios especializados**, com responsab
 |---|---|
 | 🏛️ [Arquitetura](docs/architecture.md) | Clean Architecture, DDD, ciclos de vida, UoW, Saga de aprovação com reserva de estoque, mensageria com outbox, cache, chamadas internas, exceções |
 | 🗃️ [Banco de Dados](docs/database.md) | Diagrama ER, tabelas e relacionamentos, enums, convenções de modelagem |
-| 🔀 [Diagramas de Sequência](docs/sequence-diagrams.md) | Login interno, abertura de OS e autenticação externa por CPF |
+| 🔀 [Diagramas de Sequência](docs/sequence-diagrams.md) | Login interno, abertura de OS, autenticação externa por CPF e aprovação de orçamento com reserva de estoque |
 | 🔌 [Referência da API](docs/api.md) | Endpoints por domínio, perfis (RBAC), rotas /internal, formato de resposta |
 | 💻 [Como executar localmente](docs/local-setup.md) | Setup local, MailHog, Valkey, LocalStack, variáveis de ambiente, seed |
 | 🆔 [Ids canônicos do seed](docs/seed-ids.md) | UUIDs fixos de usuários, clientes, veículos, serviços e peças, compartilhados entre os serviços |

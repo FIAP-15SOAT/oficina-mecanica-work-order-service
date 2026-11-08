@@ -397,6 +397,8 @@ Uma resposta que encontra a Saga inexistente ou fora de `RESERVING_STOCK` (mensa
 
 **Baixa do estoque.** O Inventory guarda a reserva por OS. Quando o primeiro serviço de uma OS com peças é iniciado e a OS vai a `IN_PROGRESS`, a mesma transação grava no outbox o comando `inventory.stock.consume`, com o id da OS no envelope e payload vazio; o Inventory dá a baixa da reserva daquela OS.
 
+Diagrama de sequência da aprovação, da reserva, da conclusão e da compensação: ver [`docs/sequence-diagrams.md`](sequence-diagrams.md#aprovação-de-orçamento-com-reserva-de-estoque).
+
 ## Aprovação de orçamento pelo Cliente da Oficina autenticado
 
 O fluxo atual exige autenticação do Cliente da Oficina por CPF e senha e mantém a decisão em um `POST` autenticado (ver [ADR 0004](./adr/0004-autenticacao-de-clientes.md)):
