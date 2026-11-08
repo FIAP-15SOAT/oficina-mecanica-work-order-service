@@ -14,7 +14,6 @@ import {
   IQuoteRepository,
   QuoteFilters,
 } from '@domain/interfaces/repositories/quote.repository.interface';
-import { QuoteStatus } from '@domain/enums/quote-status.enum';
 import {
   PaginatedRepositoryResult,
   PaginationInput,
@@ -139,6 +138,8 @@ export class PrismaQuoteRepository implements IQuoteRepository {
           sentAt: quote.sentAt,
           approvedAt: quote.approvedAt,
           rejectedAt: quote.rejectedAt,
+          replacedByQuoteId: quote.replacedByQuoteId,
+          decidedBy: quote.decidedBy,
           updatedAt: quote.updatedAt,
           version: { increment: 1 },
         },
@@ -158,18 +159,6 @@ export class PrismaQuoteRepository implements IQuoteRepository {
       }
       throw error;
     }
-  }
-
-  async rejectPendingByWorkOrderId(workOrderId: string): Promise<void> {
-    const now = new Date();
-
-    await this.prisma.quote.updateMany({
-      where: {
-        workOrderId,
-        status: { in: [QuoteStatus.PENDING, QuoteStatus.SENT] },
-      },
-      data: { status: QuoteStatus.REJECTED, rejectedAt: now, updatedAt: now },
-    });
   }
 
   async addServiceItem(item: QuoteService): Promise<void> {

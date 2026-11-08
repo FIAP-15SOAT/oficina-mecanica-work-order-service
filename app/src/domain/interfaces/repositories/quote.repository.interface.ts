@@ -19,7 +19,6 @@ export interface IQuoteRepository {
     filters: QuoteFilters,
   ): Promise<PaginatedRepositoryResult<Quote>>;
   update(quote: Quote): Promise<Quote>;
-  rejectPendingByWorkOrderId(workOrderId: string): Promise<void>;
 
   addServiceItem(item: QuoteService): Promise<void>;
   removeServiceItem(quoteId: string, serviceId: string): Promise<void>;

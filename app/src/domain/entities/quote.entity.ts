@@ -41,6 +41,8 @@ interface QuoteProps {
   sentAt: Date | null;
   approvedAt: Date | null;
   rejectedAt: Date | null;
+  replacedByQuoteId: string | null;
+  decidedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
   services?: QuoteService[];
@@ -59,6 +61,8 @@ export class Quote {
   sentAt: Date | null;
   approvedAt: Date | null;
   rejectedAt: Date | null;
+  private _replacedByQuoteId: string | null;
+  private _decidedBy: string | null;
   readonly createdAt: Date;
   updatedAt: Date;
 
@@ -78,6 +82,8 @@ export class Quote {
     this.sentAt = props.sentAt;
     this.approvedAt = props.approvedAt;
     this.rejectedAt = props.rejectedAt;
+    this._replacedByQuoteId = props.replacedByQuoteId;
+    this._decidedBy = props.decidedBy;
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;
     this._services = props.services ?? [];
@@ -112,6 +118,8 @@ export class Quote {
       sentAt: null,
       approvedAt: null,
       rejectedAt: null,
+      replacedByQuoteId: null,
+      decidedBy: null,
       createdAt: now,
       updatedAt: now,
     });
@@ -242,13 +250,14 @@ export class Quote {
     this.recalculateTotals();
   }
 
-  approve(): void {
+  approve(decidedBy: string | null): void {
     this.ensureCanApprove();
 
     const now = new Date();
 
     this._status = QuoteStatus.APPROVED;
     this.approvedAt = now;
+    this._decidedBy = decidedBy;
     this.updatedAt = now;
   }
 
@@ -257,6 +266,21 @@ export class Quote {
 
     const now = new Date();
 
+    this._status = QuoteStatus.REJECTED;
+    this.rejectedAt = now;
+    this.updatedAt = now;
+  }
+
+  rejectByApprovalOf(approvedQuoteId: string): void {
+    if (this.status !== QuoteStatus.PENDING && this.status !== QuoteStatus.SENT) {
+      throw new BusinessRuleViolationException(
+        `Orçamento só pode ser rejeitado pela aprovação de outro se estiver no status PENDING ou SENT. Status atual: "${this.status}"`,
+      );
+    }
+
+    const now = new Date();
+
+    this._replacedByQuoteId = approvedQuoteId;
     this._status = QuoteStatus.REJECTED;
     this.rejectedAt = now;
     this.updatedAt = now;
@@ -385,6 +409,14 @@ export class Quote {
 
   get status(): QuoteStatus {
     return this._status;
+  }
+
+  get replacedByQuoteId(): string | null {
+    return this._replacedByQuoteId;
+  }
+
+  get decidedBy(): string | null {
+    return this._decidedBy;
   }
 
   get services(): QuoteService[] {

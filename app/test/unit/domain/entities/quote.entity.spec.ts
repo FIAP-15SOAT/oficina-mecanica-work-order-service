@@ -32,6 +32,8 @@ function makeQuote(
     sentAt: null,
     approvedAt: null,
     rejectedAt: null,
+    replacedByQuoteId: null,
+    decidedBy: null,
     createdAt: now,
     updatedAt: now,
     services: opts?.services,
@@ -209,16 +211,49 @@ describe('Quote Entity', () => {
   describe('approve()', () => {
     it('should throw when status is not SENT', () => {
       const quote = makeQuote(QuoteStatus.PENDING);
-      expect(() => quote.approve()).toThrow(BusinessRuleViolationException);
+      expect(() => quote.approve(null)).toThrow(BusinessRuleViolationException);
     });
 
-    it('should set status to APPROVED and set approvedAt', () => {
+    it('should keep the decision author on approval', () => {
+      const decidedBy = randomUUID();
       const quote = makeQuote(QuoteStatus.SENT);
-      quote.approve();
+
+      quote.approve(decidedBy);
 
       expect(quote.status).toBe(QuoteStatus.APPROVED);
       expect(quote.approvedAt).toBeInstanceOf(Date);
+      expect(quote.decidedBy).toBe(decidedBy);
     });
+  });
+
+  describe('rejectByApprovalOf()', () => {
+    it.each([QuoteStatus.PENDING, QuoteStatus.SENT])(
+      'should reject a %s quote replaced by an approved one',
+      (status) => {
+        const approvedQuoteId = randomUUID();
+        const quote = makeQuote(status);
+
+        quote.rejectByApprovalOf(approvedQuoteId);
+
+        expect(quote.status).toBe(QuoteStatus.REJECTED);
+        expect(quote.replacedByQuoteId).toBe(approvedQuoteId);
+        expect(quote.rejectedAt).toBeInstanceOf(Date);
+        expect(quote.decidedBy).toBeNull();
+      },
+    );
+
+    it.each([QuoteStatus.APPROVED, QuoteStatus.REJECTED])(
+      'should refuse to reject a quote in %s as replaced',
+      (status) => {
+        const quote = makeQuote(status);
+
+        expect(() => quote.rejectByApprovalOf(randomUUID())).toThrow(
+          new BusinessRuleViolationException(
+            `Orçamento só pode ser rejeitado pela aprovação de outro se estiver no status PENDING ou SENT. Status atual: "${status}"`,
+          ),
+        );
+      },
+    );
   });
 
   describe('reject()', () => {

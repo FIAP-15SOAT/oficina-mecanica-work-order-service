@@ -74,17 +74,6 @@ export const BUSINESS_EVENTS = {
     message: 'quote rejected by customer decision',
     level: 'info',
   }),
-  STOCK_RESERVED: defineLogEvent<{
-    quoteId: string;
-    workOrderId: string;
-    workOrderNumber: string;
-    reservedItemCount: number;
-    reservedQuantity: number;
-  }>({
-    name: 'stock.reserved',
-    message: 'stock reserved for the approved work order',
-    level: 'info',
-  }),
   STOCK_CONSUMED: defineLogEvent<{
     workOrderId: string;
     workOrderNumber: string;

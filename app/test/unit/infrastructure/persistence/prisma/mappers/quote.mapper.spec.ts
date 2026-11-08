@@ -43,6 +43,33 @@ describe('QuoteMapper', () => {
       expect(domainEntity.updatedAt).toBe(prismaRecord.updatedAt);
     });
 
+    it('should map the replacing quote id and the decision author', () => {
+      const now = new Date();
+      const replacedByQuoteId = randomUUID();
+      const decidedBy = randomUUID();
+
+      const domainEntity = QuoteMapper.toDomain({
+        id: randomUUID(),
+        workOrderId: randomUUID(),
+        servicesAmount: new Prisma.Decimal(100),
+        partsAmount: new Prisma.Decimal(0),
+        totalAmount: new Prisma.Decimal(100),
+        status: QuoteStatus.REJECTED,
+        notes: null,
+        sentAt: now,
+        approvedAt: null,
+        rejectedAt: now,
+        replacedByQuoteId,
+        decidedBy,
+        version: 2,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      expect(domainEntity.replacedByQuoteId).toBe(replacedByQuoteId);
+      expect(domainEntity.decidedBy).toBe(decidedBy);
+    });
+
     it('should map a Prisma record with services and parts to a domain entity', () => {
       const now = new Date();
       const quoteId = randomUUID();

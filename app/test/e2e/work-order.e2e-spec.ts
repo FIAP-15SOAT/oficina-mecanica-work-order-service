@@ -124,35 +124,52 @@ describe('WorkOrder (E2E)', () => {
       .expect(201);
     const service = res.body.data as { id: string };
 
-    // The local copy stays while approval still reserves stock in the local catalog.
     stub.services.set(service.id, { ...readInternalServiceFixture().data, ...service });
 
     return service;
   }
 
-  async function createPartSupply() {
-    const res = await request(httpServer)
-      .post('/api/parts-supplies')
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-      .send({
-        name: `Filtro de Óleo ${Date.now()}`,
-        sku: `FILT-OL-${Date.now()}`,
-        category: 'PART',
-        unit: 'UN',
-        costPrice: 25,
-        salePrice: 45,
-        stock: 50,
-        minStock: 5,
-      })
-      .expect(201);
-    const partSupply = res.body.data as { id: string };
+  function createPartSupply() {
+    return stubPartSupply(stub, { salePrice: 45 });
+  }
 
-    stub.partsSupplies.set(partSupply.id, {
-      ...readInternalPartSupplyFixture().data,
-      ...partSupply,
+  // Stands in for the Inventory confirming the stock reservation of an approved quote.
+  async function confirmStockReservation(quoteId: string) {
+    const quote = await ctx.prisma.quote.findUniqueOrThrow({
+      where: { id: quoteId },
+      include: { services: true, partsSupplies: true },
     });
 
-    return partSupply;
+    const { workOrderId } = quote;
+
+    await ctx.prisma.$transaction([
+      ctx.prisma.workOrderService.createMany({
+        data: quote.services.map(({ serviceId, quantity, unitPrice, totalPrice }) => ({
+          workOrderId,
+          serviceId,
+          quantity,
+          unitPrice,
+          totalPrice,
+        })),
+      }),
+      ctx.prisma.workOrderPartSupply.createMany({
+        data: quote.partsSupplies.map(({ partSupplyId, quantity, unitPrice, totalPrice }) => ({
+          workOrderId,
+          partSupplyId,
+          quantity,
+          unitPrice,
+          totalPrice,
+        })),
+      }),
+      ctx.prisma.workOrder.update({
+        where: { id: workOrderId },
+        data: { status: 'APPROVED', approvedAt: new Date(), totalAmount: quote.totalAmount },
+      }),
+      ctx.prisma.sagaInstance.updateMany({
+        where: { correlationId: quoteId },
+        data: { status: 'COMPLETED' },
+      }),
+    ]);
   }
 
   // ─── POST /api/work-orders ──────────────────────────────────────────────────
@@ -422,7 +439,7 @@ describe('WorkOrder (E2E)', () => {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
       const service = await createService();
-      const part = await createPartSupply();
+      const part = createPartSupply();
 
       const res = await request(httpServer)
         .post('/api/work-orders')
@@ -469,7 +486,7 @@ describe('WorkOrder (E2E)', () => {
     it('should return 409 when parts-only are provided (no service)', async () => {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
-      const part = await createPartSupply();
+      const part = createPartSupply();
 
       await request(httpServer)
         .post('/api/work-orders')
@@ -537,7 +554,7 @@ describe('WorkOrder (E2E)', () => {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
       const service = await createService();
-      const part = await createPartSupply();
+      const part = createPartSupply();
 
       await request(httpServer)
         .post('/api/work-orders')
@@ -763,7 +780,6 @@ describe('WorkOrder (E2E)', () => {
       expect(res.body.data.id).toBe(wo.id);
     });
 
-    // The local catalog rows stay while the foreign keys exist; the stub serves the same ids.
     async function createApprovedWorkOrder(serviceId: string, partSupplyId: string) {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
@@ -806,12 +822,14 @@ describe('WorkOrder (E2E)', () => {
         .send({ status: 'APPROVED' })
         .expect(200);
 
+      await confirmStockReservation(quoteId);
+
       return wo;
     }
 
     it('should present the items of an approved work order with the inventory catalog', async () => {
       const service = await createService();
-      const partSupply = await createPartSupply();
+      const partSupply = createPartSupply();
 
       const catalogService = { ...readInternalServiceFixture().data, id: service.id };
 
@@ -857,7 +875,7 @@ describe('WorkOrder (E2E)', () => {
 
     it('should present null display fields for an item the inventory no longer has', async () => {
       const service = await createService();
-      const partSupply = await createPartSupply();
+      const partSupply = createPartSupply();
 
       const wo = await createApprovedWorkOrder(service.id, partSupply.id);
 
@@ -1224,7 +1242,7 @@ describe('WorkOrder (E2E)', () => {
         .expect(404);
     });
 
-    it('should transition service to IN_PROGRESS and trigger stock movements', async () => {
+    it('should move an approved work order with parts to IN_PROGRESS when its first service starts', async () => {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
       const wo = await createWorkOrder(customer.id, vehicle.id);
@@ -1238,27 +1256,7 @@ describe('WorkOrder (E2E)', () => {
       const service = stubService(stub, { basePrice: 100 });
       const serviceId = service.id;
 
-      const partRes = await request(httpServer)
-        .post('/api/parts-supplies')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          name: 'Filtro',
-          sku: `FLT-${Date.now()}`,
-          category: 'PART',
-          unit: 'UN',
-          costPrice: 20,
-          salePrice: 40,
-          stock: 10,
-          minStock: 2,
-        })
-        .expect(201);
-      const partId = partRes.body.data.id;
-
-      // The local copy stays while approval still reserves stock in the local catalog.
-      stub.partsSupplies.set(partId, {
-        ...readInternalPartSupplyFixture().data,
-        ...partRes.body.data,
-      });
+      const partId = stubPartSupply(stub).id;
 
       const quoteRes = await request(httpServer)
         .post('/api/quotes')
@@ -1290,6 +1288,8 @@ describe('WorkOrder (E2E)', () => {
         .send({ status: 'APPROVED' })
         .expect(200);
 
+      await confirmStockReservation(quoteId);
+
       // Transition to IN_PROGRESS
       const res = await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
@@ -1305,13 +1305,6 @@ describe('WorkOrder (E2E)', () => {
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .expect(200);
       expect(woRes.body.data.status).toBe('IN_PROGRESS');
-
-      // Check stock movement (Wait, stock movement check is optional but good)
-      const stockRes = await request(httpServer)
-        .get(`/api/stock-movements?partSupplyId=${partId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-      expect(stockRes.body.data.length).toBeGreaterThan(0);
     });
 
     it('should return 409 when completing a service that is not IN_PROGRESS (still PENDING)', async () => {

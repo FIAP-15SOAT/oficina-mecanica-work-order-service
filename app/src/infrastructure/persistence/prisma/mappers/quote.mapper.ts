@@ -39,6 +39,8 @@ export class QuoteMapper {
       sentAt: record.sentAt ?? null,
       approvedAt: record.approvedAt ?? null,
       rejectedAt: record.rejectedAt ?? null,
+      replacedByQuoteId: record.replacedByQuoteId,
+      decidedBy: record.decidedBy,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       services: record.services ? this.mapServicesToDomain(record.services) : undefined,

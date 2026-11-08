@@ -18,8 +18,6 @@ export type LogicalFieldName =
   | 'movementType'
   | 'movementQuantity'
   | 'currentQuantity'
-  | 'reservedItemCount'
-  | 'reservedQuantity'
   | 'consumedItemCount'
   | 'consumedQuantity'
   | 'targetUserId'

@@ -37,6 +37,8 @@ describe('QuotePresenter', () => {
       sentAt: now,
       approvedAt: null,
       rejectedAt: null,
+      replacedByQuoteId: null,
+      decidedBy: null,
       createdAt: now,
       updatedAt: now,
       ...extra,

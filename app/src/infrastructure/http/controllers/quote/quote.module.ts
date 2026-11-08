@@ -9,7 +9,7 @@ import { RemoveQuotePartSupplyUseCase } from '@application/use-cases/quote/remov
 import { UpdateQuoteServiceQuantityUseCase } from '@application/use-cases/quote/update-quote-service-quantity.use-case';
 import { UpdateQuotePartSupplyQuantityUseCase } from '@application/use-cases/quote/update-quote-part-supply-quantity.use-case';
 import { SubmitQuoteUseCase } from '@application/use-cases/quote/submit-quote.use-case';
-import { ApproveQuoteUseCase } from '@application/use-cases/quote/approve-quote.use-case';
+import { ApproveQuoteUseCase } from '@application/sagas/quote-approval/approve-quote.use-case';
 import { RejectQuoteUseCase } from '@application/use-cases/quote/reject-quote.use-case';
 import { UpdateQuoteStatusUseCase } from '@application/use-cases/quote/update-quote-status.use-case';
 import { FindAllQuotesPaginatedUseCase } from '@application/use-cases/quote/find-all-quotes-paginated.use-case';

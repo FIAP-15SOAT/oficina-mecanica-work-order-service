@@ -42,6 +42,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: quote.sentAt,
         approvedAt: quote.approvedAt,
         rejectedAt: quote.rejectedAt,
+        replacedByQuoteId: null,
+        decidedBy: null,
         createdAt: quote.createdAt,
         updatedAt: quote.updatedAt,
         services: [],
@@ -89,6 +91,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         createdAt: quote.createdAt,
         updatedAt: quote.updatedAt,
         services: [
@@ -219,6 +223,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: randomUUID(),
+        decidedBy: randomUUID(),
         version: 1,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -235,6 +241,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: quote.sentAt,
         approvedAt: quote.approvedAt,
         rejectedAt: quote.rejectedAt,
+        replacedByQuoteId: quote.replacedByQuoteId,
+        decidedBy: quote.decidedBy,
         version: 2,
         createdAt: quote.createdAt,
         updatedAt: quote.updatedAt,
@@ -247,6 +255,10 @@ describe('PrismaQuoteRepository', () => {
       expect(prisma.quote.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: quote.id, version: 1 },
+          data: expect.objectContaining({
+            replacedByQuoteId: quote.replacedByQuoteId,
+            decidedBy: quote.decidedBy,
+          }),
           include: expect.objectContaining({
             workOrder: expect.any(Object),
           }),
@@ -266,6 +278,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         version: 1,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -293,6 +307,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         version: 1,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -330,16 +346,6 @@ describe('PrismaQuoteRepository', () => {
     });
   });
 
-  describe('rejectPendingByWorkOrderId', () => {
-    it('should update pending quotes to rejected', async () => {
-      prisma.quote.updateMany.mockResolvedValue({ count: 1 });
-
-      await repository.rejectPendingByWorkOrderId(randomUUID());
-
-      expect(prisma.quote.updateMany).toHaveBeenCalled();
-    });
-  });
-
   describe('addServiceItem', () => {
     it('should create a quoteService record and update quote totals', async () => {
       const quote = Quote.reconstitute({
@@ -353,6 +359,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         version: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -389,6 +397,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         version: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -416,6 +426,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         version: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -452,6 +464,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         version: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -488,6 +502,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         version: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -515,6 +531,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         version: 0,
         createdAt: new Date(),
         updatedAt: new Date(),

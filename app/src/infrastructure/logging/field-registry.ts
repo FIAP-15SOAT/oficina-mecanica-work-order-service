@@ -185,20 +185,6 @@ export const LOGICAL_FIELDS: Readonly<Record<LogicalFieldName, LogicalFieldDefin
     owner: 'use-case',
     sensitivity: 'clear',
   },
-  reservedItemCount: {
-    key: 'oficina.stock.reservation.item_count',
-    type: 'number',
-    cardinality: 'low',
-    owner: 'use-case',
-    sensitivity: 'clear',
-  },
-  reservedQuantity: {
-    key: 'oficina.stock.reservation.quantity',
-    type: 'number',
-    cardinality: 'medium',
-    owner: 'use-case',
-    sensitivity: 'clear',
-  },
   consumedItemCount: {
     key: 'oficina.stock.consumption.item_count',
     type: 'number',

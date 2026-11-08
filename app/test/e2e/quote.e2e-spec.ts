@@ -7,6 +7,7 @@ import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
 import {
   InternalServicesStub,
   startInternalServicesStub,
+  stubPartSupply,
   stubService,
 } from '../helpers/internal-services-stub';
 import {
@@ -191,36 +192,13 @@ describe('Quote (E2E)', () => {
 
     const service = res.body.data as { id: string };
 
-    // The local copy stays while approval still reserves stock in the local catalog.
     stub.services.set(service.id, { ...readInternalServiceFixture().data, ...service });
 
     return service;
   }
 
-  async function createPartSupply() {
-    const res = await request(httpServer)
-      .post('/api/parts-supplies')
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-      .send({
-        name: `Filtro de Óleo ${Date.now()}`,
-        sku: `FILT-OL-${Date.now()}`,
-        category: 'PART',
-        unit: 'UN',
-        costPrice: 25,
-        salePrice: 45,
-        stock: 50,
-        minStock: 5,
-      })
-      .expect(201);
-
-    const partSupply = res.body.data as { id: string };
-
-    stub.partsSupplies.set(partSupply.id, {
-      ...readInternalPartSupplyFixture().data,
-      ...partSupply,
-    });
-
-    return partSupply;
+  function createPartSupply() {
+    return stubPartSupply(stub, { salePrice: 45 });
   }
 
   // ─── POST /api/quotes ────────────────────────────────────────────────────────
@@ -290,7 +268,7 @@ describe('Quote (E2E)', () => {
     it('should create a quote with inline services and parts and return it with items', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
       const service = await createService();
-      const part = await createPartSupply();
+      const part = createPartSupply();
 
       const res = await request(httpServer)
         .post('/api/quotes')
@@ -308,7 +286,7 @@ describe('Quote (E2E)', () => {
 
     it('should return 409 when parts-only payload (no service) is provided', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const part = await createPartSupply();
+      const part = createPartSupply();
 
       await request(httpServer)
         .post('/api/quotes')
@@ -420,7 +398,7 @@ describe('Quote (E2E)', () => {
     it('should return 409 when duplicate partSupplyId is provided in inline partsSupplies', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
       const service = await createService();
-      const part = await createPartSupply();
+      const part = createPartSupply();
 
       await request(httpServer)
         .post('/api/quotes')
@@ -473,7 +451,7 @@ describe('Quote (E2E)', () => {
     it('should return quote with its items presented with the inventory catalog', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
       const service = await createService();
-      const part = await createPartSupply();
+      const part = createPartSupply();
 
       const catalogService = { ...readInternalServiceFixture().data, id: service.id };
 
@@ -703,7 +681,7 @@ describe('Quote (E2E)', () => {
   describe('POST /api/quotes/:id/parts-supplies', () => {
     it('should add a part supply to the quote', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const part = await createPartSupply();
+      const part = createPartSupply();
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -745,7 +723,7 @@ describe('Quote (E2E)', () => {
         .send({})
         .expect(200);
 
-      const part = await createPartSupply();
+      const part = createPartSupply();
       await request(httpServer)
         .post(`/api/quotes/${quoteId}/parts-supplies`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -769,7 +747,7 @@ describe('Quote (E2E)', () => {
     });
 
     it('should return 404 when quote does not exist', async () => {
-      const part = await createPartSupply();
+      const part = createPartSupply();
       await request(httpServer)
         .post(`/api/quotes/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/parts-supplies`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -779,7 +757,7 @@ describe('Quote (E2E)', () => {
 
     it('should return 400 when quantity is zero', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const part = await createPartSupply();
+      const part = createPartSupply();
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -810,7 +788,7 @@ describe('Quote (E2E)', () => {
 
     it('should return 409 when part supply is already in the quote', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const part = await createPartSupply();
+      const part = createPartSupply();
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1351,30 +1329,12 @@ describe('Quote (E2E)', () => {
         .expect(404);
     });
 
-    it('should return 409 when stock is insufficient during approval', async () => {
+    it('should approve a quote with parts and keep the work order awaiting the stock reservation', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const partRes = await request(httpServer)
-        .post('/api/parts-supplies')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          name: 'Pneu',
-          sku: `PNEU-${Date.now()}`,
-          category: 'PART',
-          unit: 'UN',
-          costPrice: 200,
-          salePrice: 400,
-          stock: 1, // Low stock
-          minStock: 0,
-        })
-        .expect(201);
-      const partId = partRes.body.data.id;
 
-      // The local copy stays while approval still reserves stock in the local catalog.
-      stub.partsSupplies.set(partId, {
-        ...readInternalPartSupplyFixture().data,
-        ...partRes.body.data,
-      });
       const service = await createService();
+
+      const partSupply = createPartSupply();
 
       const createRes = await request(httpServer)
         .post('/api/quotes')
@@ -1382,7 +1342,7 @@ describe('Quote (E2E)', () => {
         .send({ workOrderId })
         .expect(201);
 
-      const quoteId = createRes.body.data.id;
+      const quoteId = createRes.body.data.id as string;
 
       await request(httpServer)
         .post(`/api/quotes/${quoteId}/services`)
@@ -1393,7 +1353,7 @@ describe('Quote (E2E)', () => {
       await request(httpServer)
         .post(`/api/quotes/${quoteId}/parts-supplies`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ partSupplyId: partId, quantity: 5 }) // Request more than available
+        .send({ partSupplyId: partSupply.id, quantity: 5 })
         .expect(200);
 
       await request(httpServer)
@@ -1401,21 +1361,45 @@ describe('Quote (E2E)', () => {
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .expect(200);
 
-      await request(httpServer)
+      const res = await request(httpServer)
         .patch(`/api/quotes/${quoteId}`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ status: 'APPROVED' })
-        .expect(409);
+        .expect(200);
+
+      const woRes = await request(httpServer)
+        .get(`/api/work-orders/${workOrderId}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .expect(200);
+
+      const saga = await ctx.prisma.sagaInstance.findFirstOrThrow({
+        where: { correlationId: quoteId },
+      });
+
+      const outbox = await ctx.prisma.outboxMessage.findMany({ where: { workOrderId } });
+
+      expect(res.body.data.status).toBe('APPROVED');
+      expect(woRes.body.data.status).toBe('AWAITING_APPROVAL');
+      expect(woRes.body.data.partSupplies).toEqual([]);
+      expect(saga).toMatchObject({
+        type: 'QUOTE_APPROVAL',
+        workOrderId,
+        status: 'RESERVING_STOCK',
+      });
+      expect(outbox).toEqual([
+        expect.objectContaining({
+          type: 'inventory.stock.reserve',
+          payload: { quoteId, items: [{ partSupplyId: partSupply.id, quantity: 5 }] },
+        }),
+      ]);
     });
   });
-
-  // ─── PUT & DELETE services/parts-supplies ──────────────────────────────────────────────
 
   describe('Quote Items Management', () => {
     it('should update and remove items in a PENDING quote', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
       const service = await createService();
-      const part = await createPartSupply();
+      const part = createPartSupply();
 
       const createRes = await request(httpServer)
         .post('/api/quotes')
@@ -1488,7 +1472,7 @@ describe('Quote (E2E)', () => {
 
     it('should return 400 when updating part supply item with quantity zero', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const part = await createPartSupply();
+      const part = createPartSupply();
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1753,7 +1737,7 @@ describe('Quote (E2E)', () => {
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ workOrderId })
         .expect(201);
-      const part = await createPartSupply();
+      const part = createPartSupply();
       await request(httpServer)
         .patch(`/api/quotes/${createRes.body.data.id}/parts-supplies/${part.id}`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1771,7 +1755,7 @@ describe('Quote (E2E)', () => {
     });
 
     it('should return 404 when updating part in non-existent quote', async () => {
-      const part = await createPartSupply();
+      const part = createPartSupply();
       await request(httpServer)
         .patch(`/api/quotes/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/parts-supplies/${part.id}`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
