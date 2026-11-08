@@ -2,6 +2,7 @@ import { CreateQuoteUseCase } from '@application/use-cases/quote/create-quote.us
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
+import { ResourceConflictException } from '@application/exceptions/resource-conflict.exception';
 import { IUnitOfWork, IRepositories } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { createMockQuote } from '../../../../helpers/quote-mock.factory';
 import { createMockWorkOrder } from '../../../../helpers/work-order-mock.factory';
@@ -64,6 +65,23 @@ describe('CreateQuoteUseCase', () => {
 
     expect(result).toBe(quote);
     expect((mockRepos.quote.create as jest.Mock).mock.calls[0][0].totalAmount).toBe(100);
+  });
+
+  it('should answer 409 when creating a quote of a work order with a quote approval in progress', async () => {
+    const workOrder = createMockWorkOrder({ status: WorkOrderStatus.AWAITING_APPROVAL });
+
+    jest.mocked(mockRepos.workOrder.findById).mockResolvedValue(workOrder);
+
+    jest.mocked(mockRepos.sagaInstance.hasActiveByWorkOrderId).mockResolvedValue(true);
+
+    await expect(useCase.execute({ workOrderId: workOrder.id })).rejects.toThrow(
+      new ResourceConflictException(
+        'Ordem de serviço com aprovação de orçamento em andamento: aguarde a confirmação do estoque',
+      ),
+    );
+
+    expect(mockRepos.sagaInstance.hasActiveByWorkOrderId).toHaveBeenCalledWith(workOrder.id);
+    expect(mockRepos.quote.create).not.toHaveBeenCalled();
   });
 
   it('should reject parts-only payload (no service) with BusinessRuleViolationException', async () => {

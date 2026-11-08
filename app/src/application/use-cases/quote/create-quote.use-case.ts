@@ -5,6 +5,7 @@ import { QuoteItemValidator } from '@application/services/quote-item-validator';
 
 import { CreateQuoteDto } from '@application/ports/input/quote/dto/create-quote.dto';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
+import { ResourceConflictException } from '@application/exceptions/resource-conflict.exception';
 
 export class CreateQuoteUseCase {
   constructor(
@@ -26,6 +27,14 @@ export class CreateQuoteUseCase {
       }
 
       workOrder.ensureCanCreateQuote();
+
+      const hasActiveQuoteApproval = await repos.sagaInstance.hasActiveByWorkOrderId(workOrder.id);
+
+      if (hasActiveQuoteApproval) {
+        throw new ResourceConflictException(
+          'Ordem de serviço com aprovação de orçamento em andamento: aguarde a confirmação do estoque',
+        );
+      }
 
       const quote = Quote.create({
         workOrderId: dto.workOrderId,

@@ -4,6 +4,7 @@ import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
+import { ISagaInstanceRepository } from '@domain/interfaces/repositories/saga-instance.repository.interface';
 import { UpdateWorkOrderStatusDto } from '@application/ports/input/work-order/dto/update-work-order-status.dto';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
@@ -11,6 +12,7 @@ import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { recordWorkOrderTransition } from '@application/metrics/work-order-metrics';
 
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
+import { ResourceConflictException } from '@application/exceptions/resource-conflict.exception';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
 import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
@@ -45,6 +47,12 @@ export class UpdateWorkOrderStatusUseCase {
           );
         }
 
+        await this.ensureNoActiveQuoteApprovalOnCancel(
+          repos.sagaInstance,
+          workOrder.id,
+          dto.status,
+        );
+
         const previousStatus = workOrder.status;
         workOrder.changeStatus(dto.status, dto.notes);
 
@@ -76,5 +84,23 @@ export class UpdateWorkOrderStatusUseCase {
     await recordWorkOrderTransition(this.metrics, this.statusHistoryRepository, transition);
 
     return workOrder;
+  }
+
+  private async ensureNoActiveQuoteApprovalOnCancel(
+    sagaInstanceRepository: ISagaInstanceRepository,
+    workOrderId: string,
+    status: WorkOrderStatus,
+  ): Promise<void> {
+    if (status !== WorkOrderStatus.CANCELLED) {
+      return;
+    }
+
+    const hasActiveQuoteApproval = await sagaInstanceRepository.hasActiveByWorkOrderId(workOrderId);
+
+    if (hasActiveQuoteApproval) {
+      throw new ResourceConflictException(
+        'Ordem de serviço com aprovação de orçamento em andamento: aguarde a confirmação do estoque',
+      );
+    }
   }
 }

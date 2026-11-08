@@ -961,6 +961,63 @@ describe('WorkOrder (E2E)', () => {
         .expect(400);
     });
 
+    it('should answer 409 and keep the work order when cancelling during the stock reservation', async () => {
+      const customer = await createCustomer();
+      const vehicle = await createVehicle(customer.id);
+      const workOrder = await createWorkOrder(customer.id, vehicle.id);
+
+      await ctx.prisma.sagaInstance.create({
+        data: {
+          type: 'QUOTE_APPROVAL',
+          correlationId: randomUUID(),
+          workOrderId: workOrder.id,
+          status: 'RESERVING_STOCK',
+        },
+      });
+
+      const res = await request(httpServer)
+        .patch(`/api/work-orders/${workOrder.id}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ status: 'CANCELLED', notes: 'Cancelado pelo cliente' })
+        .expect(409);
+
+      const stored = await ctx.prisma.workOrder.findUniqueOrThrow({ where: { id: workOrder.id } });
+
+      const historyCount = await ctx.prisma.statusHistory.count({
+        where: { workOrderId: workOrder.id, newStatus: 'CANCELLED' },
+      });
+
+      expect(res.body.message).toBe(
+        'Ordem de serviço com aprovação de orçamento em andamento: aguarde a confirmação do estoque',
+      );
+      expect(stored.status).toBe('RECEIVED');
+      expect(historyCount).toBe(0);
+    });
+
+    it('should cancel after the saga was compensated', async () => {
+      const customer = await createCustomer();
+      const vehicle = await createVehicle(customer.id);
+      const wo = await createWorkOrder(customer.id, vehicle.id);
+
+      await ctx.prisma.sagaInstance.create({
+        data: {
+          type: 'QUOTE_APPROVAL',
+          correlationId: randomUUID(),
+          workOrderId: wo.id,
+          status: 'COMPENSATED',
+          failureReason: 'INSUFFICIENT_STOCK',
+        },
+      });
+
+      const res = await request(httpServer)
+        .patch(`/api/work-orders/${wo.id}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ status: 'CANCELLED', notes: 'Cancelado pelo cliente' })
+        .expect(200);
+
+      expect(res.body.data.status).toBe('CANCELLED');
+    });
+
     it('should return 404 for non-existent work order during status update', async () => {
       await request(httpServer)
         .patch('/api/work-orders/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')

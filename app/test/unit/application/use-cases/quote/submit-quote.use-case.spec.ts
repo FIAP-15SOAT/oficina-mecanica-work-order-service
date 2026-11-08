@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { SubmitQuoteUseCase } from '@application/use-cases/quote/submit-quote.use-case';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
+import { ResourceConflictException } from '@application/exceptions/resource-conflict.exception';
 import { QuoteStatus } from '@domain/enums/quote-status.enum';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { createMockQuote, createMockQuoteService } from '../../../../helpers/quote-mock.factory';
@@ -145,6 +146,35 @@ describe('SubmitQuoteUseCase', () => {
     expect(mockRepos.statusHistory.create).not.toHaveBeenCalled();
     expect(mockEmailSender.send).toHaveBeenCalled();
     expect(result).toBe(savedQuote);
+  });
+
+  it('should answer 409 when submitting a quote of a work order with a quote approval in progress', async () => {
+    const quote = createMockQuote({
+      status: QuoteStatus.PENDING,
+      services: [createMockQuoteService()],
+    });
+
+    const workOrder = createMockWorkOrder({
+      id: quote.workOrderId,
+      status: WorkOrderStatus.AWAITING_APPROVAL,
+    });
+
+    jest.mocked(mockRepos.quote.findByIdWithDetails).mockResolvedValue(quote);
+
+    jest.mocked(mockRepos.workOrder.findById).mockResolvedValue(workOrder);
+
+    jest.mocked(mockRepos.sagaInstance.hasActiveByWorkOrderId).mockResolvedValue(true);
+
+    await expect(useCase.execute(quote.id)).rejects.toThrow(
+      new ResourceConflictException(
+        'Ordem de serviço com aprovação de orçamento em andamento: aguarde a confirmação do estoque',
+      ),
+    );
+
+    expect(mockRepos.sagaInstance.hasActiveByWorkOrderId).toHaveBeenCalledWith(workOrder.id);
+    expect(mockRepos.quote.update).not.toHaveBeenCalled();
+    expect(mockRepos.workOrder.update).not.toHaveBeenCalled();
+    expect(mockEmailSender.send).not.toHaveBeenCalled();
   });
 
   it('should throw ResourceNotFoundException when quote not found', async () => {

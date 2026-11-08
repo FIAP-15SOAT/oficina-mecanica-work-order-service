@@ -1,4 +1,5 @@
 import type { Server } from 'http';
+import { randomUUID } from 'node:crypto';
 import type { StartedTestContainer } from 'testcontainers';
 import request from 'supertest';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
@@ -237,6 +238,54 @@ describe('Quote (E2E)', () => {
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ workOrderId: woRes.body.data.id })
         .expect(409);
+    });
+
+    it('should answer 409 and save nothing when creating a quote during the stock reservation', async () => {
+      const { workOrderId } = await createWorkOrderInDiagnosis();
+
+      await ctx.prisma.sagaInstance.create({
+        data: {
+          type: 'QUOTE_APPROVAL',
+          correlationId: randomUUID(),
+          workOrderId,
+          status: 'RESERVING_STOCK',
+        },
+      });
+
+      const res = await request(httpServer)
+        .post('/api/quotes')
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ workOrderId })
+        .expect(409);
+
+      const quoteCount = await ctx.prisma.quote.count({ where: { workOrderId } });
+
+      expect(res.body.message).toBe(
+        'Ordem de serviço com aprovação de orçamento em andamento: aguarde a confirmação do estoque',
+      );
+      expect(quoteCount).toBe(0);
+    });
+
+    it('should create a quote after the saga was compensated', async () => {
+      const { workOrderId } = await createWorkOrderInDiagnosis();
+
+      await ctx.prisma.sagaInstance.create({
+        data: {
+          type: 'QUOTE_APPROVAL',
+          correlationId: randomUUID(),
+          workOrderId,
+          status: 'COMPENSATED',
+          failureReason: 'INSUFFICIENT_STOCK',
+        },
+      });
+
+      const res = await request(httpServer)
+        .post('/api/quotes')
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ workOrderId })
+        .expect(201);
+
+      expect(res.body.data.status).toBe('PENDING');
     });
 
     it('should return 404 when work order does not exist', async () => {
