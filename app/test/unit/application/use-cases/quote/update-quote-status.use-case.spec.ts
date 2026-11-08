@@ -1,5 +1,5 @@
 import { UpdateQuoteStatusUseCase } from '@application/use-cases/quote/update-quote-status.use-case';
-import { IApproveQuoteUseCase } from '@application/ports/input/quote/approve-quote.use-case.interface';
+import { IApproveQuoteUseCase } from '@application/ports/input/quote-approval/approve-quote.use-case.interface';
 import { IRejectQuoteUseCase } from '@application/ports/input/quote/reject-quote.use-case.interface';
 import { BadRequestException } from '@application/exceptions/bad-request.exception';
 import { QuoteStatus } from '@domain/enums/quote-status.enum';

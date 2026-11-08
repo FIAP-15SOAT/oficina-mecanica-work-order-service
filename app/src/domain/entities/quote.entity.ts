@@ -286,6 +286,33 @@ export class Quote {
     this.updatedAt = now;
   }
 
+  undoRejectionByApproval(): void {
+    if (!this._replacedByQuoteId) {
+      throw new BusinessRuleViolationException(
+        'Só um orçamento rejeitado pela aprovação de outro pode voltar ao status anterior',
+      );
+    }
+
+    // Only submit() sets sentAt and nothing goes back to PENDING, so sentAt tells the status before the rejection.
+    this._status = this.sentAt ? QuoteStatus.SENT : QuoteStatus.PENDING;
+    this._replacedByQuoteId = null;
+    this.rejectedAt = null;
+    this.updatedAt = new Date();
+  }
+
+  revertApproval(): void {
+    if (this.status !== QuoteStatus.APPROVED) {
+      throw new BusinessRuleViolationException(
+        `Só um orçamento aprovado pode ter a aprovação revertida. Status atual: "${this.status}"`,
+      );
+    }
+
+    this._status = QuoteStatus.SENT;
+    this.approvedAt = null;
+    this._decidedBy = null;
+    this.updatedAt = new Date();
+  }
+
   private recalculateTotals(): void {
     const servicesAmount = this._services.reduce((sum, s) => sum + s.totalPrice, 0);
 

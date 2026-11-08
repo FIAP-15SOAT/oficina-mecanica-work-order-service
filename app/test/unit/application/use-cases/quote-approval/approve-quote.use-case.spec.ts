@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ApproveQuoteUseCase } from '@application/sagas/quote-approval/approve-quote.use-case';
+import { ApproveQuoteUseCase } from '@application/use-cases/quote-approval/approve-quote.use-case';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
 import { QuoteStatus } from '@domain/enums/quote-status.enum';

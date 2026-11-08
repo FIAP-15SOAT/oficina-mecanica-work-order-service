@@ -103,8 +103,11 @@ function findLastEntryInto(
   status: WorkOrderStatus,
 ): StatusHistory | undefined {
   for (let index = history.length - 1; index >= 0; index -= 1) {
-    if (history[index].newStatus === status) {
-      return history[index];
+    const entry = history[index];
+
+    // An entry that keeps the status (a compensation note) is not an entry into it.
+    if (entry.newStatus === status && entry.previousStatus !== status) {
+      return entry;
     }
   }
 

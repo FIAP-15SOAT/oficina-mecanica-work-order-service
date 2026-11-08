@@ -2,6 +2,8 @@ import type { Server } from 'http';
 import { randomUUID } from 'node:crypto';
 import Redis from 'ioredis';
 import request from 'supertest';
+import { CompleteQuoteApprovalUseCase } from '@application/use-cases/quote-approval/complete-quote-approval.use-case';
+import { ICompleteQuoteApprovalUseCase } from '@application/ports/input/quote-approval/complete-quote-approval.use-case.interface';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
@@ -22,12 +24,15 @@ describe('WorkOrder (E2E)', () => {
   let adminAuth: AuthTokens;
   let redis: Redis;
   let stub: InternalServicesStub;
+  // The consumer is off in this suite, so the test runs the Inventory reply handler's use case itself.
+  let completeQuoteApprovalUseCase: ICompleteQuoteApprovalUseCase;
 
   beforeAll(async () => {
     stub = await startInternalServicesStub();
     ctx = await setupTestApp({ captureLogs: true, internalServicesUrl: stub.url });
     httpServer = ctx.httpServer;
     redis = new Redis(ctx.valkeyContainer.getConnectionUrl());
+    completeQuoteApprovalUseCase = ctx.app.get(CompleteQuoteApprovalUseCase);
   });
 
   afterAll(async () => {
@@ -131,45 +136,6 @@ describe('WorkOrder (E2E)', () => {
 
   function createPartSupply() {
     return stubPartSupply(stub, { salePrice: 45 });
-  }
-
-  // Stands in for the Inventory confirming the stock reservation of an approved quote.
-  async function confirmStockReservation(quoteId: string) {
-    const quote = await ctx.prisma.quote.findUniqueOrThrow({
-      where: { id: quoteId },
-      include: { services: true, partsSupplies: true },
-    });
-
-    const { workOrderId } = quote;
-
-    await ctx.prisma.$transaction([
-      ctx.prisma.workOrderService.createMany({
-        data: quote.services.map(({ serviceId, quantity, unitPrice, totalPrice }) => ({
-          workOrderId,
-          serviceId,
-          quantity,
-          unitPrice,
-          totalPrice,
-        })),
-      }),
-      ctx.prisma.workOrderPartSupply.createMany({
-        data: quote.partsSupplies.map(({ partSupplyId, quantity, unitPrice, totalPrice }) => ({
-          workOrderId,
-          partSupplyId,
-          quantity,
-          unitPrice,
-          totalPrice,
-        })),
-      }),
-      ctx.prisma.workOrder.update({
-        where: { id: workOrderId },
-        data: { status: 'APPROVED', approvedAt: new Date(), totalAmount: quote.totalAmount },
-      }),
-      ctx.prisma.sagaInstance.updateMany({
-        where: { correlationId: quoteId },
-        data: { status: 'COMPLETED' },
-      }),
-    ]);
   }
 
   // ─── POST /api/work-orders ──────────────────────────────────────────────────
@@ -822,7 +788,7 @@ describe('WorkOrder (E2E)', () => {
         .send({ status: 'APPROVED' })
         .expect(200);
 
-      await confirmStockReservation(quoteId);
+      await completeQuoteApprovalUseCase.execute(quoteId);
 
       return wo;
     }
@@ -1288,7 +1254,7 @@ describe('WorkOrder (E2E)', () => {
         .send({ status: 'APPROVED' })
         .expect(200);
 
-      await confirmStockReservation(quoteId);
+      await completeQuoteApprovalUseCase.execute(quoteId);
 
       // Transition to IN_PROGRESS
       const res = await request(httpServer)

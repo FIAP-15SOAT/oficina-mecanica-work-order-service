@@ -1,7 +1,7 @@
 import { Quote } from '@domain/entities/quote.entity';
 import { QuoteStatus } from '@domain/enums/quote-status.enum';
 
-import { IApproveQuoteUseCase } from '@application/ports/input/quote/approve-quote.use-case.interface';
+import { IApproveQuoteUseCase } from '@application/ports/input/quote-approval/approve-quote.use-case.interface';
 import { IRejectQuoteUseCase } from '@application/ports/input/quote/reject-quote.use-case.interface';
 
 import { IUpdateQuoteStatusUseCase } from '@application/ports/input/quote/update-quote-status.use-case.interface';

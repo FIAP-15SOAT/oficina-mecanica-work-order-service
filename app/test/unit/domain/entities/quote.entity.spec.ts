@@ -6,6 +6,7 @@ import { BusinessRuleViolationException } from '@domain/exceptions/business-rule
 import { DomainValidationException } from '@domain/exceptions/domain-validation.exception';
 import { EntityNotFoundException } from '@domain/exceptions/entity-not-found.exception';
 import { randomUUID } from 'node:crypto';
+import { createMockQuote } from '../../../helpers/quote-mock.factory';
 
 function makeQuote(
   status: QuoteStatus,
@@ -254,6 +255,65 @@ describe('Quote Entity', () => {
         );
       },
     );
+  });
+
+  describe('revertApproval()', () => {
+    it('should revert an approved quote to SENT and clear the decision', () => {
+      const quote = createMockQuote({
+        status: QuoteStatus.APPROVED,
+        approvedAt: new Date(),
+        decidedBy: randomUUID(),
+      });
+
+      quote.revertApproval();
+
+      expect(quote.status).toBe(QuoteStatus.SENT);
+      expect(quote.approvedAt).toBeNull();
+      expect(quote.decidedBy).toBeNull();
+    });
+
+    it('should refuse to revert a quote that is not approved', () => {
+      const quote = makeQuote(QuoteStatus.SENT);
+
+      expect(() => quote.revertApproval()).toThrow(
+        new BusinessRuleViolationException(
+          'Só um orçamento aprovado pode ter a aprovação revertida. Status atual: "SENT"',
+        ),
+      );
+    });
+  });
+
+  describe('undoRejectionByApproval()', () => {
+    it.each([
+      [new Date(), QuoteStatus.SENT],
+      [null, QuoteStatus.PENDING],
+    ])(
+      'should restore a replaced quote to SENT when it had been sent and to PENDING otherwise (sentAt %s)',
+      (sentAt, expectedStatus) => {
+        const quote = createMockQuote({
+          status: QuoteStatus.REJECTED,
+          sentAt,
+          rejectedAt: new Date(),
+          replacedByQuoteId: randomUUID(),
+        });
+
+        quote.undoRejectionByApproval();
+
+        expect(quote.status).toBe(expectedStatus);
+        expect(quote.replacedByQuoteId).toBeNull();
+        expect(quote.rejectedAt).toBeNull();
+      },
+    );
+
+    it('should refuse to restore a quote that no approval replaced', () => {
+      const quote = makeQuote(QuoteStatus.REJECTED);
+
+      expect(() => quote.undoRejectionByApproval()).toThrow(
+        new BusinessRuleViolationException(
+          'Só um orçamento rejeitado pela aprovação de outro pode voltar ao status anterior',
+        ),
+      );
+    });
   });
 
   describe('reject()', () => {

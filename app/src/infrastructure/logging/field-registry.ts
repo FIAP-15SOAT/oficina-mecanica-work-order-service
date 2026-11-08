@@ -199,6 +199,27 @@ export const LOGICAL_FIELDS: Readonly<Record<LogicalFieldName, LogicalFieldDefin
     owner: 'use-case',
     sensitivity: 'clear',
   },
+  missingItemCount: {
+    key: 'oficina.stock.reservation.missing_item_count',
+    type: 'number',
+    cardinality: 'low',
+    owner: 'use-case',
+    sensitivity: 'clear',
+  },
+  sagaId: {
+    key: 'oficina.saga.id',
+    type: 'string',
+    cardinality: 'high',
+    owner: 'use-case',
+    sensitivity: 'identifier',
+  },
+  sagaStatus: {
+    key: 'oficina.saga.status',
+    type: 'string',
+    cardinality: 'low',
+    owner: 'use-case',
+    sensitivity: 'clear',
+  },
   targetUserId: {
     key: 'oficina.target.user.id',
     type: 'string',

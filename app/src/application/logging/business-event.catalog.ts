@@ -74,6 +74,32 @@ export const BUSINESS_EVENTS = {
     message: 'quote rejected by customer decision',
     level: 'info',
   }),
+  QUOTE_APPROVAL_COMPLETED: defineLogEvent<{
+    sagaId: string;
+    quoteId: string;
+    workOrderId: string;
+    workOrderNumber: string;
+  }>({
+    name: 'quote_approval.completed',
+    message: 'stock reserved and work order approved with the quote items',
+    level: 'info',
+  }),
+  QUOTE_APPROVAL_COMPENSATED: defineLogEvent<{
+    sagaId: string;
+    quoteId: string;
+    workOrderId: string;
+    workOrderNumber: string;
+    missingItemCount: number;
+  }>({
+    name: 'quote_approval.compensated',
+    message: 'stock reservation refused and quote approval undone',
+    level: 'info',
+  }),
+  QUOTE_APPROVAL_STEP_SKIPPED: defineLogEvent<{ quoteId: string; sagaStatus?: string }>({
+    name: 'quote_approval.step_skipped',
+    message: 'stock reservation reply skipped because the saga is not reserving stock',
+    level: 'info',
+  }),
   STOCK_CONSUMED: defineLogEvent<{
     workOrderId: string;
     workOrderNumber: string;
