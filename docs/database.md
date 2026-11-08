@@ -4,7 +4,7 @@ Modelo relacional (PostgreSQL) da API, definido em [`prisma/schema.prisma`](../a
 
 ## Diagrama entidade-relacionamento
 
-<p align="center"><img src="diagrams/database-er.png" alt="Diagrama entidade-relacionamento dos 20 modelos do schema Prisma: User, Customer, Address, Vehicle, WorkOrderStatusInfo, WorkOrder e seus itens de linha (WorkOrderService, WorkOrderPartSupply), Quote (com decided_by e replaced_by_quote_id) e seus itens de linha (QuoteService, QuotePartSupply), StatusHistory, SagaInstance (tabela saga_instances), UserCustomer, PasswordResetCode e OutboxMessage (tabela outbox), além das tabelas de catálogo e estoque sem uso (Service, PartSupply, StockMovement, StockReservation), às quais os itens de OS e de orçamento não têm mais chave estrangeira; com tipos reais do Postgres, chaves primárias, estrangeiras e únicas" width="100%"></p>
+<p align="center"><img src="diagrams/database-er.png" alt="Diagrama entidade-relacionamento dos 16 modelos do schema Prisma: User, Customer, Address, Vehicle, WorkOrderStatusInfo, WorkOrder e seus itens de linha (WorkOrderService, WorkOrderPartSupply), Quote (com decided_by e replaced_by_quote_id) e seus itens de linha (QuoteService, QuotePartSupply), StatusHistory, SagaInstance (tabela saga_instances), UserCustomer, PasswordResetCode e OutboxMessage (tabela outbox); com tipos reais do Postgres, chaves primárias, estrangeiras e únicas" width="100%"></p>
 
 Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgres** (`VARCHAR(n)`, `TIMESTAMP(3)`, `DECIMAL(10,2)`, os enums nomeados, etc.), conferidos a partir das migrations — não os tipos abstratos do schema Prisma (`String`, `Int`, `DateTime`).
 
@@ -43,10 +43,6 @@ Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgr
   - **Sem `version`.** Toda escrita na Saga vai numa transação que também grava com versão a OS ou os orçamentos, e a fila FIFO entrega as respostas do Inventory em ordem por OS.
   - O índice em `work_order_id` atende a consulta que barra criação, envio e cancelamento enquanto a OS tem uma Saga em `RESERVING_STOCK`. Apagada em cascata com a OS.
 
-### Catálogo e estoque sem uso
-
-- **`services`**, **`parts_supplies`**, **`stock_movements`** e **`stock_reservations`** — o catálogo e o estoque de antes de o Inventory ser o dono deles. Nenhum código lê ou grava essas tabelas, e as FKs dos itens de OS e de orçamento para elas foram removidas. Elas continuam no schema só para que a versão anterior do serviço volte a subir se o deploy for desfeito, e saem, com os enums `StockMovementType`, `Unit` e `PartSupplyCategory`, numa migration seguinte. Desfazer só é seguro para os dados gravados antes da virada: serviços e peças criados depois disso existem só no Inventory, e a versão anterior não os conhece (ver [ADR 0023](adr/0023-catalogo-e-estoque-no-inventory-com-reserva-pela-saga.md)).
-
 ### Mensageria
 
 - **`outbox`** (`OutboxMessage`) — mensagens a publicar, gravadas na mesma transação da mudança de estado que as origina e apagadas pelo relay depois de publicadas no tópico SNS; por isso a tabela fica quase sempre vazia.
@@ -60,7 +56,7 @@ Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgr
 
 ## Enums
 
-`UserRole`, `CustomerType`, `WorkOrderStatus`, `WorkOrderServiceStatus`, `QuoteStatus`, `SagaType`, `SagaStatus`, `SagaFailureReason`, e os três das tabelas de catálogo sem uso (`StockMovementType`, `Unit`, `PartSupplyCategory`). `UserRole` **não** ganhou um valor `CUSTOMER` — o acesso externo não é modelado como papel interno (ver [ADR 0004](adr/0004-autenticacao-de-clientes.md)).
+`UserRole`, `CustomerType`, `WorkOrderStatus`, `WorkOrderServiceStatus`, `QuoteStatus`, `SagaType`, `SagaStatus` e `SagaFailureReason`. `UserRole` **não** ganhou um valor `CUSTOMER` — o acesso externo não é modelado como papel interno (ver [ADR 0004](adr/0004-autenticacao-de-clientes.md)).
 
 ## Convenções de modelagem
 

@@ -3,8 +3,6 @@ import { PrismaService } from '../../src/infrastructure/persistence/prisma/prism
 export async function cleanDatabase(prisma: PrismaService): Promise<void> {
   await prisma.outboxMessage.deleteMany();
   await prisma.sagaInstance.deleteMany();
-  await prisma.stockReservation.deleteMany();
-  await prisma.stockMovement.deleteMany();
   await prisma.statusHistory.deleteMany();
   await prisma.quoteService.deleteMany();
   await prisma.quotePartSupply.deleteMany();
@@ -15,7 +13,5 @@ export async function cleanDatabase(prisma: PrismaService): Promise<void> {
   await prisma.address.deleteMany();
   await prisma.vehicle.deleteMany();
   await prisma.customer.deleteMany();
-  await prisma.partSupply.deleteMany();
-  await prisma.service.deleteMany();
   await prisma.user.deleteMany();
 }
