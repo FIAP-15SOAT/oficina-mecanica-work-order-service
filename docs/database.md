@@ -18,28 +18,34 @@ Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgr
 - **`customer_addresses`** (`Address`) — endereço 1:1 de um `Customer`. Chave primária é o próprio `customer_id` (sem id/timestamps próprios); apagado em cascata com o cliente.
 - **`password_reset_codes`** (`PasswordResetCode`) — código de redefinição de senha em vigor por usuário (`user_id` como chave primária — no máximo um código ativo por vez), emitido por um Admin.
 
-### Veículos e catálogo
+### Veículos
 
 - **`vehicles`** (`Vehicle`) — veículos de um `Customer` (`plate` única). Um cliente pode ter vários veículos; cada veículo pertence a exatamente um cliente.
-- **`services`** (`Service`) — catálogo de serviços oferecidos (nome único, preço base).
-- **`parts_supplies`** (`PartSupply`) — catálogo de peças e insumos (`category` distingue os dois), com controle de estoque (`stock`, `min_stock`, `reserved_stock`) e concorrência otimista (`version`).
 
 ### Ordem de Serviço (OS)
 
 - **`work_order_statuses`** (`WorkOrderStatusInfo`) — tabela de referência (lookup, populada pelo seed): associa cada `WorkOrderStatus` a uma `priority` numérica (1–9), usada para ordenar a listagem de OS por status em ordem de negócio, não alfabética (ver [Ciclo de vida da Ordem de Serviço](architecture.md#ciclo-de-vida-da-ordem-de-serviço)).
 - **`work_orders`** (`WorkOrder`) — a Ordem de Serviço, aggregate root do domínio. Referencia um `Customer`, um `Vehicle`, opcionalmente um `User` atribuído (mecânico), e seu `status` é FK para `work_order_statuses`. Concorrência otimista via `version`.
-- **`work_order_services`** / **`work_order_part_supplies`** (`WorkOrderService` / `WorkOrderPartSupply`) — itens de linha da OS (serviços e peças/insumos aplicados), com chave primária composta `(work_order_id, service_id | part_supply_id)` em vez de surrogate key. Apagados em cascata com a OS.
-- **`status_history`** (`StatusHistory`) — histórico de transições de status de uma OS, com o usuário que efetuou a mudança (`changed_by_id`, opcional).
+- **`work_order_services`** / **`work_order_part_supplies`** (`WorkOrderService` / `WorkOrderPartSupply`) — itens de linha da OS (serviços e peças/insumos aplicados), com chave primária composta `(work_order_id, service_id | part_supply_id)` em vez de surrogate key. Apagados em cascata com a OS. `service_id` e `part_supply_id` são referências simples, sem FK: o catálogo é do Inventory, e o item guarda só o id, a quantidade e o preço.
+- **`status_history`** (`StatusHistory`) — histórico de transições de status de uma OS, com o usuário que efetuou a mudança (`changed_by_id`, opcional). A compensação da Saga de aprovação grava uma entrada que não muda o status (`AWAITING_APPROVAL → AWAITING_APPROVAL`), sem autor e com a nota do motivo.
 
 ### Orçamento
 
-- **`quotes`** (`Quote`) — orçamento vinculado a uma OS, também um aggregate root próprio (concorrência otimista via `version`).
-- **`quote_services`** / **`quote_part_supplies`** (`QuoteService` / `QuotePartSupply`) — itens de linha do orçamento, mesmo padrão de chave composta dos itens de OS.
+- **`quotes`** (`Quote`) — orçamento vinculado a uma OS, também um aggregate root próprio (concorrência otimista via `version`). Duas colunas servem à Saga de aprovação, sem FK:
+  - **`decided_by`** — o usuário que aprovou o orçamento. A confirmação da reserva roda fora de uma requisição, num handler de mensagem, e lê o autor daqui para gravar o histórico da OS.
+  - **`replaced_by_quote_id`** — o orçamento cuja aprovação rejeitou este. A compensação procura por ela os orçamentos a restaurar; o status a restaurar sai de `sent_at` (`SENT` se o orçamento foi enviado, `PENDING` se não), porque só o envio grava `sent_at` e nenhum orçamento volta a `PENDING`.
+- **`quote_services`** / **`quote_part_supplies`** (`QuoteService` / `QuotePartSupply`) — itens de linha do orçamento, mesmo padrão de chave composta e de referência simples ao catálogo dos itens de OS.
 
-### Estoque
+### Saga de aprovação
 
-- **`stock_movements`** (`StockMovement`) — histórico de entradas/saídas/ajustes de estoque de uma peça/insumo, opcionalmente vinculado à OS que o originou (`work_order_id` nulo em ajustes manuais; `onDelete: SetNull` preserva o histórico mesmo se a OS for excluída).
-- **`stock_reservations`** (`StockReservation`) — reserva de estoque de uma peça/insumo para uma OS específica, liberada ou efetivada conforme o ciclo de vida da OS.
+- **`saga_instances`** (`SagaInstance`) — o estado de cada Saga que o serviço orquestra (ver [Aprovação de orçamento com reserva de estoque](architecture.md#aprovação-de-orçamento-com-reserva-de-estoque)). Hoje só existe o tipo `QUOTE_APPROVAL`, com `correlation_id` igual ao id do orçamento aprovado e `work_order_id` igual à OS dele. `status` vai de `RESERVING_STOCK` a `COMPLETED` (reserva confirmada) ou `COMPENSATED` (falta de estoque, com `failure_reason = INSUFFICIENT_STOCK`).
+  - **Única por orçamento.** A chave única `(type, correlation_id)` impede duas Sagas para o mesmo orçamento; aprovar de novo um orçamento compensado reabre a mesma linha.
+  - **Sem `version`.** Toda escrita na Saga vai numa transação que também grava com versão a OS ou os orçamentos, e a fila FIFO entrega as respostas do Inventory em ordem por OS.
+  - O índice em `work_order_id` atende a consulta que barra criação, envio e cancelamento enquanto a OS tem uma Saga em `RESERVING_STOCK`. Apagada em cascata com a OS.
+
+### Catálogo e estoque sem uso
+
+- **`services`**, **`parts_supplies`**, **`stock_movements`** e **`stock_reservations`** — o catálogo e o estoque de antes de o Inventory ser o dono deles. Nenhum código lê ou grava essas tabelas, e as FKs dos itens de OS e de orçamento para elas foram removidas. Elas continuam no schema só para que a versão anterior do serviço ainda funcione se o deploy for desfeito, e saem, com os enums `StockMovementType`, `Unit` e `PartSupplyCategory`, numa migration seguinte.
 
 ### Mensageria
 
@@ -54,16 +60,16 @@ Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgr
 
 ## Enums
 
-`UserRole`, `CustomerType`, `WorkOrderStatus`, `WorkOrderServiceStatus`, `QuoteStatus`, `StockMovementType`, `Unit`, `PartSupplyCategory`. `UserRole` **não** ganhou um valor `CUSTOMER` — o acesso externo não é modelado como papel interno (ver [ADR 0004](adr/0004-autenticacao-de-clientes.md)).
+`UserRole`, `CustomerType`, `WorkOrderStatus`, `WorkOrderServiceStatus`, `QuoteStatus`, `SagaType`, `SagaStatus`, `SagaFailureReason`, e os três das tabelas de catálogo sem uso (`StockMovementType`, `Unit`, `PartSupplyCategory`). `UserRole` **não** ganhou um valor `CUSTOMER` — o acesso externo não é modelado como papel interno (ver [ADR 0004](adr/0004-autenticacao-de-clientes.md)).
 
 ## Convenções de modelagem
 
 - **IDs**: `uuid` v4 (`@db.Uuid`) gerados pelo Prisma — exceto o número da OS, gerado por uma **sequence PostgreSQL** (`work_order_number_seq`, formatada com 6 dígitos zero-padded — `000001`, `000002`, …), e o `id` sequencial do `outbox` (ver [Mensageria](#mensageria)).
-- **Timestamps**: `created_at` / `updated_at` em todas as entidades não-imutáveis (`Address`, `StatusHistory`, `StockMovement` e `StockReservation` guardam apenas `created_at`).
-- **Concorrência otimista**: coluna `version Int @default(1)` em `WorkOrder`, `Quote` e `PartSupply`.
-- **Cascade deletes** para itens dependentes (`WorkOrderService`, `WorkOrderPartSupply`, `QuoteService`, `QuotePartSupply`, `StatusHistory`, `StockReservation`, `Address`).
-- **`StockMovement.work_order_id`** usa `onDelete: SetNull` para preservar histórico de movimentação após exclusão da OS.
-- **Unicidade**: `User.email`, `User.cpf`, `Customer.email`, `Customer.document`, `Vehicle.plate`, `PartSupply.sku`, `Service.name`, `WorkOrder.number`.
+- **Timestamps**: `created_at` / `updated_at` em todas as entidades não-imutáveis (`Address` e `StatusHistory` guardam apenas `created_at`).
+- **Concorrência otimista**: coluna `version Int @default(1)` em `WorkOrder` e `Quote`.
+- **Cascade deletes** para itens dependentes (`WorkOrderService`, `WorkOrderPartSupply`, `QuoteService`, `QuotePartSupply`, `StatusHistory`, `SagaInstance`, `Address`).
+- **Referências a outro serviço sem FK**: o id de um serviço ou peça do Inventory nos itens fica sem chave estrangeira, porque a linha está em outro banco.
+- **Unicidade**: `User.email`, `User.cpf`, `Customer.email`, `Customer.document`, `Vehicle.plate`, `WorkOrder.number`, `SagaInstance (type, correlation_id)`.
 - **Identidades compostas**: `WorkOrderService`, `WorkOrderPartSupply`, `QuoteService` e `QuotePartSupply` usam chave primária composta `(parentId, itemId)` em vez de surrogate key.
 - **Índices secundários** por colunas usadas em filtros (`status`, `customer_id`, `vehicle_id`, `assigned_user_id`, `part_supply_id`, `work_order_id`, etc.) e índice composto `(status, created_at)` em `work_orders` para listagens ordenadas.
 
@@ -90,4 +96,5 @@ descartáveis e uma URL própria. Detalhes e alternativas estão no
 - [ADR 0001 — Uso do PostgreSQL como banco de dados relacional](adr/0001-uso-do-postgresql-como-banco-de-dados.md)
 - [ADR 0004 — Autenticação externa de clientes por CPF](adr/0004-autenticacao-de-clientes.md)
 - [ADR 0010 — Concorrência otimista via coluna `version`](adr/0010-concorrencia-otimista-via-version.md)
+- [ADR 0023 — Catálogo e estoque no Inventory, com reserva pela Saga de aprovação](adr/0023-catalogo-e-estoque-no-inventory-com-reserva-pela-saga.md)
 - [`oficina-mecanica-infra-database-work-order` — ADRs de dados gerenciados (RDS e ElastiCache)](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/tree/main/docs/adr)

@@ -7,6 +7,7 @@
 - [Autenticação externa nos testes (customer-jwt)](#autenticação-externa-nos-testes-customer-jwt)
 - [Telemetria: o que o Jest não instrumenta](#telemetria-o-que-o-jest-não-instrumenta)
 - [Mensageria e cache no E2E](#mensageria-e-cache-no-e2e)
+- [Inventory no E2E](#inventory-no-e2e)
 - [Contrato das rotas `/internal`](#contrato-das-rotas-internal)
 - [Mensagem de teste no ambiente](#mensagem-de-teste-no-ambiente)
 - [Postman / Newman](#postman--newman)
@@ -24,7 +25,7 @@ Os scripts rodam o Jest como `node --experimental-vm-modules node_modules/jest/b
 
 As suítes cobrem todas as camadas (`application/`, `domain/` — incluindo entidades, value objects e validators —, `interface-adapters/` e `infrastructure/`). Use-cases são instanciados diretamente com mocks do tipo `jest.Mocked<IRepository>` (ou `jest.Mocked<IUnitOfWork>` onde aplicável) — sem NestJS DI, sem banco de dados. Os Clean Controllers são instanciados diretamente com use-cases mockados; a borda HTTP (`@Controller` fino) é exercitada via `jest.spyOn` no Clean Controller real. As factories de mocks (incluindo `UnitOfWorkMockFactory`) estão em `test/helpers/`, organizadas por entidade.
 
-230 suites e 2243 testes, com **100% de cobertura em lines, statements, functions e branches**. O piso é declarado em `package.json` → `jest.coverageThreshold`, então `npm run test:cov` (e com ele o job `unit-tests` do CI) falha quando qualquer uma das quatro métricas cai abaixo de 100% — foi assim que a cobertura voltou a ser um contrato verificado em vez de um número observado.
+211 suites e 2100 testes, com **100% de cobertura em lines, statements, functions e branches**. O piso é declarado em `package.json` → `jest.coverageThreshold`, então `npm run test:cov` (e com ele o job `unit-tests` do CI) falha quando qualquer uma das quatro métricas cai abaixo de 100% — foi assim que a cobertura voltou a ser um contrato verificado em vez de um número observado.
 
 A cobertura é coletada em todo `src/**` (todas as camadas — `domain/`, `application/`, `interface-adapters/` e `infrastructure/`). As exclusões são por sufixo/caminho, não por camada: `*.module.ts`, `main.ts`, `otel.ts`, `*.enums.ts`, `*.config.ts`, `*.exception.ts`, `*.dto.ts`, `infrastructure/persistence/prisma/prisma.service.ts` e `domain/constants/**` (ver `package.json` → `jest.collectCoverageFrom`). Os arquivos gerados pelo Prisma ficam de fora por viverem em `prisma/generated/`, fora de `src/`.
 
@@ -37,7 +38,7 @@ npm run test:e2e      # executa os testes
 npm run test:e2e:cov  # com cobertura
 ```
 
-17 suites cobrindo todos os domínios (auth, user, customer, customer-access, vehicle, service, part-supply, work-order, quote, stock) mais `me` (rotas do Cliente da Oficina autenticado), uma suite dedicada ao `AllExceptionsFilter`, outra ao logging estruturado, outra aos endpoints de saúde, outra à telemetria (correlação log-trace e métricas de negócio), outra às rotas `/internal` e outra à mensageria. Os testes E2E sobem um PostgreSQL 18 real (`postgres:18-alpine`) e um Valkey 9.1 real via **Testcontainers 12** (sem necessidade de banco externo), mais o LocalStack na suíte de mensageria (ver [Mensageria e cache no E2E](#mensageria-e-cache-no-e2e)) e usam helpers compartilhados em `test/helpers/` (`test-app.helper.ts`, `auth.helper.ts`, `db-cleanup.helper.ts`) para subir o `INestApplication`, autenticar e limpar o banco entre testes. Configuração em `test/jest-e2e.json` (timeout de 10 minutos para acomodar a inicialização dos containers).
+16 suites cobrindo todos os domínios (auth, user, customer, customer-access, vehicle, service — as métricas por serviço —, work-order, quote) mais `me` (rotas do Cliente da Oficina autenticado), uma suite dedicada ao `AllExceptionsFilter`, outra ao logging estruturado, outra aos endpoints de saúde, outra à telemetria (correlação log-trace e métricas de negócio), outra às rotas `/internal`, outra à mensageria e outra à Saga de aprovação de orçamento. Os testes E2E sobem um PostgreSQL 18 real (`postgres:18-alpine`), um Valkey 9.1 real e um MailHog via **Testcontainers 12** (sem necessidade de banco externo), mais o LocalStack nas suítes de mensageria e da Saga (ver [Mensageria e cache no E2E](#mensageria-e-cache-no-e2e)), e respondem pelo Inventory com um stub HTTP (ver [Inventory no E2E](#inventory-no-e2e)) e usam helpers compartilhados em `test/helpers/` (`test-app.helper.ts`, `auth.helper.ts`, `db-cleanup.helper.ts`) para subir o `INestApplication`, autenticar e limpar o banco entre testes. Configuração em `test/jest-e2e.json` (timeout de 10 minutos para acomodar a inicialização dos containers).
 
 O motivo de testar contra um Postgres real (em vez de mocks Prisma) é validar comportamentos que dependem do banco — constraints de unicidade, cascade deletes, sequences, conversões de tipos, índices e a corrida implícita de updates condicionados (`WHERE version = ?`) — e detectar regressões em migrations.
 
@@ -61,7 +62,7 @@ O seam é real: o `LoggingModule` é configurado com `LoggerModule.forRootAsync`
 O helper **não** duplica a configuração de bootstrap: ele chama `configureApp()`
 (`src/infrastructure/config/app-bootstrap.ts`), a mesma função que o `main.ts` usa.
 
-Duas opções extras, usadas só pela suíte de logging para que as outras quatorze não paguem o custo:
+Duas opções extras, usadas só pela suíte de logging para que as outras quinze não paguem o custo:
 
 | Opção | O que liga |
 | --- | --- |
@@ -92,7 +93,7 @@ await request(ctx.httpServer)
 
 ## Mensageria e cache no E2E
 
-Toda suíte E2E sobe, além do PostgreSQL, um **Valkey real** (`valkey/valkey:9.1`, `@testcontainers/valkey`), porque o detalhe da OS passa pelo cache em qualquer rota que o lê. O LocalStack só sobe com `setupTestApp({ withMessaging: true })`, a opção da suíte `messaging.e2e-spec.ts`: ela inicia o `localstack/localstack:4.14.0` (`@testcontainers/localstack`) com o mesmo `app/localstack/init-topology.sh` do compose, roda o relay e o consumidor reais e aponta `AWS_ENDPOINT_URL` para o container. Nas outras suítes, o relay e o consumidor são substituídos por versões vazias, então nenhuma delas paga o LocalStack.
+Toda suíte E2E sobe, além do PostgreSQL, um **Valkey real** (`valkey/valkey:9.1`, `@testcontainers/valkey`), porque o detalhe da OS passa pelo cache em qualquer rota que o lê. O LocalStack só sobe com `setupTestApp({ withMessaging: true })`, a opção das suítes `messaging.e2e-spec.ts` e `quote-approval-saga.e2e-spec.ts`: ela inicia o `localstack/localstack:4.14.0` (`@testcontainers/localstack`) com o mesmo `app/localstack/init-topology.sh` do compose, roda o relay e o consumidor reais e aponta `AWS_ENDPOINT_URL` para o container. Nas outras suítes, o relay e o consumidor são substituídos por versões vazias, então nenhuma delas paga o LocalStack.
 
 `messaging.e2e-spec.ts` cobre o que os unitários só simulam:
 
@@ -102,25 +103,42 @@ Toda suíte E2E sobe, além do PostgreSQL, um **Valkey real** (`valkey/valkey:9.
 | Rollback | Uma transação desfeita não deixa linha no outbox |
 | Lock do relay | Com outra transação segurando o `pg_advisory_xact_lock` do relay, nada é publicado; depois do `COMMIT` dela, a mensagem sai |
 | Ordem do grupo | A falha da primeira mensagem de uma OS segura as seguintes do mesmo grupo |
-| Sem handler | Mensagem sem handler registrado não é confirmada e volta a ser entregue |
+| Sem handler | Mensagem sem handler registrado (`billing.payment.failed`, que a fila do serviço recebe e que ainda não tem handler) não é confirmada e volta a ser entregue |
 | Campos de log | As linhas da mensageria só emitem campos declarados no dicionário |
 
-O cache tem e2e próprio em `work-order.e2e-spec.ts` (`GET /api/work-orders/:id — cache`): a segunda leitura sai do cache com o mesmo corpo, a mudança de status e a troca de placa do veículo aparecem na leitura seguinte (a invalidação depois do commit funciona), renomear um serviço não muda o nome no detalhe em cache (escrita de catálogo não invalida a OS) e, com o Valkey pausado, a rota responde pelo PostgreSQL e registra `cache.unavailable`.
+O cache tem e2e próprio em `work-order.e2e-spec.ts` (`GET /api/work-orders/:id — cache`): a segunda leitura sai do cache com o mesmo corpo, a mudança de status e a troca de placa do veículo aparecem na leitura seguinte (a invalidação depois do commit funciona), o nome novo de um serviço renomeado no Inventory aparece mesmo com a OS em cache (os dados de exibição não vão ao cache) e, com o Valkey pausado, a rota responde pelo PostgreSQL e registra `cache.unavailable`.
+
+## Inventory no E2E
+
+O work-order lê o catálogo no Inventory por HTTP, então todo e2e que cria item de OS ou de orçamento precisa de um Inventory que responda. Em vez de subir o serviço de verdade, a suíte sobe um stub HTTP (`startInternalServicesStub()`, em `test/helpers/internal-services-stub.ts`) e passa a URL dele a `setupTestApp({ internalServicesUrl })`, que a grava em `INVENTORY_SERVICE_URL`. Sem a opção, a URL aponta para uma porta que recusa conexão (`http://127.0.0.1:9`), e uma rota que consulta o catálogo responde 503.
+
+O stub responde `GET /internal/services/:id` e `GET /internal/parts-supplies/:id` a partir de dois mapas em memória, com o corpo das fixtures copiadas do Inventory; um id fora dos mapas responde 404, e um id em `failingIds` responde 500, o caminho do 503. Item que só precisa existir no Inventory nasce no stub, com `stubService(stub)` e `stubPartSupply(stub)`, escritos em cada teste.
+
+A suíte `quote-approval-saga.e2e-spec.ts` cobre a Saga de aprovação pelo LocalStack e pelo MailHog do harness:
+
+| Teste | O que prova |
+|---|---|
+| Compensação | Com a reserva recusada, o orçamento volta a `SENT`, o orçamento rejeitado pela aprovação volta ao status anterior, a OS fica `AWAITING_APPROVAL` com a entrada da compensação no histórico, a Saga fica `COMPENSATED` e o cliente recebe o e-mail |
+| Nova aprovação | Aprovar de novo o orçamento compensado reabre a mesma Saga e envia um novo `inventory.stock.reserve` |
+| Conclusão | Com a reserva confirmada, a OS vai a `APPROVED` com os itens e o histórico com o autor, e a Saga fica `COMPLETED` |
+| Aprovações simultâneas | Duas aprovações de orçamentos `SENT` da mesma OS: uma `200`, outra `409`, uma Saga e um comando de reserva só |
+
+O comando de reserva é lido da fila `inventory.fifo` do LocalStack, como o Inventory o leria. As respostas do Inventory (`inventory.stock.reserved` e `inventory.stock.reservation_failed`) entram pelo outbox do próprio work-order, que as publica no tópico e as recebe de volta na fila `work-order.fifo`: o caminho até o handler é o mesmo de uma mensagem do Inventory.
 
 ## Contrato das rotas `/internal`
 
-O dono de uma rota `/internal` versiona a fixture da resposta em `app/test/contracts/` (`internal-work-order.json`, o detalhe completo de uma OS). O e2e do dono (`internal.e2e-spec.ts`) compara a **forma** da resposta real com a da fixture pelo `jsonShape`: as chaves e o tipo JSON de cada valor, não os valores. Arrays são comparados elemento a elemento, então o tamanho conta, e `null` é um tipo próprio.
+O dono de uma rota `/internal` versiona a fixture da resposta em `app/test/contracts/` (`internal-work-order.json`, o detalhe completo de uma OS, e `internal-quote-usage.json`, a resposta das duas rotas de uso de item em orçamento). O e2e do dono (`internal.e2e-spec.ts`) compara a **forma** da resposta real com a da fixture pelo `jsonShape`: as chaves e o tipo JSON de cada valor, não os valores. Arrays são comparados elemento a elemento, então o tamanho conta, e `null` é um tipo próprio.
 
-Quem consome a rota copia a fixture para `app/test/contracts/<dono>/`, mantém o campo `$source` com a origem e testa o próprio adaptador contra ela. Mudou a resposta do dono, a fixture muda no mesmo PR; as cópias dos consumidores mudam no PR de cada um, conferidas por diff contra a origem.
+Quem consome a rota copia a fixture para `app/test/contracts/<dono>/`, mantém o campo `$source` com a origem e testa o próprio adaptador contra ela. Este serviço consome as rotas de catálogo do Inventory: `app/test/contracts/inventory/internal-service.json` e `internal-part-supply.json` alimentam o spec do `HttpInventoryCatalogGateway` e o stub do e2e. Mudou a resposta do dono, a fixture muda no mesmo PR; as cópias dos consumidores mudam no PR de cada um, conferidas por diff contra a origem.
 
 ## Mensagem de teste no ambiente
 
-Para ver uma mensagem sair do outbox, passar pelo tópico e voltar pela fila do serviço (no log e no trace), insira uma linha na tabela `outbox`. O tipo `inventory.stock.reserved` é roteado para a fila `work-order.fifo`. Como o serviço não registra handler para ele, o consumidor registra `messaging.message.unhandled` a cada entrega e, na quinta, `messaging.message.dead_lettered`, e a mensagem vai para a `work-order-dlq.fifo`. Com `work_order_id` nulo, a mensagem forma um grupo só dela e não segura as mensagens de OS alguma.
+Para ver uma mensagem sair do outbox, passar pelo tópico e voltar pela fila do serviço (no log e no trace), insira uma linha na tabela `outbox`. O tipo `billing.payment.failed` é roteado para a fila `work-order.fifo`. Como o serviço ainda não registra handler para ele, o consumidor registra `messaging.message.unhandled` a cada entrega e, na quinta, `messaging.message.dead_lettered`, e a mensagem vai para a `work-order-dlq.fifo`. Com `work_order_id` nulo, a mensagem forma um grupo só dela e não segura as mensagens de OS alguma.
 
 Na stack do compose (a partir de `app/`):
 
 ```bash
-docker compose exec postgres psql -U postgres -d work_order -c "INSERT INTO outbox (message_id, type, work_order_id, payload) VALUES (gen_random_uuid(), 'inventory.stock.reserved', NULL, '{\"quoteId\": \"00000000-0000-4000-8000-000000000000\"}')"
+docker compose exec postgres psql -U postgres -d work_order -c "INSERT INTO outbox (message_id, type, work_order_id, payload) VALUES (gen_random_uuid(), 'billing.payment.failed', NULL, '{}')"
 ```
 
 No banco de um ambiente implantado, o mesmo `INSERT` vale em qualquer cliente SQL conectado ao banco do serviço. `message_id` não tem valor padrão no banco, por isso o `gen_random_uuid()`; um `work_order_id` preenchido precisa ser de uma OS existente, por causa da FK.
@@ -133,7 +151,9 @@ A coleção e o environment estão em `collections/`. Importe `collections/ofici
 
 O environment já vem com `adminEmail`/`adminPassword` e `customerCpf`/`customerPassword` correspondentes ao seed. As senhas e os três tokens (`authToken`, `refreshToken` e `customerJwtToken`) permanecem com tipo `secret`; os identificadores produzidos pelos scripts também estão declarados para que a importação resolva todas as variáveis da collection.
 
-A collection mantém as pastas de domínio sem numeração ou agrupadores adicionais. Execute-as de cima para baixo: **Health → Autenticação → Gestão de Usuários → Gestão de Serviços → Gestão de Peças e Insumos → Gestão de Clientes → Validação → Acesso Externo de Clientes → Gestão de Veículos → Gestão de Ordens de Serviço → Gestão de Orçamentos → Minha Conta → Gestão de Estoque - Relatórios → Relatórios e Métricas**. Essa ordem mantém as requests produtoras antes das consumidoras, inclusive `Minha Conta` fica depois de ordens e orçamentos porque seus cenários consomem `workOrderId` e `quoteId` produzidos anteriormente.
+A collection mantém as pastas de domínio sem numeração ou agrupadores adicionais. Execute-as de cima para baixo: **Health → Autenticação → Gestão de Usuários → Gestão de Clientes → Validação → Acesso Externo de Clientes → Gestão de Veículos → Gestão de Ordens de Serviço → Gestão de Orçamentos → Minha Conta → Relatórios e Métricas**. Essa ordem mantém as requests produtoras antes das consumidoras, inclusive `Minha Conta` fica depois de ordens e orçamentos porque seus cenários consomem `workOrderId` e `quoteId` produzidos anteriormente.
+
+O cadastro de serviços, peças e estoque não está nesta collection: é do Inventory, que tem a collection própria. As OS e os orçamentos usam um serviço e uma peça do seed do Inventory, com os ids canônicos de [Ids canônicos do seed](seed-ids.md) já gravados no environment (`serviceId` = `Troca de óleo`, `partSupplyId` = `FILT-OL-001`). A aprovação do orçamento com peça (`TC-QT-19`) responde 200 com o orçamento `APPROVED`, e o script de teste consulta a OS a cada segundo, até 15 vezes, até vê-la `APPROVED`: a OS só muda depois que o Inventory confirma a reserva do estoque.
 
 O grupo **Autenticação** mantém os dois fluxos separados: o login interno grava `authToken` e `refreshToken`, e `POST /customer-auth/login` é `noauth` e grava somente `customerJwtToken`. O grupo **Minha Conta** exercita `/api/me/*` com `Bearer {{customerJwtToken}}`, sobrescrevendo o bearer interno herdado da collection.
 
@@ -149,6 +169,24 @@ Ou via linha de comando com a aplicação rodando:
 ```bash
 npx newman run collections/oficina-collection.json -e collections/oficina-environment.json
 ```
+
+**Localmente, a collection precisa do Inventory de pé e na mesma mensageria.** Cada stack local sobe o próprio LocalStack, e a reserva de estoque só se completa se o Inventory ler o comando da fila `inventory.fifo` do LocalStack do work-order e responder no tópico dele. Suba o Inventory apontando para esse LocalStack, com um arquivo de override do Docker Compose (um arquivo que sobrescreve valores do `docker-compose.yml`), e carregue o seed dele:
+
+```yaml
+# inventory-shared-localstack.yml, fora do repositório
+services:
+  api:
+    environment:
+      AWS_ENDPOINT_URL: http://host.docker.internal:4566
+```
+
+```bash
+# A partir de app/ do oficina-mecanica-inventory-service, com o compose do work-order já no ar
+docker compose -f docker-compose.yml -f inventory-shared-localstack.yml up -d --build --wait
+DATABASE_URL=postgresql://postgres:postgres@localhost:5435/inventory npm run prisma:seed
+```
+
+O LocalStack do work-order já cria a fila `inventory.fifo` e a assinatura dela no tópico. Pelo API Gateway, os serviços implantados compartilham o SNS e o SQS de verdade, e nada disso é necessário.
 
 ## Indisponibilidade de dependência e encerramento gracioso
 
@@ -169,7 +207,7 @@ O primeiro **não** substitui o segundo, e é essa a armadilha: se o `$disconnec
 
 O drain **é** alcançável neste harness: `enableShutdownHooks()` apenas registra listeners de sinais do processo, e `close(signal)` executa os hooks de qualquer forma — o servidor HTTP só fecha no `dispose()`, depois da janela. Por isso ele não aparece na lista de branches inalcançáveis abaixo. A janela, porém, só é sustentada no ambiente orquestrado (`NODE_ENV=production`), então o `describe` de encerramento declara esse ambiente no `beforeEach` e o restaura depois — é o que faz a suíte exercitar o comportamento real em vez de um caminho de teste próprio.
 
-As três `describe`s esperam a prontidão assentar em `200` antes de assertar o contrato. A primeira verificação depois do boot paga TCP + autenticação com o pool ainda vazio, e o prazo próprio do chamador é de 3,5 s — o `query_timeout` de 2 s vale só para a consulta e não cobre a aquisição da conexão: com dezessete suítes E2E em paralelo, cada uma subindo os próprios containers, esse caso frio estoura o prazo e a prontidão responde `503` uma vez — exatamente como responderia em produção antes de o `failureThreshold` ser atingido. A propriedade continua asserida (se a prontidão nunca ficar `200`, a suíte falha); o que a espera remove é a dependência de uma única amostra fria sob inanição de CPU.
+As três `describe`s esperam a prontidão assentar em `200` antes de assertar o contrato. A primeira verificação depois do boot paga TCP + autenticação com o pool ainda vazio, e o prazo próprio do chamador é de 3,5 s — o `query_timeout` de 2 s vale só para a consulta e não cobre a aquisição da conexão: com dezesseis suítes E2E em paralelo, cada uma subindo os próprios containers, esse caso frio estoura o prazo e a prontidão responde `503` uma vez — exatamente como responderia em produção antes de o `failureThreshold` ser atingido. A propriedade continua asserida (se a prontidão nunca ficar `200`, a suíte falha); o que a espera remove é a dependência de uma única amostra fria sob inanição de CPU.
 
 **Asserções de log.** Com `setupTestApp({ captureLogs: true })`, a suíte assere que uma probe saudável produz **zero** linhas de access log; que uma probe que falha produz **exatamente uma**, em `error`, **sem** stack trace e **sem** `error.type`/`oficina.error.message` (a resposta é deliberada e não lança, então não há exceção resolvida de onde derivá-los); e que a transição emite exatamente um `health.degraded` com a categoria da causa. Fecha com uma asserção **negativa**: o corpo do `503` não contém host, porta, cadeia de conexão nem stack.
 
@@ -226,11 +264,13 @@ As categorias, e por que cada uma não é alcançável:
 |---|---|---|
 | `use-cases/work-order/update-work-order-status.use-case.ts` — `PATCH_STATUS_ALLOWED.has(...)` | Ramo de recusa | O `@IsEnum` do `UpdateWorkOrderStatusRequestDto` declara **o mesmo** conjunto: um status fora dele vira `400` na validação, antes do use-case. A guarda protege o uso programático. |
 | `use-cases/quote/reject-quote.use-case.ts` — `notes ?? \`Orçamento … rejeitado\`` | Ramo direito | `UpdateQuoteStatusUseCase` exige justificativa para rejeitar (`400` sem ela), então `notes` nunca chega vazio por HTTP. |
-| `use-cases/quote/{approve,reject}-quote.use-case.ts` — `userId ?? null` | Ramo direito | As rotas são autenticadas; `userId` nunca é nulo vindo da borda. |
+| `use-cases/quote-approval/approve-quote.use-case.ts` e `use-cases/quote/reject-quote.use-case.ts` — `userId ?? null` | Ramo direito | As rotas são autenticadas; `userId` nunca é nulo vindo da borda. |
 | `use-cases/me/{find-my-quote-by-id,decide-my-quote}.use-case.ts` — `if (!workOrder)` | Ramo verdadeiro | `quotes.work_order_id` é `NOT NULL` com `ON DELETE CASCADE`: um orçamento sem ordem não existe no banco. |
 | `metrics/work-order-duration.ts` — guardas de histórico | Ramos defensivos | A função é pura e recebe o histórico como está no banco. Transição ausente, status terminal, entrada de chegada truncada e carimbo inválido/negativo não são produzíveis por requisição — o unitário monta esses históricos diretamente. |
 | `use-cases/me/change-own-password.use-case.ts` — `if (!user)` | Ramo verdadeiro | O guard resolve o principal a partir de um usuário existente; um `sub` desconhecido é recusado em `CustomerJwtStrategy.validate()` antes do use-case. |
 
 > A lista descreve o comportamento atual e é revisada junto com o código. Quando uma relação
 > obrigatória permite afirmar em vez de defender, prefira `!` a `??`/`?.`: isso elimina o branch
-> em vez de deixá-lo permanentemente descoberto.
+> em vez de deixá-lo permanentemente descoberto. Os dados de exibição dos itens não são relação:
+> vêm do Inventory e podem faltar, então o presenter usa `?.`/`?? null` e o item que o Inventory
+> não acha mais é coberto pelo e2e do detalhe da OS.

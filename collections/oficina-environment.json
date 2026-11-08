@@ -12,10 +12,8 @@
     { "key": "customerJwtToken", "value": "", "type": "secret", "enabled": true },
     { "key": "userId", "value": "", "type": "default", "enabled": true },
     { "key": "mechanicUserId", "value": "", "type": "default", "enabled": true },
-    { "key": "serviceId", "value": "", "type": "default", "enabled": true },
-    { "key": "serviceIdForDelete", "value": "", "type": "default", "enabled": true },
-    { "key": "partSupplyId", "value": "", "type": "default", "enabled": true },
-    { "key": "partSupplyIdForDelete", "value": "", "type": "default", "enabled": true },
+    { "key": "serviceId", "value": "3551b3f8-625e-4f2b-b777-a1d0ec4e4585", "type": "default", "enabled": true },
+    { "key": "partSupplyId", "value": "361b050f-c441-429d-8a73-dfc12415dc62", "type": "default", "enabled": true },
     { "key": "customerId", "value": "", "type": "default", "enabled": true },
     { "key": "customerId2", "value": "", "type": "default", "enabled": true },
     { "key": "vehicleId", "value": "", "type": "default", "enabled": true },
@@ -24,9 +22,7 @@
     { "key": "tempWorkOrderId", "value": "", "type": "default", "enabled": true },
     { "key": "quoteId", "value": "", "type": "default", "enabled": true },
     { "key": "quoteIdForReject", "value": "", "type": "default", "enabled": true },
-    { "key": "tempSentQuoteId", "value": "", "type": "default", "enabled": true },
-    { "key": "testSku", "value": "", "type": "default", "enabled": true },
-    { "key": "testSku2", "value": "", "type": "default", "enabled": true }
+    { "key": "tempSentQuoteId", "value": "", "type": "default", "enabled": true }
   ],
   "_postman_variable_scope": "environment"
 }

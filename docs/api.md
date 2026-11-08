@@ -6,6 +6,7 @@
 
 - [Endpoints disponíveis](#endpoints-disponíveis)
 - [Rotas internas (`/internal`)](#rotas-internas-internal)
+- [Dados de exibição dos itens](#dados-de-exibição-dos-itens)
 - [Formato de resposta](#formato-de-resposta)
   - [Exceção: as rotas de saúde](#exceção-as-rotas-de-saúde)
 
@@ -54,37 +55,16 @@ Toda rota exige o header `Authorization: Bearer <token>` (access token), salvo a
 
 ---
 
-**Serviços** (`/api/services`)
+**Métricas de Serviços** (`/api/services/:id/metrics`, `/api/services-metrics`) — *ADMIN*
 
 | Método | Rota | Descrição | Perfis |
 |---|---|---|---|
-| POST | `/` | Cadastrar serviço | ADMIN |
-| GET | `/` | Listar (paginado; filtro: `name`) | ADMIN, MECHANIC, ATTENDANT |
-| GET | `/:id` | Buscar por ID | ADMIN |
-| GET | `/:id/metrics` | Métricas de uso de um serviço (execuções concluídas e tempo médio em minutos) | ADMIN |
-| PUT | `/:id` | Atualizar | ADMIN |
-| DELETE | `/:id` | Remover | ADMIN |
+| GET | `/api/services/:id/metrics` | Métricas de um serviço: execuções concluídas e tempo médio em minutos. `404` quando o Inventory não conhece o serviço | ADMIN |
+| GET | `/api/services-metrics` | Métricas dos serviços já executados (paginado), ordenadas pelo nome | ADMIN |
 
----
+> As métricas contam os itens de OS concluídos, com início e fim registrados (`work_order_services` com status `COMPLETED`), e o nome do serviço (`serviceName`) é lido no Inventory a cada requisição. A lista traz só os serviços já executados; um serviço que o Inventory não acha mais aparece com `serviceName` nulo, no fim da lista. Na rota de um serviço, `averageTimeMinutes` sai `0`, não nulo, quando ele ainda não tem execução concluída. Com o Inventory fora do ar, as duas rotas respondem **503**.
 
-**Métricas de Serviços** (`/api/services-metrics`) — *ADMIN*
-
-| Método | Rota | Descrição | Perfis |
-|---|---|---|---|
-| GET | `/` | Listar métricas de todos os serviços (paginado) | ADMIN |
-
----
-
-**Peças e Insumos** (`/api/parts-supplies`)
-
-| Método | Rota | Descrição | Perfis |
-|---|---|---|---|
-| POST | `/` | Cadastrar peça ou insumo | ADMIN |
-| GET | `/` | Listar estoque (paginado; filtros: `name`, `sku`, `category`, `lowStock`) | ADMIN, MECHANIC, ATTENDANT |
-| GET | `/:id` | Buscar por ID | ADMIN, ATTENDANT |
-| PUT | `/:id` | Atualizar dados | ADMIN |
-| PATCH | `/:id` | Movimentar estoque (`ENTRY` / `EXIT` / `ADJUSTMENT`) — gera `StockMovement` | ADMIN, ATTENDANT |
-| DELETE | `/:id` | Remover (bloqueado se houver estoque ou reservas vinculadas) | ADMIN |
+> **Catálogo e estoque ficam no Inventory.** O cadastro de serviços (`/api/services`), de peças e insumos (`/api/parts-supplies`) e as consultas de estoque (`/api/stock-movements`, `/api/stock-reservations`) são do Inventory, o serviço da solução dono do catálogo e do estoque ([`oficina-mecanica-inventory-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service)). Pelo API Gateway, essas rotas chegam ao Inventory; só as duas rotas de métricas acima chegam a este serviço. As OS e os orçamentos guardam de cada item só o id, a quantidade e o preço, e leem os dados de exibição no Inventory a cada leitura (ver [Dados de exibição dos itens](#dados-de-exibição-dos-itens)).
 
 ---
 
@@ -131,12 +111,12 @@ Toda rota exige o header `Authorization: Bearer <token>` (access token), salvo a
 
 | Método | Rota | Descrição | Perfis |
 |---|---|---|---|
-| POST | `/` | Criar nova OS (`userId` extraído do JWT, número gerado por sequence). Aceita opcionalmente `services` e `partsSupplies` — se ao menos um serviço for fornecido, cria um orçamento `PENDING` atomicamente na mesma transação (sem passar pelo gate `ensureCanCreateQuote`). Peças sem serviço → 409. ID desconhecido → 404. | ADMIN, ATTENDANT |
+| POST | `/` | Criar nova OS (`userId` extraído do JWT, número gerado por sequence). Aceita opcionalmente `services` e `partsSupplies` — se ao menos um serviço for fornecido, cria um orçamento `PENDING` atomicamente na mesma transação (sem passar pelo gate `ensureCanCreateQuote`). Os itens são validados e precificados no Inventory antes de gravar: peças sem serviço → 409, id que o Inventory não conhece → 404, Inventory fora do ar → 503. | ADMIN, ATTENDANT |
 | GET | `/` | Listar (paginado; filtros: `number`, `status`, `customerId`, `vehicleId`, `assignedUserId`; ordenação: `sort`). **Por padrão, ordens em `COMPLETED`, `DELIVERED` e `CANCELLED` são omitidas**; use `?status=X` para recuperá-las. | ADMIN, MECHANIC, ATTENDANT |
-| GET | `/:id` | Buscar por ID (retorna serviços e peças/insumos da OS) | ADMIN, MECHANIC, ATTENDANT |
+| GET | `/:id` | Buscar por ID (retorna serviços e peças/insumos da OS, com os dados de exibição lidos no Inventory) | ADMIN, MECHANIC, ATTENDANT |
 | PUT | `/:id` | Atualizar OS (apenas em `RECEIVED` / `IN_DIAGNOSIS`; `userId` extraído do JWT) | ADMIN, MECHANIC, ATTENDANT |
-| PATCH | `/:id` | Atualizar status da OS (apenas `IN_DIAGNOSIS`, `CANCELLED`, `DELIVERED`) | ADMIN, MECHANIC, ATTENDANT |
-| PATCH | `/:workOrderId/services/:serviceId` | Atualizar status de um serviço da OS (`IN_PROGRESS` / `COMPLETED`) | ADMIN, MECHANIC, ATTENDANT |
+| PATCH | `/:id` | Atualizar status da OS (apenas `IN_DIAGNOSIS`, `CANCELLED`, `DELIVERED`). O cancelamento responde **409** enquanto a reserva de estoque de um orçamento aprovado está em andamento | ADMIN, MECHANIC, ATTENDANT |
+| PATCH | `/:workOrderId/services/:serviceId` | Atualizar status de um serviço da OS (`IN_PROGRESS` / `COMPLETED`). O primeiro serviço iniciado leva a OS a `IN_PROGRESS` e, se ela tem peças, pede ao Inventory a baixa do estoque reservado | ADMIN, MECHANIC, ATTENDANT |
 | GET | `/:id/status-history` | Histórico de mudanças de status | ADMIN, MECHANIC, ATTENDANT |
 | GET | `/:id/quotes` | Listar orçamentos da OS (sem itens) | ADMIN, MECHANIC, ATTENDANT |
 
@@ -151,37 +131,22 @@ Toda rota exige o header `Authorization: Bearer <token>` (access token), salvo a
 | Método | Rota | Descrição | Perfis |
 |---|---|---|---|
 | GET | `/` | Listar (paginado; filtros: `workOrderId`, `status`) | ADMIN, MECHANIC, ATTENDANT |
-| POST | `/` | Criar orçamento para uma OS (OS deve estar em `IN_DIAGNOSIS` / `AWAITING_APPROVAL` / `REJECTED`). Aceita opcionalmente `services` e `partsSupplies` inline — sem itens cria orçamento vazio (comportamento original); com itens aplica a regra "ao menos um serviço obrigatório" (peças sem serviço → 409, ID desconhecido → 404). | ADMIN, MECHANIC, ATTENDANT |
+| POST | `/` | Criar orçamento para uma OS (OS deve estar em `IN_DIAGNOSIS` / `AWAITING_APPROVAL` / `REJECTED`). Aceita opcionalmente `services` e `partsSupplies` inline — sem itens cria orçamento vazio (comportamento original); com itens aplica a regra "ao menos um serviço obrigatório" (peças sem serviço → 409, id que o Inventory não conhece → 404, Inventory fora do ar → 503). Responde **409** enquanto a reserva de estoque de um orçamento aprovado da OS está em andamento. | ADMIN, MECHANIC, ATTENDANT |
 | GET | `/:id` | Buscar por ID com itens (serviços e peças/insumos) | ADMIN, MECHANIC, ATTENDANT |
-| POST | `/:id/services` | Adicionar serviço ao orçamento — body `{ serviceId, quantity }` | ADMIN, MECHANIC, ATTENDANT |
+| POST | `/:id/services` | Adicionar serviço ao orçamento — body `{ serviceId, quantity }`; o preço vem do Inventory | ADMIN, MECHANIC, ATTENDANT |
 | PATCH | `/:id/services/:serviceId` | Atualizar quantidade de serviço | ADMIN, MECHANIC, ATTENDANT |
 | DELETE | `/:id/services/:serviceId` | Remover serviço do orçamento | ADMIN, MECHANIC, ATTENDANT |
-| POST | `/:id/parts-supplies` | Adicionar peça/insumo ao orçamento — body `{ partSupplyId, quantity }` | ADMIN, MECHANIC, ATTENDANT |
+| POST | `/:id/parts-supplies` | Adicionar peça/insumo ao orçamento — body `{ partSupplyId, quantity }`; o preço vem do Inventory | ADMIN, MECHANIC, ATTENDANT |
 | PATCH | `/:id/parts-supplies/:partSupplyId` | Atualizar quantidade de peça/insumo | ADMIN, MECHANIC, ATTENDANT |
 | DELETE | `/:id/parts-supplies/:partSupplyId` | Remover peça/insumo do orçamento | ADMIN, MECHANIC, ATTENDANT |
-| POST | `/:id/submissions` | Enviar orçamento para aprovação do cliente (envia e-mail notificando o cliente, sem link de decisão — a decisão exige autenticação, ver **Minha Conta** abaixo). Exige a OS já diagnosticada (nunca `RECEIVED` → 409); permite orçamentos concorrentes (vários `SENT` na mesma OS). | ADMIN, MECHANIC, ATTENDANT |
+| POST | `/:id/submissions` | Enviar orçamento para aprovação do cliente (envia e-mail notificando o cliente, sem link de decisão — a decisão exige autenticação, ver **Minha Conta** abaixo). Exige a OS já diagnosticada (nunca `RECEIVED` → 409); permite orçamentos concorrentes (vários `SENT` na mesma OS). Responde **409** enquanto a reserva de estoque de um orçamento aprovado da OS está em andamento. | ADMIN, MECHANIC, ATTENDANT |
 | PATCH | `/:id` | Aprovar (`status=APPROVED`) ou rejeitar (`status=REJECTED` + `reason`) manualmente | ADMIN, ATTENDANT |
+
 > A rota pública `GET /quotes/:id/decisions?token=...` (decisão via link assinado por e-mail) foi **removida**. A decisão do Cliente da Oficina agora exige autenticação — ver **Minha Conta** abaixo.
 
-> Itens só podem ser modificados enquanto o orçamento estiver `PENDING`. A aprovação reserva estoque, materializa itens na OS, transiciona a OS para `APPROVED` e rejeita os demais orçamentos pendentes/enviados da mesma OS (propostas concorrentes). A rejeição só leva a OS a `REJECTED` quando não há outro orçamento `SENT`; havendo, a OS permanece `AWAITING_APPROVAL`. As listagens (`GET /quotes` e `GET /work-orders/:id/quotes`) intencionalmente omitem os itens — apenas `GET /quotes/:id` retorna o orçamento com seus itens.
+> Itens só podem ser modificados enquanto o orçamento estiver `PENDING`. A rejeição só leva a OS a `REJECTED` quando não há outro orçamento `SENT`; havendo, a OS permanece `AWAITING_APPROVAL`. As listagens (`GET /quotes` e `GET /work-orders/:id/quotes`) intencionalmente omitem os itens — apenas `GET /quotes/:id` retorna o orçamento com seus itens.
 
----
-
-**Movimentações de Estoque** (`/api/stock-movements`) — *ADMIN, ATTENDANT*
-
-| Método | Rota | Descrição | Perfis |
-|---|---|---|---|
-| GET | `/` | Listar movimentações (paginado; filtros: `partSupplyId`, `type`, `workOrderId`, `startDate`, `endDate`) | ADMIN, ATTENDANT |
-
-> `startDate` e `endDate` aceitam o formato `yyyy-MM-dd` (validado por `@Matches`) e são convertidos internamente para janelas UTC inclusivas (`startDate 00:00:00.000Z` até `endDate 23:59:59.999Z`).
-
----
-
-**Reservas de Estoque** (`/api/stock-reservations`) — *ADMIN, ATTENDANT*
-
-| Método | Rota | Descrição | Perfis |
-|---|---|---|---|
-| GET | `/` | Listar reservas ativas (paginado; filtros: `partSupplyId`, `workOrderId`) | ADMIN, ATTENDANT |
+> **Aprovação e reserva de estoque.** A aprovação (por `PATCH /quotes/:id` ou pela decisão do cliente em `POST /me/quotes/:quoteId/decisions`) responde **200** com o orçamento `APPROVED` e rejeita os demais orçamentos `PENDING` e `SENT` da OS. Sem peças, a OS vai a `APPROVED` na mesma requisição. Com peças, a OS continua `AWAITING_APPROVAL` até o Inventory confirmar a reserva do estoque, o que leva alguns segundos; confirmada a reserva, a OS vai a `APPROVED` com os itens do orçamento. Se falta estoque, a aprovação é desfeita: o orçamento volta a `SENT`, os orçamentos rejeitados por ela voltam ao status anterior (`SENT` ou `PENDING`), o histórico da OS registra `Aprovação do orçamento <id> desfeita por falta de estoque` e o cliente recebe um e-mail avisando que o orçamento voltou a aguardar aprovação e pode ser aprovado de novo quando o estoque for reposto. Não há mais 409 "Estoque insuficiente" na aprovação: a falta de estoque chega depois, pelo Inventory. Durante a reserva, criar ou enviar orçamento e cancelar a OS respondem **409** `Ordem de serviço com aprovação de orçamento em andamento: aguarde a confirmação do estoque`; aprovar outro orçamento responde **409** porque todos os outros estão `REJECTED`. O fluxo completo está em [Aprovação de orçamento com reserva de estoque](architecture.md#aprovação-de-orçamento-com-reserva-de-estoque).
 
 ---
 
@@ -225,8 +190,19 @@ Rotas para os outros serviços da oficina, pela rede do cluster. Ficam **fora do
 | Método | Rota | Descrição | Acesso |
 |---|---|---|---|
 | GET | `/internal/work-orders/:id` | Detalhe da OS, com o mesmo corpo de `GET /api/work-orders/:id`. `400` para id que não é UUID e `404` para OS inexistente | Rede do cluster |
+| GET | `/internal/services/:serviceId/quote-usage` | Diz ao Inventory se algum orçamento usa o serviço: `200 { data: { inUse } }`. `400` para id que não é UUID | Rede do cluster |
+| GET | `/internal/parts-supplies/:partSupplyId/quote-usage` | Diz ao Inventory se algum orçamento usa a peça ou insumo: `200 { data: { inUse } }`. `400` para id que não é UUID | Rede do cluster |
 
-O corpo segue o mesmo envelope das rotas públicas. O contrato fica numa fixture versionada em `app/test/contracts/`, conferida pelo e2e (ver [Contrato das rotas `/internal`](testing.md#contrato-das-rotas-internal)); detalhes do cliente que chama essas rotas em [Chamadas internas](architecture.md#chamadas-internas).
+O Inventory chama as duas rotas de uso antes de apagar um serviço ou uma peça do catálogo, para recusar a exclusão de item que algum orçamento usa. O corpo segue o mesmo envelope das rotas públicas. Os contratos ficam em fixtures versionadas em `app/test/contracts/` (`internal-work-order.json` e `internal-quote-usage.json`), conferidas pelo e2e (ver [Contrato das rotas `/internal`](testing.md#contrato-das-rotas-internal)); detalhes do cliente que chama essas rotas em [Chamadas internas](architecture.md#chamadas-internas).
+
+---
+
+## Dados de exibição dos itens
+
+Os itens de OS e de orçamento guardam o id do serviço ou da peça, a quantidade e o preço. Os dados de exibição (nome e descrição do serviço; nome, descrição, SKU, número de peça, categoria e unidade da peça) são lidos no Inventory a cada resposta que mostra itens: o detalhe da OS (e as rotas que o devolvem: criação, edição, mudança de status e `GET /internal/work-orders/:id`), o item da rota de execução de serviço, o detalhe do orçamento e o detalhe e a decisão do orçamento em `/api/me`. As listas de OS e de orçamentos mostram só o resumo e não consultam o Inventory.
+
+- Um item que o Inventory não acha mais aparece com id, quantidade e preço e os campos de exibição nulos.
+- Com o Inventory fora do ar, essas rotas respondem **503**. As que gravam e mostram itens (mudança de status, execução de serviço e decisão do cliente) leem o catálogo antes de gravar, então o 503 sai sem nada gravado.
 
 ---
 

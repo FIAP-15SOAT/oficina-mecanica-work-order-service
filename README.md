@@ -2,7 +2,7 @@
 
 # 🔧 Work Order Service
 
-**Sistema Integrado de Atendimento e Execução de Serviços para oficinas mecânicas** — ordens de serviço, clientes, veículos, peças, insumos, serviços, orçamentos e estoque.
+**Sistema Integrado de Atendimento e Execução de Serviços para oficinas mecânicas** — ordens de serviço, clientes, veículos e orçamentos, com o catálogo de serviços e peças e o estoque lidos no serviço Inventory.
 
 ![Node](https://img.shields.io/badge/Node.js-22-339933?logo=node.js&logoColor=white)
 ![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?logo=nestjs&logoColor=white)
@@ -19,11 +19,11 @@ Projeto acadêmico da pós-graduação em Arquitetura de Software da FIAP (turma
 Atualmente composto pela API, pelos serviços de entrada e autenticação, pela infraestrutura AWS e pela observabilidade da solução.
 
 Trata-se de uma API REST para gestão de oficinas mecânicas, construída com **NestJS** e **Clean Architecture + DDD**.
-Substitui o controle manual (anotações e planilhas) de uma oficina de médio porte por um **Sistema Integrado de Atendimento e Execução de Serviços** — do recebimento do veículo à entrega, com orçamento, aprovação do cliente, execução e baixa de estoque orquestrados pelo domínio, contemplando:
+Substitui o controle manual (anotações e planilhas) de uma oficina de médio porte por um **Sistema Integrado de Atendimento e Execução de Serviços** — do recebimento do veículo à entrega, com orçamento, aprovação do cliente, reserva e baixa de estoque e execução orquestrados pelo domínio, contemplando:
 
 - **Ordens de serviço** com máquina de estados validada no domínio
 - **Orçamentos** com aprovação/rejeição pelo **Cliente da Oficina autenticado** (ver [Autenticação](#-autenticação))
-- **Estoque** com reserva automática na aprovação e baixa no início do serviço
+- **Reserva de estoque pela Saga de aprovação**: aprovar um orçamento com peças pede a reserva ao Inventory, o serviço dono do catálogo e do estoque; a OS vai a `APPROVED` quando a reserva é confirmada, e a aprovação é desfeita, com e-mail ao cliente, quando falta estoque. A baixa é pedida ao Inventory no início do primeiro serviço
 - **Autorização por papéis (RBAC)**: `ADMIN`, `MECHANIC`, `ATTENDANT`
 - **Dois fluxos de autenticação JWT isolados**: interno (RS256, access + refresh com chaves separadas, bcrypt) e externo por CPF + senha (RS256, emitido por uma função serverless dedicada)
 - **Concorrência otimista** (lock por `version`) em agregados sensíveis
@@ -145,6 +145,8 @@ Após a inicialização:
 - **MailHog (interface web):** `http://localhost:8025`
 - **LocalStack (SNS/SQS):** `http://localhost:4566`
 
+> As rotas que mostram ou gravam itens de OS e de orçamento leem o catálogo no Inventory, o serviço dono de serviços, peças e estoque. Suba também a stack local do [`oficina-mecanica-inventory-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service) (API em `http://localhost:3003`); sem ela, essas rotas respondem 503. Ver [Como executar localmente › Inventory local](docs/local-setup.md#inventory-local).
+
 ```bash
 # Acompanhar os logs da API em tempo real
 docker compose logs -f api
@@ -250,19 +252,8 @@ A função serverless de autenticação externa **não está neste repositório*
 | `GET /api/vehicles/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
 | `PUT /api/vehicles/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
 | `DELETE /api/vehicles/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `POST /api/services` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
-| `GET /api/services` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `GET /api/services/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
 | `GET /api/services/:id/metrics` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
-| `PUT /api/services/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
-| `DELETE /api/services/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
 | `GET /api/services-metrics` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
-| `POST /api/parts-supplies` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
-| `GET /api/parts-supplies` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `GET /api/parts-supplies/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `PUT /api/parts-supplies/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
-| `PATCH /api/parts-supplies/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `DELETE /api/parts-supplies/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
 | `POST /api/work-orders` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
 | `GET /api/work-orders` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
 | `GET /api/work-orders/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
@@ -282,14 +273,16 @@ A função serverless de autenticação externa **não está neste repositório*
 | `DELETE /api/quotes/:id/parts-supplies/:partSupplyId` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
 | `POST /api/quotes/:id/submissions` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
 | `PATCH /api/quotes/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `GET /api/stock-movements` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
-| `GET /api/stock-reservations` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
 | `GET /api/health/live`, `GET /api/health/ready` | `@Public()` | Público |
 | `GET /internal/work-orders/:id` | `@Public()` | Rede do cluster (fora do prefixo `/api`, não passa pelo API Gateway) |
+| `GET /internal/services/:serviceId/quote-usage` | `@Public()` | Rede do cluster (chamada pelo Inventory) |
+| `GET /internal/parts-supplies/:partSupplyId/quote-usage` | `@Public()` | Rede do cluster (chamada pelo Inventory) |
 
 > A autenticação é negada por padrão: um guard global (`AuthenticationGuard`) exige o token de funcionário em toda rota sem marcação, `@Public()` dispensa o token e `@CustomerArea()` troca o token exigido. O `RolesGuard` restringe por papel depois dele.
 
 > A decisão do cliente usa `POST /api/me/quotes/:quoteId/decisions`, com autenticação `customer-jwt` RS256.
+
+> As rotas de catálogo e estoque (`/api/services`, `/api/parts-supplies`, `/api/stock-movements`, `/api/stock-reservations`) e as permissões delas são do Inventory; deste serviço ficam só as métricas por serviço.
 
 </details>
 
@@ -342,7 +335,7 @@ A solução é composta por **sete repositórios especializados**, com responsab
 
 | Documento | Conteúdo |
 |---|---|
-| 🏛️ [Arquitetura](docs/architecture.md) | Clean Architecture, DDD, ciclos de vida, UoW, mensageria com outbox, cache, chamadas internas, exceções |
+| 🏛️ [Arquitetura](docs/architecture.md) | Clean Architecture, DDD, ciclos de vida, UoW, Saga de aprovação com reserva de estoque, mensageria com outbox, cache, chamadas internas, exceções |
 | 🗃️ [Banco de Dados](docs/database.md) | Diagrama ER, tabelas e relacionamentos, enums, convenções de modelagem |
 | 🔀 [Diagramas de Sequência](docs/sequence-diagrams.md) | Login interno, abertura de OS e autenticação externa por CPF |
 | 🔌 [Referência da API](docs/api.md) | Endpoints por domínio, perfis (RBAC), rotas /internal, formato de resposta |
@@ -355,7 +348,7 @@ A solução é composta por **sete repositórios especializados**, com responsab
 | 🌍 [Infra · Terraform](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base) | Infraestrutura AWS e Kubernetes (IaC nos repositórios dedicados) |
 | ☸️ [Infra · Kubernetes](docs/infra/kubernetes.md) | Manifests de aplicação (`k8s/`), probes, HPA e deploy |
 | 🔄 [Infra · CI/CD](docs/infra/ci-cd.md) | Workflows de CI, CD, SAST e DAST |
-| 📐 [ADRs](docs/adr) | Decisões arquiteturais — [0001 PostgreSQL](docs/adr/0001-uso-do-postgresql-como-banco-de-dados.md), [0002 Logging estruturado](docs/adr/0002-logging-estruturado.md), [0003 Health checks](docs/adr/0003-health-checks.md), [0004 Autenticação de clientes](docs/adr/0004-autenticacao-de-clientes.md), [0005 OpenTelemetry](docs/adr/0005-opentelemetry.md), [0006 Escolha de nuvem](docs/adr/0006-escolha-de-nuvem-aws.md), [0007 Padrão de comunicação](docs/adr/0007-padrao-de-comunicacao-rest-monolito.md), [0008 Autoscaling (HPA)](docs/adr/0008-autoscaling-via-hpa.md), [0009 Clean Architecture/DDD](docs/adr/0009-clean-architecture-ddd-em-camadas.md), [0010 Concorrência otimista](docs/adr/0010-concorrencia-otimista-via-version.md), [0011 Unit of Work](docs/adr/0011-unit-of-work-transacoes-multi-repositorio.md), [0012 Exceções por camada](docs/adr/0012-hierarquia-de-excecoes-por-camada.md), [0013 Autenticação interna JWT](docs/adr/0013-autenticacao-interna-jwt-stateless.md) *(substituída pela 0022)*, [0014 Pipelines CI/CD/SAST/DAST](docs/adr/0014-pipelines-ci-cd-sast-dast-separados.md), [0015 Testcontainers no E2E](docs/adr/0015-testcontainers-e2e-postgresql-real.md), [0016 Sanitização e validação em duas camadas](docs/adr/0016-sanitizacao-e-validacao-em-duas-camadas.md), [0017 Credencial do banco no CD](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md), [0018 Mensageria com outbox](docs/adr/0018-mensageria-sns-sqs-fifo-com-outbox.md), [0019 Cache do dono](docs/adr/0019-cache-do-dono-no-elasticache.md), [0020 Chamadas internas e rotas negadas por padrão](docs/adr/0020-chamadas-internas-e-rotas-negadas-por-padrao.md), [0021 Span de consumo de mensagens](docs/adr/0021-span-de-consumo-de-mensagens.md), [0022 Token de funcionário em RS256](docs/adr/0022-token-de-funcionario-em-rs256.md) |
+| 📐 [ADRs](docs/adr) | Decisões arquiteturais — [0001 PostgreSQL](docs/adr/0001-uso-do-postgresql-como-banco-de-dados.md), [0002 Logging estruturado](docs/adr/0002-logging-estruturado.md), [0003 Health checks](docs/adr/0003-health-checks.md), [0004 Autenticação de clientes](docs/adr/0004-autenticacao-de-clientes.md), [0005 OpenTelemetry](docs/adr/0005-opentelemetry.md), [0006 Escolha de nuvem](docs/adr/0006-escolha-de-nuvem-aws.md), [0007 Padrão de comunicação](docs/adr/0007-padrao-de-comunicacao-rest-monolito.md), [0008 Autoscaling (HPA)](docs/adr/0008-autoscaling-via-hpa.md), [0009 Clean Architecture/DDD](docs/adr/0009-clean-architecture-ddd-em-camadas.md), [0010 Concorrência otimista](docs/adr/0010-concorrencia-otimista-via-version.md), [0011 Unit of Work](docs/adr/0011-unit-of-work-transacoes-multi-repositorio.md), [0012 Exceções por camada](docs/adr/0012-hierarquia-de-excecoes-por-camada.md), [0013 Autenticação interna JWT](docs/adr/0013-autenticacao-interna-jwt-stateless.md) *(substituída pela 0022)*, [0014 Pipelines CI/CD/SAST/DAST](docs/adr/0014-pipelines-ci-cd-sast-dast-separados.md), [0015 Testcontainers no E2E](docs/adr/0015-testcontainers-e2e-postgresql-real.md), [0016 Sanitização e validação em duas camadas](docs/adr/0016-sanitizacao-e-validacao-em-duas-camadas.md), [0017 Credencial do banco no CD](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md), [0018 Mensageria com outbox](docs/adr/0018-mensageria-sns-sqs-fifo-com-outbox.md), [0019 Cache do dono](docs/adr/0019-cache-do-dono-no-elasticache.md), [0020 Chamadas internas e rotas negadas por padrão](docs/adr/0020-chamadas-internas-e-rotas-negadas-por-padrao.md), [0021 Span de consumo de mensagens](docs/adr/0021-span-de-consumo-de-mensagens.md), [0022 Token de funcionário em RS256](docs/adr/0022-token-de-funcionario-em-rs256.md), [0023 Catálogo e estoque no Inventory, com reserva pela Saga](docs/adr/0023-catalogo-e-estoque-no-inventory-com-reserva-pela-saga.md) |
 | 🧩 [Modelo C4](docs/c4) | Diagramas de Contexto, Container e Componente |
 | 🎨 [Modelagem de Domínio (Miro)](https://miro.com/app/board/uXjVGvVPEOw=/?share_link_id=9196435429) | Domain Storytelling, Event Storming e Dicionário de Linguagem Ubíqua |
 

@@ -14,7 +14,7 @@ Em todos os três, existe uma camada de **Controller** duas vezes: o `Controller
 
 <p align="center"><img src="diagrams/work-order-creation-sequence.png" alt="Diagrama de sequência UML da abertura de uma Ordem de Serviço (POST /api/work-orders): WorkOrderController (NestJS), JwtAuthGuard, JwtStrategy, RolesGuard, WorkOrderController (Clean Architecture) e a transação do CreateWorkOrderUseCase — validação de cliente, veículo e mecânico atribuído, geração do número sequencial, criação da OS, histórico de status e orçamento inicial opcional" width="100%"></p>
 
-`POST /api/work-orders`, a partir do `accessToken` obtido no login — passa por `JwtAuthGuard`/`JwtStrategy` (incluindo a checagem de `passwordChangedAt`) e `RolesGuard`, depois pela transação do `CreateWorkOrderUseCase` com todos os ramos de erro (404/409/422) até o commit.
+`POST /api/work-orders`, a partir do `accessToken` obtido no login — passa por `JwtAuthGuard`/`JwtStrategy` (incluindo a checagem de `passwordChangedAt`) e `RolesGuard`, depois pela validação dos itens no Inventory, o serviço dono do catálogo de serviços e peças (feita antes da transação: id desconhecido → 404, Inventory fora do ar → 503), e pela transação do `CreateWorkOrderUseCase` com todos os ramos de erro (404/409/422) até o commit.
 
 ## Autenticação externa do Cliente da Oficina (CPF)
 
@@ -30,3 +30,4 @@ Ver [Identidade externa, autenticação e autorização por vínculo](architectu
 - [ADR 0009 — Clean Architecture e DDD em camadas](adr/0009-clean-architecture-ddd-em-camadas.md)
 - [ADR 0013 — Autenticação interna via JWT stateless](adr/0013-autenticacao-interna-jwt-stateless.md) *(substituído pelo 0022)*
 - [ADR 0022 — Token de funcionário em RS256](adr/0022-token-de-funcionario-em-rs256.md)
+- [ADR 0023 — Catálogo e estoque no Inventory, com reserva pela Saga de aprovação](adr/0023-catalogo-e-estoque-no-inventory-com-reserva-pela-saga.md)
