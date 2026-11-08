@@ -21,9 +21,9 @@ O work-order lê o catálogo por uma porta de saída, `IInventoryCatalogGateway`
 
 - **Validação e preço** — o `QuoteItemValidator` (abertura de OS com itens e criação de orçamento) e a inclusão de item no orçamento leem o item no Inventory **antes** de abrir a transação. Nenhuma chamada HTTP fica dentro de uma transação, que seguraria a conexão do banco pelo tempo da rede.
 - **Itens gravados** — o item de OS e de orçamento guarda só o id do serviço ou da peça, a quantidade e o preço, sem chave estrangeira para o catálogo.
-- **Dados de exibição** — nome, descrição, SKU, número de peça, categoria e unidade são lidos no Inventory a cada resposta que mostra itens, pelo Clean Controller, e entregues ao presenter. Não vão ao cache do detalhe da OS. Um item que o Inventory não acha mais aparece com id, quantidade e preço e os campos de exibição nulos. Nas rotas que gravam e mostram itens (mudança de status, execução de serviço e decisão do cliente), a leitura acontece antes da gravação, para que o Inventory fora do ar responda 503 sem nada gravado.
+- **Dados de exibição** — nome, descrição, SKU, número de peça, categoria e unidade são lidos no Inventory a cada resposta que mostra itens, pelo Clean Controller (a classe sem framework que orquestra os casos de uso de uma rota), e entregues ao presenter (a classe que monta o corpo da resposta). Não vão ao cache do detalhe da OS. Um item que o Inventory não acha mais aparece com id, quantidade e preço e os campos de exibição nulos. Nas rotas que gravam e mostram itens (mudança de status, execução de serviço e decisão do cliente), a leitura acontece antes da gravação, para que o Inventory fora do ar responda 503 sem nada gravado.
 - **Métricas por serviço** — continuam no work-order, dono dos itens executados, calculadas sobre os itens de OS concluídos, com o nome do serviço lido no Inventory.
-- O work-order perde as rotas, as entidades e os repositórios de catálogo e de estoque. As tabelas antigas ficam no schema sem uso até uma migration seguinte, para que o deploy anterior continue funcionando se este for desfeito.
+- O work-order perde as rotas, as entidades e os repositórios de catálogo e de estoque. As tabelas antigas ficam no schema sem uso até uma migration seguinte, para que a versão anterior volte a subir se este deploy for desfeito. Desfazer só é seguro para o schema e para os dados gravados antes da virada: a versão anterior não conhece serviço nem peça criados só no Inventory (aprovar um orçamento com essa peça responde 500) e reserva as peças semeadas contra o saldo local, parado desde a virada; e uma Saga em `RESERVING_STOCK` fica sem conclusão, porque a versão anterior não trata `inventory.stock.reserved`.
 
 ### 2. Reserva pela Saga de aprovação
 
@@ -45,7 +45,7 @@ Aprovar no work-order e chamar o Inventory por HTTP para reservar. Descartada po
 
 ### Tabela `saga_steps` e prazo por passo
 
-Registrar cada passo da Saga numa tabela própria e expirar passos parados. Descartada porque a Saga tem um passo remoto só, e o status da linha em `saga_instances` já diz onde ela está; a mensagem que não é processada vai, depois de cinco entregas, para a fila de mensagens mortas (DLQ), de onde volta por redrive.
+Registrar cada passo da Saga numa tabela própria e expirar passos parados. Descartada porque a Saga tem um passo remoto só, e o status da linha em `saga_instances` já diz onde ela está; a mensagem que não é processada vai, depois de cinco entregas, para a fila de mensagens mortas (DLQ), de onde volta por redrive (o reenvio, feito à mão, das mensagens da DLQ para a fila de origem).
 
 ### Coluna `previous_status` em `quotes`
 
@@ -57,7 +57,7 @@ Separar a orquestração dos casos de uso. Descartada porque os três passos sã
 
 ### Coluna `version` em `saga_instances`
 
-Concorrência otimista na própria Saga. Descartada porque toda escrita na Saga vai numa transação que já grava com versão a OS (aprovação e conclusão) ou os orçamentos (compensação), e a fila FIFO entrega as respostas em ordem por OS: a coluna seria código de versão sem efeito.
+Concorrência otimista na própria Saga. Descartada porque toda escrita na Saga vai numa transação que já grava com versão a OS (aprovação e conclusão) ou os orçamentos (compensação), e a fila FIFO (do inglês *first in, first out*: entrega as mensagens de um mesmo grupo na ordem em que foram enviadas) entrega as respostas em ordem por OS: a coluna seria código de versão sem efeito.
 
 ### `userId` no comando de reserva, devolvido pelo Inventory
 
@@ -81,7 +81,7 @@ Manter uma cópia do catálogo no work-order, alimentada por eventos, ou gravar 
 
 ### Endpoint em lote `?ids=` no Inventory
 
-Buscar todos os itens numa chamada. Descartada por enquanto: uma OS tem poucos itens, as chamadas saem em paralelo, e o Inventory precisaria de uma rota nova.
+Buscar todos os itens numa chamada. Descartada por enquanto: uma OS tem poucos itens, as chamadas saem em paralelo, e o Inventory precisaria de uma rota nova. A lista de métricas por serviço é a exceção: faz uma chamada por serviço já executado, número que cresce com o catálogo.
 
 ## Consequências
 
@@ -102,11 +102,14 @@ Buscar todos os itens numa chamada. Descartada por enquanto: uma OS tem poucos i
 
 - **Duas aprovações simultâneas da mesma OS**: a aprovação grava a OS com a versão, então só uma passa e a outra responde 409; sai uma Saga e um comando de reserva só.
 - **Resposta repetida ou fora de hora**: o handler só age com a Saga em `RESERVING_STOCK`; nos outros casos registra e confirma a mensagem, sem efeito.
-- **Orçamento novo durante a reserva levando a OS a `REJECTED`**: criação, envio e cancelamento respondem 409 enquanto a Saga está em `RESERVING_STOCK`.
+- **Orçamento novo durante a reserva levando a OS a `REJECTED`**: criação, envio e cancelamento respondem 409 enquanto a Saga está em `RESERVING_STOCK`. Fica aberta uma janela de milissegundos: a consulta não vê uma aprovação que ainda não terminou a transação, então um orçamento criado e enviado nesse intervalo escapa do 409 (ver "Revisar se").
 
 ### Revisar se
 
 - O Inventory ganhar uma rota em lote: trocar as leituras por item por uma chamada só.
+- A lista de métricas por serviço ficar lenta com o crescimento do catálogo: ler os nomes dos serviços pela rota em lote.
+- Uma OS ficar presa com a Saga em `RESERVING_STOCK` e um orçamento enviado que a aprovação não rejeitou: travar a OS (`SELECT … FOR UPDATE`) na criação e no envio de orçamento antes de consultar a Saga, para que esperem a aprovação terminar.
+- Um cliente receber o e-mail de falta de estoque com a reserva confirmada: uma recusa da rodada anterior, entregue de novo depois de o orçamento ser aprovado outra vez, compensa a rodada nova, porque a Saga reaberta não guarda o número da rodada; levar a rodada na Saga e no comando de reserva (contrato com o Inventory).
 - A orquestração ganhar peças que não são casos de uso (agendador, prazo por passo): dar a ela uma pasta própria.
 - A Saga passar a ser gravada numa transação que não grava a OS nem os orçamentos: acrescentar `version` em `saga_instances`.
 - Algum orçamento passar a voltar a `PENDING` depois de enviado: `sent_at` deixa de bastar para restaurar o status.

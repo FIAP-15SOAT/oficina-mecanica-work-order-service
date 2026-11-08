@@ -45,7 +45,7 @@ Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgr
 
 ### Catálogo e estoque sem uso
 
-- **`services`**, **`parts_supplies`**, **`stock_movements`** e **`stock_reservations`** — o catálogo e o estoque de antes de o Inventory ser o dono deles. Nenhum código lê ou grava essas tabelas, e as FKs dos itens de OS e de orçamento para elas foram removidas. Elas continuam no schema só para que a versão anterior do serviço ainda funcione se o deploy for desfeito, e saem, com os enums `StockMovementType`, `Unit` e `PartSupplyCategory`, numa migration seguinte.
+- **`services`**, **`parts_supplies`**, **`stock_movements`** e **`stock_reservations`** — o catálogo e o estoque de antes de o Inventory ser o dono deles. Nenhum código lê ou grava essas tabelas, e as FKs dos itens de OS e de orçamento para elas foram removidas. Elas continuam no schema só para que a versão anterior do serviço volte a subir se o deploy for desfeito, e saem, com os enums `StockMovementType`, `Unit` e `PartSupplyCategory`, numa migration seguinte. Desfazer só é seguro para os dados gravados antes da virada: serviços e peças criados depois disso existem só no Inventory, e a versão anterior não os conhece (ver [ADR 0023](adr/0023-catalogo-e-estoque-no-inventory-com-reserva-pela-saga.md)).
 
 ### Mensageria
 

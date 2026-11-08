@@ -327,11 +327,20 @@ describe('Quote approval saga (E2E)', () => {
       .set('Authorization', `Bearer ${adminAuth.accessToken}`)
       .expect(200);
 
+    const history = await ctx.prisma.statusHistory.findFirstOrThrow({
+      where: { workOrderId: workOrder.id, newStatus: 'APPROVED' },
+    });
+
     expect(woRes.body.data).toMatchObject({
       status: 'APPROVED',
       totalAmount: 240,
       services: [expect.objectContaining({ quantity: 1, unitPrice: 150 })],
       partSupplies: [expect.objectContaining({ id: partSupply.id, quantity: 2, unitPrice: 45 })],
+    });
+
+    expect(history).toMatchObject({
+      previousStatus: 'AWAITING_APPROVAL',
+      changedById: adminAuth.user.id,
     });
   });
 

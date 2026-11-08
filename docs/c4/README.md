@@ -62,7 +62,7 @@ Dentro do **Sistema da Oficina Mecânica** estão os sete blocos implantáveis o
 
 | Container | Tecnologia | Responsabilidade |
 |---|---|---|
-| **API Gateway** | AWS HTTP API | Entrada pública; encaminha `/customer-auth/login` à Lambda, `/api/services`, `/api/parts-supplies` e `/api/stock` ao Inventory e o restante de `/api/{proxy+}` à API REST, pelo VPC Link e pelo NLB interno |
+| **API Gateway** | AWS HTTP API | Entrada pública; encaminha `/customer-auth/login` à Lambda, `/api/services` (exceto as métricas, `/api/services/{id}/metrics`, que ficam na API REST), `/api/parts-supplies`, `/api/stock-movements` e `/api/stock-reservations` ao Inventory e o restante de `/api/{proxy+}` à API REST, pelo VPC Link e pelo NLB interno |
 | **API REST** | NestJS 12 · Node.js 24 · TypeScript no EKS | Expõe `/api`, concentra a lógica de negócio em Clean Architecture e envia notificações |
 | **Customer Auth** | AWS Lambda · Node.js 24 | Valida CPF, senha e status e emite `customer-jwt` RS256 |
 | **Banco de Dados** | PostgreSQL 18 (Amazon RDS) | Armazena as entidades de negócio da API (clientes, veículos, ordens de serviço, orçamentos, usuários), o estado das Sagas e o outbox das mensagens; serviço **gerenciado, fora do cluster**, alcançado pela rede a partir das subnets privadas |

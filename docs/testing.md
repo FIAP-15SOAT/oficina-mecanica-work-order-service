@@ -256,7 +256,7 @@ As categorias, e por que cada uma não é alcançável:
 | Localização | Branch não coberto | Motivo |
 |---|---|---|
 | `interface-adapters/me/me.presenter.ts` — `workOrder.vehicle ? … : null` | Ramo `null` | `work_orders.vehicle_id` é `NOT NULL` e o `include` do detalhe externo sempre traz o veículo. |
-| `interface-adapters/work-order/work-order.presenter.ts` — `entry.changedBy ? … : null` | Ramo `null` | Toda transição feita por requisição carrega o usuário autenticado; `changed_by_id` só fica `null` em transição sem usuário, que nenhuma rota produz. |
+| `interface-adapters/work-order/work-order.presenter.ts` — `entry.changedBy ? … : null` | Ramo `null` | Toda transição feita por requisição carrega o usuário autenticado. `changed_by_id` só fica `null` na entrada que a compensação da Saga de aprovação grava ao tratar a mensagem `inventory.stock.reservation_failed`, e o e2e da compensação confere essa entrada no banco, sem passar por `GET /api/work-orders/:id/status-history`. |
 
 ### Branches de aplicação sem caminho HTTP
 
