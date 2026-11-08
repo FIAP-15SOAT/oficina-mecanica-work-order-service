@@ -418,20 +418,27 @@ describe('Structured logging (E2E)', () => {
 
     it('should not capture the body of a successful request', async () => {
       await request(httpServer)
-        .post('/api/services')
+        .post('/api/customers')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({
-          name: 'Troca de óleo',
-          description: 'Revisão simples',
-          basePrice: 150,
-          estimatedTimeMin: 60,
+          name: 'Maria Silva',
+          document: '52998224725',
+          type: 'INDIVIDUAL',
+          email: 'maria.silva@test.com',
+          phone: '11999999999',
+          address: {
+            street: 'Rua Teste, 123',
+            city: 'São Paulo',
+            state: 'SP',
+            zipCode: '01310-100',
+          },
         })
         .expect(201);
 
       expect(accessLines(capture)[0]).not.toHaveProperty('oficina.http.request.body_json');
     });
 
-    it('should mask a person name and keep a catalog name verbatim', async () => {
+    it('should mask a person name', async () => {
       await request(httpServer)
         .post('/api/customers')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -439,35 +446,6 @@ describe('Structured logging (E2E)', () => {
         .expect(400);
 
       expect(accessLines(capture)[0]['oficina.http.request.body_json']).toContain('Ma***va');
-
-      capture.clear();
-
-      await request(httpServer)
-        .post('/api/services')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ name: 'Troca de óleo', basePrice: -1, estimatedTimeMin: 60 })
-        .expect(400);
-
-      expect(accessLines(capture)[0]['oficina.http.request.body_json']).toContain('Troca de óleo');
-    });
-
-    it('should mask a nested name even on an exempt catalog route', async () => {
-      await request(httpServer)
-        .post('/api/services')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          name: 'Troca de óleo',
-          basePrice: 150,
-          estimatedTimeMin: 60,
-          supplier: { name: 'Maria Silva' },
-        })
-        .expect(400);
-
-      const body = accessLines(capture)[0]['oficina.http.request.body_json'] as string;
-
-      expect(body).toContain('Troca de óleo');
-      expect(body).toContain('Ma***va');
-      expect(body).not.toContain('Maria Silva');
     });
 
     /**
@@ -732,21 +710,6 @@ describe('Structured logging (E2E)', () => {
     });
 
     it('should keep a committed operation and its response intact when the sanitizer throws', async () => {
-      const created = await request(httpServer)
-        .post('/api/parts-supplies')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          name: 'Filtro de Óleo',
-          sku: `FO-LOG-${Date.now()}`,
-          category: 'PART',
-          unit: 'UN',
-          costPrice: 10,
-          salePrice: 20,
-          stock: 10,
-          minStock: 1,
-        })
-        .expect(201);
-
       const stderr = jest.spyOn(process.stderr, 'write').mockReturnValue(true);
       const sanitizer = jest.spyOn(payloadSanitizer, 'sanitizePayload').mockImplementation(() => {
         throw new Error('sanitizer failure');
@@ -756,21 +719,19 @@ describe('Structured logging (E2E)', () => {
 
       try {
         response = await request(httpServer)
-          .patch(`/api/parts-supplies/${created.body.data.id}`)
+          .patch(`/api/users/${mechanicAuth.user.id}`)
           .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-          .send({ type: 'ENTRY', quantity: 5, reason: 'Reposição' });
+          .send({ active: false });
       } finally {
         sanitizer.mockRestore();
       }
 
       expect(response.status).toBe(200);
-      expect(response.body.data.stock).toBe(15);
+      expect(response.body.data.isActive).toBe(false);
 
-      const persisted = await ctx.prisma.partSupply.findUnique({
-        where: { id: created.body.data.id },
-      });
+      const persisted = await ctx.prisma.user.findUnique({ where: { id: mechanicAuth.user.id } });
 
-      expect(persisted?.stock).toBe(15);
+      expect(persisted?.isActive).toBe(false);
       expect(String(stderr.mock.calls.map((call) => call[0]).join(''))).toContain(
         '"message":"logging failure"',
       );

@@ -116,28 +116,6 @@ describe('WorkOrder (E2E)', () => {
     return res.body.data as { id: string; number: string; status: string };
   }
 
-  async function createService() {
-    const res = await request(httpServer)
-      .post('/api/services')
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-      .send({
-        name: `Troca de óleo ${Date.now()}`,
-        description: 'Troca de óleo do motor',
-        basePrice: 150,
-        estimatedTimeMin: 30,
-      })
-      .expect(201);
-    const service = res.body.data as { id: string };
-
-    stub.services.set(service.id, { ...readInternalServiceFixture().data, ...service });
-
-    return service;
-  }
-
-  function createPartSupply() {
-    return stubPartSupply(stub, { salePrice: 45 });
-  }
-
   // ─── POST /api/work-orders ──────────────────────────────────────────────────
 
   describe('POST /api/work-orders', () => {
@@ -377,7 +355,7 @@ describe('WorkOrder (E2E)', () => {
     it('should create work order with services only and a PENDING quote', async () => {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
-      const service = await createService();
+      const service = stubService(stub);
 
       const res = await request(httpServer)
         .post('/api/work-orders')
@@ -404,8 +382,8 @@ describe('WorkOrder (E2E)', () => {
     it('should create work order with services + parts and a PENDING quote', async () => {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
-      const service = await createService();
-      const part = createPartSupply();
+      const service = stubService(stub);
+      const part = stubPartSupply(stub);
 
       const res = await request(httpServer)
         .post('/api/work-orders')
@@ -452,7 +430,7 @@ describe('WorkOrder (E2E)', () => {
     it('should return 409 when parts-only are provided (no service)', async () => {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
-      const part = createPartSupply();
+      const part = stubPartSupply(stub);
 
       await request(httpServer)
         .post('/api/work-orders')
@@ -483,7 +461,7 @@ describe('WorkOrder (E2E)', () => {
     it('should return 409 when duplicate serviceId is provided', async () => {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
-      const service = await createService();
+      const service = stubService(stub);
 
       await request(httpServer)
         .post('/api/work-orders')
@@ -502,7 +480,7 @@ describe('WorkOrder (E2E)', () => {
     it('should return 404 when unknown partSupplyId is provided', async () => {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
-      const service = await createService();
+      const service = stubService(stub);
 
       await request(httpServer)
         .post('/api/work-orders')
@@ -519,8 +497,8 @@ describe('WorkOrder (E2E)', () => {
     it('should return 409 when duplicate partSupplyId is provided', async () => {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
-      const service = await createService();
-      const part = createPartSupply();
+      const service = stubService(stub);
+      const part = stubPartSupply(stub);
 
       await request(httpServer)
         .post('/api/work-orders')
@@ -794,8 +772,8 @@ describe('WorkOrder (E2E)', () => {
     }
 
     it('should present the items of an approved work order with the inventory catalog', async () => {
-      const service = await createService();
-      const partSupply = createPartSupply();
+      const service = stubService(stub);
+      const partSupply = stubPartSupply(stub);
 
       const catalogService = { ...readInternalServiceFixture().data, id: service.id };
 
@@ -840,8 +818,8 @@ describe('WorkOrder (E2E)', () => {
     });
 
     it('should present null display fields for an item the inventory no longer has', async () => {
-      const service = await createService();
-      const partSupply = createPartSupply();
+      const service = stubService(stub);
+      const partSupply = stubPartSupply(stub);
 
       const wo = await createApprovedWorkOrder(service.id, partSupply.id);
 
@@ -2095,7 +2073,7 @@ describe('WorkOrder (E2E)', () => {
       expect((await getDetail(id)).body.data.vehicle.plate).toBe('XYZ9876');
     });
 
-    it('should keep the cached service name after the service is renamed', async () => {
+    it('should show the current inventory service name on a cached work order', async () => {
       const { id } = await createCachedWorkOrder();
 
       await request(httpServer)
@@ -2104,7 +2082,7 @@ describe('WorkOrder (E2E)', () => {
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
-      const service = await createService();
+      const service = stubService(stub);
       const quoteRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -2130,20 +2108,11 @@ describe('WorkOrder (E2E)', () => {
         .send({ status: 'APPROVED' })
         .expect(200);
 
-      const cachedName = (await getDetail(id)).body.data.services[0].name as string;
+      await getDetail(id);
 
-      await request(httpServer)
-        .put(`/api/services/${service.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          name: 'Serviço renomeado',
-          description: 'Troca de óleo do motor',
-          basePrice: 150,
-          estimatedTimeMin: 30,
-        })
-        .expect(200);
+      stub.services.set(service.id, { ...service, name: 'Serviço renomeado' });
 
-      expect((await getDetail(id)).body.data.services[0].name).toBe(cachedName);
+      expect((await getDetail(id)).body.data.services[0].name).toBe('Serviço renomeado');
     });
 
     it('should answer from PostgreSQL when the cache is down', async () => {

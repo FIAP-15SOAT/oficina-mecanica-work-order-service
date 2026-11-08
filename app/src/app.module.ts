@@ -20,13 +20,11 @@ import { HealthModule } from './infrastructure/http/controllers/health/health.mo
 import { AuthModule } from './infrastructure/http/controllers/auth/auth.module';
 import { UserModule } from './infrastructure/http/controllers/user/user.module';
 import { ServiceModule } from './infrastructure/http/controllers/service/service.module';
-import { PartSupplyModule } from './infrastructure/http/controllers/part-supply/part-supply.module';
 import { CustomerModule } from './infrastructure/http/controllers/customer/customer.module';
 import { CustomerAccessModule } from './infrastructure/http/controllers/customer-access/customer-access.module';
 import { VehicleModule } from './infrastructure/http/controllers/vehicle/vehicle.module';
 import { WorkOrderModule } from './infrastructure/http/controllers/work-order/work-order.module';
 import { QuoteModule } from './infrastructure/http/controllers/quote/quote.module';
-import { StockModule } from './infrastructure/http/controllers/stock/stock.module';
 import { MeModule } from './infrastructure/http/controllers/me/me.module';
 import { InternalModule } from './infrastructure/http/controllers/internal/internal.module';
 import { MessagingModule } from './infrastructure/messaging/messaging.module';
@@ -65,13 +63,11 @@ import { GatewaysModule } from './infrastructure/gateways/gateways.module';
     AuthModule,
     UserModule,
     ServiceModule,
-    PartSupplyModule,
     CustomerModule,
     CustomerAccessModule,
     VehicleModule,
     WorkOrderModule,
     QuoteModule,
-    StockModule,
     MeModule,
     InternalModule,
   ],

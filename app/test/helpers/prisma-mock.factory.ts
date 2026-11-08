@@ -31,7 +31,6 @@ const createMockDelegate = (): MockDelegate => ({
 });
 
 export type MockPrismaService = {
-  service: MockDelegate;
   user: MockDelegate;
   customer: MockDelegate;
   address: MockDelegate;
@@ -40,9 +39,6 @@ export type MockPrismaService = {
   quote: MockDelegate;
   quotePartSupply: MockDelegate;
   quoteService: MockDelegate;
-  partSupply: MockDelegate;
-  stockReservation: MockDelegate;
-  stockMovement: MockDelegate;
   workOrderService: MockDelegate;
   workOrderPartSupply: MockDelegate;
   statusHistory: MockDelegate;
@@ -59,7 +55,6 @@ export type MockPrismaService = {
 
 export function createMockPrismaClient(): MockPrismaService {
   return {
-    service: createMockDelegate(),
     user: createMockDelegate(),
     customer: createMockDelegate(),
     address: createMockDelegate(),
@@ -68,9 +63,6 @@ export function createMockPrismaClient(): MockPrismaService {
     quote: createMockDelegate(),
     quotePartSupply: createMockDelegate(),
     quoteService: createMockDelegate(),
-    partSupply: { ...createMockDelegate(), fields: { minStock: 'minStockReference' } },
-    stockReservation: createMockDelegate(),
-    stockMovement: createMockDelegate(),
     workOrderService: createMockDelegate(),
     workOrderPartSupply: createMockDelegate(),
     statusHistory: createMockDelegate(),

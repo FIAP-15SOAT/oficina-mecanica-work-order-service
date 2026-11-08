@@ -550,35 +550,18 @@ describe('Me (E2E)', () => {
         },
       });
 
-      const serviceRes = await request(httpServer)
-        .post('/api/services')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ name: 'Troca de óleo', basePrice: 100, estimatedTimeMin: 60 })
-        .expect(201);
-      const partSupplyRes = await request(httpServer)
-        .post('/api/parts-supplies')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          name: 'Filtro de óleo',
-          sku: `FO-${Date.now()}`,
-          category: 'PART',
-          unit: 'UN',
-          costPrice: 10,
-          salePrice: 30,
-          stock: 10,
-          minStock: 2,
-        })
-        .expect(201);
+      const serviceId = randomUUID();
+      const partSupplyId = randomUUID();
 
-      stub.services.set(serviceRes.body.data.id, {
+      stub.services.set(serviceId, {
         ...readInternalServiceFixture().data,
-        id: serviceRes.body.data.id,
+        id: serviceId,
         name: 'Troca de óleo',
       });
 
-      stub.partsSupplies.set(partSupplyRes.body.data.id, {
+      stub.partsSupplies.set(partSupplyId, {
         ...readInternalPartSupplyFixture().data,
-        id: partSupplyRes.body.data.id,
+        id: partSupplyId,
         name: 'Filtro de óleo',
       });
 
@@ -588,7 +571,7 @@ describe('Me (E2E)', () => {
       await ctx.prisma.quoteService.create({
         data: {
           quoteId: quote.id,
-          serviceId: serviceRes.body.data.id,
+          serviceId,
           quantity: 1,
           unitPrice: 100,
           totalPrice: 100,
@@ -597,7 +580,7 @@ describe('Me (E2E)', () => {
       await ctx.prisma.quotePartSupply.create({
         data: {
           quoteId: quote.id,
-          partSupplyId: partSupplyRes.body.data.id,
+          partSupplyId,
           quantity: 1,
           unitPrice: 30,
           totalPrice: 30,

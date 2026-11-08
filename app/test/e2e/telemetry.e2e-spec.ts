@@ -21,8 +21,11 @@ import { METRIC_VIEWS } from '@infrastructure/telemetry/metric-registry';
 
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
-import { InternalServicesStub, startInternalServicesStub } from '../helpers/internal-services-stub';
-import { readInternalServiceFixture } from '../helpers/inventory-catalog-gateway-mock.factory';
+import {
+  InternalServicesStub,
+  startInternalServicesStub,
+  stubService,
+} from '../helpers/internal-services-stub';
 import { LogCapture, TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 
 const ACCESS_LOG_MESSAGE = 'http request';
@@ -281,22 +284,6 @@ describe('Telemetry (E2E)', () => {
       return workOrder.body.data.id as string;
     }
 
-    async function createServiceItem(): Promise<string> {
-      const service = await authorized('post', '/api/services')
-        .send({
-          name: `Troca de óleo ${Date.now()}${++customerCounter}`,
-          basePrice: 150,
-          estimatedTimeMin: 30,
-        })
-        .expect(201);
-
-      const serviceId = service.body.data.id as string;
-
-      stub.services.set(serviceId, { ...readInternalServiceFixture().data, id: serviceId });
-
-      return serviceId;
-    }
-
     async function submitQuote(workOrderId: string, serviceId: string): Promise<string> {
       const quote = await authorized('post', '/api/quotes').send({ workOrderId }).expect(201);
       const quoteId = quote.body.data.id as string;
@@ -338,7 +325,7 @@ describe('Telemetry (E2E)', () => {
 
     it('should count the creation and measure every step of a full cycle up to delivery', async () => {
       const workOrderId = await createWorkOrder();
-      const serviceId = await createServiceItem();
+      const serviceId = stubService(stub).id;
 
       await authorized('patch', `/api/work-orders/${workOrderId}`)
         .send({ status: 'IN_DIAGNOSIS' })
@@ -381,7 +368,7 @@ describe('Telemetry (E2E)', () => {
 
     it('should measure the wait in REJECTED when there is a rejection and a new quote', async () => {
       const workOrderId = await createWorkOrder();
-      const serviceId = await createServiceItem();
+      const serviceId = stubService(stub).id;
 
       await authorized('patch', `/api/work-orders/${workOrderId}`)
         .send({ status: 'IN_DIAGNOSIS' })

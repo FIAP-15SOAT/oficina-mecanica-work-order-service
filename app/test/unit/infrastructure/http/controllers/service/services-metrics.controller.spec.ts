@@ -13,15 +13,7 @@ describe('ServicesMetricsController', () => {
   let cleanController: ServiceCleanController;
 
   beforeEach(() => {
-    cleanController = new ServiceCleanController(
-      { execute: jest.fn() },
-      { execute: jest.fn() },
-      { execute: jest.fn() },
-      { execute: jest.fn() },
-      { execute: jest.fn() },
-      { execute: jest.fn() },
-      { execute: jest.fn() },
-    );
+    cleanController = new ServiceCleanController({ execute: jest.fn() }, { execute: jest.fn() });
     httpController = new ServicesMetricsController(cleanController);
   });
 
