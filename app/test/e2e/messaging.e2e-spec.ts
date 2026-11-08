@@ -14,6 +14,7 @@ import { DECLARED_FIELD_NAMES } from '@infrastructure/logging/field-registry';
 import { MessageHandlerRegistry } from '@infrastructure/messaging/message-handler.registry';
 import { OUTBOX_RELAY_LOCK_KEY } from '@infrastructure/messaging/outbox-relay.service';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
+import { waitFor } from '../helpers/wait-for.helper';
 
 class QuoteApprovalRevertedPayload {
   @IsUUID('4')
@@ -32,21 +33,6 @@ class PaymentApprovedPayload {
 
   @IsISO8601()
   paidAt!: string;
-}
-
-async function waitFor(
-  condition: () => boolean | Promise<boolean>,
-  timeoutMs = 15_000,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-
-  while (!(await condition())) {
-    if (Date.now() > deadline) {
-      throw new Error(`condition not met within ${timeoutMs} ms`);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
 }
 
 // Every test publishes on its own work order, so a message stuck in one FIFO group never blocks another test.
