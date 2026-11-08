@@ -2,6 +2,11 @@ import { Quote } from '@domain/entities/quote.entity';
 import { QuoteService } from '@domain/entities/quote-service.entity';
 import { QuotePartSupply } from '@domain/entities/quote-part-supply.entity';
 import { PaginatedResult } from '@domain/interfaces/common/pagination.interface';
+import { FindCatalogItemsOutputDto } from '@application/ports/input/catalog/dto/find-catalog-items.dto';
+import {
+  InventoryPartSupplyGatewayResponse,
+  InventoryServiceGatewayResponse,
+} from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.response';
 import { WorkOrderPresenter } from '@interface-adapters/work-order/work-order.presenter';
 
 import {
@@ -14,6 +19,7 @@ import {
   QuoteServiceItemResponse,
   QuotePartSupplyItemResponse,
 } from './responses/quote.response';
+import { InternalQuoteUsageDataResponse } from './responses/internal-quote.response';
 
 export class QuotePresenter {
   static toResponse(quote: Quote): QuoteResponse {
@@ -33,25 +39,44 @@ export class QuotePresenter {
     };
   }
 
-  static toWithItemsResponse(quote: Quote): QuoteWithItemsDataResponse {
+  static toWithItemsResponse(
+    quote: Quote,
+    catalog: FindCatalogItemsOutputDto,
+  ): QuoteWithItemsDataResponse {
     return {
-      data: QuotePresenter.toWithItemsDto(quote),
+      data: QuotePresenter.toWithItemsDto(quote, catalog),
     };
   }
 
-  private static toWithItemsDto(quote: Quote): QuoteWithItemsResponse {
+  private static toWithItemsDto(
+    quote: Quote,
+    catalog: FindCatalogItemsOutputDto,
+  ): QuoteWithItemsResponse {
     return {
       ...QuotePresenter.toResponse(quote),
-      services: quote.services.map(QuotePresenter.toServiceItem),
-      partsSupplies: quote.partsSupplies.map(QuotePresenter.toPartSupplyItem),
+      services: quote.services.map((item) =>
+        QuotePresenter.toServiceItem(
+          item,
+          catalog.services.find((service) => service.id === item.serviceId),
+        ),
+      ),
+      partsSupplies: quote.partsSupplies.map((item) =>
+        QuotePresenter.toPartSupplyItem(
+          item,
+          catalog.partsSupplies.find((partSupply) => partSupply.id === item.partSupplyId),
+        ),
+      ),
     };
   }
 
-  private static toServiceItem(this: void, item: QuoteService): QuoteServiceItemResponse {
+  private static toServiceItem(
+    item: QuoteService,
+    service: InventoryServiceGatewayResponse | undefined,
+  ): QuoteServiceItemResponse {
     return {
       id: item.serviceId,
-      name: item.service!.name,
-      description: item.service!.description,
+      name: service?.name ?? null,
+      description: service?.description ?? null,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       totalPrice: item.totalPrice,
@@ -60,15 +85,18 @@ export class QuotePresenter {
     };
   }
 
-  private static toPartSupplyItem(this: void, item: QuotePartSupply): QuotePartSupplyItemResponse {
+  private static toPartSupplyItem(
+    item: QuotePartSupply,
+    partSupply: InventoryPartSupplyGatewayResponse | undefined,
+  ): QuotePartSupplyItemResponse {
     return {
       id: item.partSupplyId,
-      name: item.partSupply!.name,
-      description: item.partSupply!.description,
-      sku: item.partSupply!.sku,
-      partNumber: item.partSupply!.partNumber ?? null,
-      category: item.partSupply!.category,
-      unit: item.partSupply!.unit,
+      name: partSupply?.name ?? null,
+      description: partSupply?.description ?? null,
+      sku: partSupply?.sku ?? null,
+      partNumber: partSupply?.partNumber ?? null,
+      category: partSupply?.category ?? null,
+      unit: partSupply?.unit ?? null,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       totalPrice: item.totalPrice,
@@ -93,5 +121,9 @@ export class QuotePresenter {
       data: items.map((q) => QuotePresenter.toResponse(q)),
       pagination,
     };
+  }
+
+  static toInternalUsageDataResponse(inUse: boolean): InternalQuoteUsageDataResponse {
+    return { data: { inUse } };
   }
 }

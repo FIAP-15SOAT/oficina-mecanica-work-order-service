@@ -9,10 +9,12 @@ import { FindMyWorkOrderByIdUseCase } from '@application/use-cases/me/find-my-wo
 import { FindMyWorkOrdersQuotesUseCase } from '@application/use-cases/me/find-my-work-orders-quotes.use-case';
 import { FindMyQuoteByIdUseCase } from '@application/use-cases/me/find-my-quote-by-id.use-case';
 import { DecideMyQuoteUseCase } from '@application/use-cases/me/decide-my-quote.use-case';
-import { ApproveQuoteUseCase } from '@application/use-cases/quote/approve-quote.use-case';
+import { ApproveQuoteUseCase } from '@application/use-cases/quote-approval/approve-quote.use-case';
 import { RejectQuoteUseCase } from '@application/use-cases/quote/reject-quote.use-case';
 import { UpdateQuoteStatusUseCase } from '@application/use-cases/quote/update-quote-status.use-case';
 import { CustomerAccessPolicy } from '@application/policies/customer-access.policy';
+import { FindCatalogItemsUseCase } from '@application/use-cases/catalog/find-catalog-items.use-case';
+import { IInventoryCatalogGateway } from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.interface';
 
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IUserCustomerRepository } from '@domain/interfaces/repositories/user-customer.repository.interface';
@@ -45,6 +47,7 @@ import { MeController } from './me.controller';
         metrics: IMetrics,
         statusHistoryRepository: IStatusHistoryRepository,
         cache: ICache,
+        inventoryCatalogGateway: IInventoryCatalogGateway,
       ) => {
         const customerAccessPolicy = new CustomerAccessPolicy(
           userCustomerRepository,
@@ -90,6 +93,7 @@ import { MeController } from './me.controller';
             customerAccessPolicy,
             updateQuoteStatusUseCase,
           ),
+          new FindCatalogItemsUseCase(inventoryCatalogGateway),
         );
       },
       inject: [
@@ -103,6 +107,7 @@ import { MeController } from './me.controller';
         'IMetrics',
         'IStatusHistoryRepository',
         'ICache',
+        'IInventoryCatalogGateway',
       ],
     },
   ],

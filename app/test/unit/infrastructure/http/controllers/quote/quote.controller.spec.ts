@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { FindCatalogItemsOutputDto } from '@application/ports/input/catalog/dto/find-catalog-items.dto';
 
 import { QuoteController } from '@infrastructure/http/controllers/quote/quote.controller';
 import { QuoteController as QuoteCleanController } from '@interface-adapters/quote/quote.controller';
@@ -24,6 +25,8 @@ import { createMockCustomer } from '../../../../../helpers/customer-mock.factory
 import { createMockVehicle } from '../../../../../helpers/vehicle-mock.factory';
 
 describe('QuoteController', () => {
+  const emptyCatalog: FindCatalogItemsOutputDto = { services: [], partsSupplies: [] };
+
   let httpController: QuoteController;
   let cleanController: QuoteCleanController;
 
@@ -35,6 +38,7 @@ describe('QuoteController', () => {
 
   beforeEach(() => {
     cleanController = new QuoteCleanController(
+      { execute: jest.fn() },
       { execute: jest.fn() },
       { execute: jest.fn() },
       { execute: jest.fn() },
@@ -82,7 +86,9 @@ describe('QuoteController', () => {
   describe('findOne', () => {
     it('should delegate to the clean controller and return its result', async () => {
       const id = randomUUID();
-      const response = QuotePresenter.toWithItemsResponse(quoteStub);
+
+      const response = QuotePresenter.toWithItemsResponse(quoteStub, emptyCatalog);
+
       jest.spyOn(cleanController, 'findOne').mockResolvedValue(response);
 
       const result = await httpController.findOne(id);

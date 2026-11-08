@@ -113,18 +113,6 @@ describe('PinoLoggerAdapter', () => {
     });
   });
 
-  it('should not mask a catalog name, which is not personal data', () => {
-    adapter.event(BUSINESS_EVENTS.STOCK_UPDATED, {
-      partSupplyId: 'part-1',
-      partSupplyName: 'Filtro de óleo',
-      movementType: 'ENTRY',
-      movementQuantity: 5,
-      currentQuantity: 12,
-    });
-
-    expect(lines[0]['oficina.part_supply.name']).toBe('Filtro de óleo');
-  });
-
   it('should omit optional event fields that are not provided', () => {
     adapter.event(BUSINESS_EVENTS.AUTHENTICATION_FAILED, { failureReason: 'unknown_user' });
 

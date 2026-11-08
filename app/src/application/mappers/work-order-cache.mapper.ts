@@ -1,13 +1,9 @@
 import { Customer } from '@domain/entities/customer.entity';
-import { PartSupply } from '@domain/entities/part-supply.entity';
-import { Service } from '@domain/entities/service.entity';
 import { Vehicle } from '@domain/entities/vehicle.entity';
 import { WorkOrder } from '@domain/entities/work-order.entity';
 import { WorkOrderPartSupply } from '@domain/entities/work-order-part-supply.entity';
 import { WorkOrderService } from '@domain/entities/work-order-service.entity';
 import { CustomerType } from '@domain/enums/customer-type.enum';
-import { PartSupplyCategory } from '@domain/enums/part-supply-category.enum';
-import { Unit } from '@domain/enums/unit.enum';
 import { WorkOrderServiceStatus } from '@domain/enums/work-order-service-status.enum';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { Address } from '@domain/value-objects/address.vo';
@@ -46,35 +42,6 @@ interface CachedVehicle {
   updatedAt: string;
 }
 
-interface CachedService {
-  id: string;
-  name: string;
-  description: string | null;
-  basePrice: number;
-  estimatedTimeMin: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface CachedPartSupply {
-  id: string;
-  name: string;
-  description: string | null;
-  sku: string;
-  partNumber: string | null;
-  category: PartSupplyCategory;
-  unit: Unit;
-  costPrice: number;
-  salePrice: number;
-  stock: number;
-  minStock: number;
-  reservedStock: number;
-  version: number;
-  expiresAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
 interface CachedWorkOrderService {
   workOrderId: string;
   serviceId: string;
@@ -86,7 +53,6 @@ interface CachedWorkOrderService {
   finishedAt: string | null;
   createdAt: string;
   updatedAt: string;
-  service: CachedService;
 }
 
 interface CachedWorkOrderPartSupply {
@@ -97,7 +63,6 @@ interface CachedWorkOrderPartSupply {
   totalPrice: number;
   createdAt: string;
   updatedAt: string;
-  partSupply: CachedPartSupply;
 }
 
 // No assigned user: the password hash stays out of the cache and the name is read fresh.
@@ -270,8 +235,6 @@ export class WorkOrderCacheMapper {
   }
 
   private static toCachedWorkOrderService(item: WorkOrderService): CachedWorkOrderService {
-    const service = item.service!;
-
     return {
       workOrderId: item.workOrderId,
       serviceId: item.serviceId,
@@ -283,20 +246,11 @@ export class WorkOrderCacheMapper {
       finishedAt: WorkOrderCacheMapper.toIso(item.finishedAt),
       createdAt: item.createdAt.toISOString(),
       updatedAt: item.updatedAt.toISOString(),
-      service: {
-        id: service.id,
-        name: service.name,
-        description: service.description,
-        basePrice: service.basePrice,
-        estimatedTimeMin: service.estimatedTimeMin,
-        createdAt: service.createdAt.toISOString(),
-        updatedAt: service.updatedAt.toISOString(),
-      },
     };
   }
 
   private static fromCachedWorkOrderService(cached: CachedWorkOrderService): WorkOrderService {
-    const item = WorkOrderService.reconstitute({
+    return WorkOrderService.reconstitute({
       workOrderId: cached.workOrderId,
       serviceId: cached.serviceId,
       quantity: cached.quantity,
@@ -308,19 +262,9 @@ export class WorkOrderCacheMapper {
       createdAt: new Date(cached.createdAt),
       updatedAt: new Date(cached.updatedAt),
     });
-
-    item.service = Service.reconstitute({
-      ...cached.service,
-      createdAt: new Date(cached.service.createdAt),
-      updatedAt: new Date(cached.service.updatedAt),
-    });
-
-    return item;
   }
 
   private static toCachedWorkOrderPartSupply(item: WorkOrderPartSupply): CachedWorkOrderPartSupply {
-    const partSupply = item.partSupply!;
-
     return {
       workOrderId: item.workOrderId,
       partSupplyId: item.partSupplyId,
@@ -329,31 +273,13 @@ export class WorkOrderCacheMapper {
       totalPrice: item.totalPrice,
       createdAt: item.createdAt.toISOString(),
       updatedAt: item.updatedAt.toISOString(),
-      partSupply: {
-        id: partSupply.id,
-        name: partSupply.name,
-        description: partSupply.description,
-        sku: partSupply.sku,
-        partNumber: partSupply.partNumber,
-        category: partSupply.category,
-        unit: partSupply.unit,
-        costPrice: partSupply.costPrice,
-        salePrice: partSupply.salePrice,
-        stock: partSupply.stock,
-        minStock: partSupply.minStock,
-        reservedStock: partSupply.reservedStock,
-        version: partSupply.version,
-        expiresAt: WorkOrderCacheMapper.toIso(partSupply.expiresAt),
-        createdAt: partSupply.createdAt.toISOString(),
-        updatedAt: partSupply.updatedAt.toISOString(),
-      },
     };
   }
 
   private static fromCachedWorkOrderPartSupply(
     cached: CachedWorkOrderPartSupply,
   ): WorkOrderPartSupply {
-    const item = WorkOrderPartSupply.reconstitute({
+    return WorkOrderPartSupply.reconstitute({
       workOrderId: cached.workOrderId,
       partSupplyId: cached.partSupplyId,
       quantity: cached.quantity,
@@ -362,14 +288,5 @@ export class WorkOrderCacheMapper {
       createdAt: new Date(cached.createdAt),
       updatedAt: new Date(cached.updatedAt),
     });
-
-    item.partSupply = PartSupply.reconstitute({
-      ...cached.partSupply,
-      expiresAt: WorkOrderCacheMapper.toDate(cached.partSupply.expiresAt),
-      createdAt: new Date(cached.partSupply.createdAt),
-      updatedAt: new Date(cached.partSupply.updatedAt),
-    });
-
-    return item;
   }
 }

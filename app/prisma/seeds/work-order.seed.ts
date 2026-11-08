@@ -1,11 +1,11 @@
 /* eslint-disable no-console */
 import { PrismaClient, WorkOrderStatus } from '../generated/client';
+import { SEED_IDS } from './seed-ids';
 
 export async function seedWorkOrders(
   prisma: PrismaClient,
   customerIds: Record<string, string>,
   vehicleIds: Record<string, string>,
-  serviceIds: Record<string, string>,
 ): Promise<void> {
   console.log('🌱 Seeding work orders...');
 
@@ -39,8 +39,8 @@ export async function seedWorkOrders(
     },
   });
 
-  const trocaOleoId = serviceIds['Troca de óleo'];
-  const revisaoId = serviceIds['Revisão completa'];
+  const trocaOleoId = SEED_IDS.services['Troca de óleo'];
+  const revisaoId = SEED_IDS.services['Revisão completa'];
 
   if (trocaOleoId) {
     await prisma.workOrderService.upsert({

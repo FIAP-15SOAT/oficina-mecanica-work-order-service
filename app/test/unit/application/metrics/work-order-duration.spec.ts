@@ -149,6 +149,20 @@ describe('measureWorkOrderDurations', () => {
     });
   });
 
+  it('should measure the dwell from the entry into the status, ignoring entries that keep the status', () => {
+    const history = [
+      entry(null, WorkOrderStatus.RECEIVED, 0),
+      entry(WorkOrderStatus.RECEIVED, WorkOrderStatus.AWAITING_APPROVAL, 2),
+      entry(WorkOrderStatus.AWAITING_APPROVAL, WorkOrderStatus.AWAITING_APPROVAL, 5),
+      entry(WorkOrderStatus.AWAITING_APPROVAL, WorkOrderStatus.APPROVED, 9),
+    ];
+
+    expect(measure(history).dwell).toEqual({
+      status: WorkOrderStatus.AWAITING_APPROVAL,
+      seconds: 7 * 3600,
+    });
+  });
+
   describe('totals', () => {
     const fullCycle = (deliveredAt = 30) => [
       entry(null, WorkOrderStatus.RECEIVED, 0),

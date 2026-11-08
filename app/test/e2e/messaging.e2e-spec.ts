@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
-import { IsISO8601, IsString, IsUUID } from 'class-validator';
+import { IsIn, IsISO8601, IsString, IsUUID } from 'class-validator';
 import {
   GetQueueAttributesCommand,
   GetQueueUrlCommand,
@@ -14,10 +14,14 @@ import { DECLARED_FIELD_NAMES } from '@infrastructure/logging/field-registry';
 import { MessageHandlerRegistry } from '@infrastructure/messaging/message-handler.registry';
 import { OUTBOX_RELAY_LOCK_KEY } from '@infrastructure/messaging/outbox-relay.service';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
+import { waitFor } from '../helpers/wait-for.helper';
 
-class StockReservedPayload {
+class QuoteApprovalRevertedPayload {
   @IsUUID('4')
   quoteId!: string;
+
+  @IsIn(['SENT', 'REJECTED'])
+  revertTo!: 'SENT' | 'REJECTED';
 }
 
 class PaymentApprovedPayload {
@@ -29,21 +33,6 @@ class PaymentApprovedPayload {
 
   @IsISO8601()
   paidAt!: string;
-}
-
-async function waitFor(
-  condition: () => boolean | Promise<boolean>,
-  timeoutMs = 15_000,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-
-  while (!(await condition())) {
-    if (Date.now() > deadline) {
-      throw new Error(`condition not met within ${timeoutMs} ms`);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
 }
 
 // Every test publishes on its own work order, so a message stuck in one FIFO group never blocks another test.
@@ -132,12 +121,12 @@ describe('Messaging (E2E)', () => {
     const received: MessageEnvelope[] = [];
 
     registry.register(
-      'inventory.stock.reserved',
+      'billing.quote.approval_reverted',
       (envelope) => {
         received.push(envelope);
         return Promise.resolve();
       },
-      StockReservedPayload,
+      QuoteApprovalRevertedPayload,
     );
 
     const workOrderId = await createWorkOrder();
@@ -146,9 +135,9 @@ describe('Messaging (E2E)', () => {
     const release = await holdRelayLock();
 
     await createOutboxMessage({
-      type: 'inventory.stock.reserved',
+      type: 'billing.quote.approval_reverted',
       workOrderId,
-      payload: { quoteId },
+      payload: { quoteId, revertTo: 'SENT' },
     });
 
     const row = await ctx.prisma.outboxMessage.findFirstOrThrow({ where: { workOrderId } });
@@ -159,10 +148,10 @@ describe('Messaging (E2E)', () => {
 
     expect(received[0]).toEqual({
       messageId: row.messageId,
-      type: 'inventory.stock.reserved',
+      type: 'billing.quote.approval_reverted',
       occurredAt: row.createdAt.toISOString(),
       workOrderId,
-      payload: { quoteId },
+      payload: { quoteId, revertTo: 'SENT' },
     });
 
     expect(await countOutboxMessagesByWorkOrderId(workOrderId)).toBe(0);
@@ -277,9 +266,9 @@ describe('Messaging (E2E)', () => {
         );
 
     await createOutboxMessage({
-      type: 'inventory.stock.reservation_failed',
+      type: 'billing.payment.failed',
       workOrderId,
-      payload: { quoteId: randomUUID(), missing: [] },
+      payload: { paymentId: randomUUID(), reason: 'EXPIRED' },
     });
 
     await waitFor(() => unhandledLines().length >= 2);

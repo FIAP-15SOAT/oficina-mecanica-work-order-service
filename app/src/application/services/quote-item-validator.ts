@@ -1,6 +1,3 @@
-import { IServiceRepository } from '@domain/interfaces/repositories/service.repository.interface';
-import { IPartSupplyRepository } from '@domain/interfaces/repositories/part-supply.repository.interface';
-
 import {
   Quote,
   CreateQuoteItemServiceProps,
@@ -8,6 +5,7 @@ import {
 } from '@domain/entities/quote.entity';
 
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
+import { IInventoryCatalogGateway } from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.interface';
 
 interface ServiceInput {
   serviceId: string;
@@ -20,10 +18,7 @@ interface PartSupplyInput {
 }
 
 export class QuoteItemValidator {
-  constructor(
-    private readonly serviceRepository: IServiceRepository,
-    private readonly partSupplyRepository: IPartSupplyRepository,
-  ) {}
+  constructor(private readonly inventoryCatalogGateway: IInventoryCatalogGateway) {}
 
   async validateAndResolve(
     serviceInputs: ServiceInput[],
@@ -37,40 +32,42 @@ export class QuoteItemValidator {
       partSupplyInputs.map((input) => input.partSupplyId),
     );
 
-    return {
-      services: await this.resolveServiceItems(serviceInputs),
-      partsSupplies: await this.resolvePartSupplyItems(partSupplyInputs),
-    };
+    const [services, partsSupplies] = await Promise.all([
+      this.resolveServiceItems(serviceInputs),
+      this.resolvePartSupplyItems(partSupplyInputs),
+    ]);
+
+    return { services, partsSupplies };
   }
 
-  async resolveServiceItems(inputs: ServiceInput[]): Promise<CreateQuoteItemServiceProps[]> {
-    const serviceIds = inputs.map((input) => input.serviceId);
-
+  private async resolveServiceItems(
+    inputs: ServiceInput[],
+  ): Promise<CreateQuoteItemServiceProps[]> {
     const services = await this.resolveExisting(
-      serviceIds,
-      (ids) => this.serviceRepository.findByIds(ids),
+      inputs.map((input) => input.serviceId),
+      (ids) => this.inventoryCatalogGateway.findServicesByIds(ids),
       'Serviço',
     );
 
     return inputs.map((input, index) => ({
-      service: services[index],
+      serviceId: input.serviceId,
+      unitPrice: services[index].basePrice,
       quantity: input.quantity,
     }));
   }
 
-  async resolvePartSupplyItems(
+  private async resolvePartSupplyItems(
     inputs: PartSupplyInput[],
   ): Promise<CreateQuoteItemPartSupplyProps[]> {
-    const partSupplyIds = inputs.map((input) => input.partSupplyId);
-
     const partsSupplies = await this.resolveExisting(
-      partSupplyIds,
-      (ids) => this.partSupplyRepository.findByIds(ids),
+      inputs.map((input) => input.partSupplyId),
+      (ids) => this.inventoryCatalogGateway.findPartsSuppliesByIds(ids),
       'Peça/Insumo',
     );
 
     return inputs.map((input, index) => ({
-      partSupply: partsSupplies[index],
+      partSupplyId: input.partSupplyId,
+      unitPrice: partsSupplies[index].salePrice,
       quantity: input.quantity,
     }));
   }
@@ -83,16 +80,16 @@ export class QuoteItemValidator {
     if (ids.length === 0) return [];
 
     const found = await findByIds(ids);
-    const byId = new Map(found.map((entity): [string, T] => [entity.id, entity]));
+    const byId = new Map(found.map((item): [string, T] => [item.id, item]));
 
     return ids.map((id) => {
-      const entity = byId.get(id);
+      const item = byId.get(id);
 
-      if (!entity) {
+      if (!item) {
         throw new ResourceNotFoundException(resourceName, id);
       }
 
-      return entity;
+      return item;
     });
   }
 }

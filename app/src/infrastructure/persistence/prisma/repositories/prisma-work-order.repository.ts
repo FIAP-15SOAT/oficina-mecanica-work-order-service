@@ -9,8 +9,10 @@ import { ConcurrencyException } from '@infrastructure/exceptions/concurrency.exc
 import { WorkOrder } from '@domain/entities/work-order.entity';
 import { WorkOrderService } from '@domain/entities/work-order-service.entity';
 import { WorkOrderPartSupply } from '@domain/entities/work-order-part-supply.entity';
+import { WorkOrderServiceStatus } from '@domain/enums/work-order-service-status.enum';
 import {
   IWorkOrderRepository,
+  ServiceExecutionMetrics,
   WorkOrderFilters,
 } from '@domain/interfaces/repositories/work-order.repository.interface';
 import {
@@ -32,8 +34,8 @@ const WORK_ORDER_DETAIL_INCLUDE = {
   customer: true,
   vehicle: true,
   assignedUser: true,
-  services: { include: { service: true } },
-  partSupplies: { include: { partSupply: true } },
+  services: true,
+  partSupplies: true,
 } as const;
 
 @Injectable()
@@ -257,4 +259,52 @@ export class PrismaWorkOrderRepository implements IWorkOrderRepository {
       throw error;
     }
   }
+
+  async findServiceExecutionMetrics(serviceId: string): Promise<ServiceExecutionMetrics> {
+    const [row] = await this.prisma.$queryRaw<ServiceExecutionRow[]>`
+      SELECT
+        COUNT(*) AS execution_count,
+        AVG(EXTRACT(EPOCH FROM (finished_at - started_at)) / 60.0) AS avg_minutes
+      FROM work_order_services
+      WHERE service_id = ${serviceId}::uuid
+        AND status = ${WorkOrderServiceStatus.COMPLETED}::"WorkOrderServiceStatus"
+        AND started_at IS NOT NULL
+        AND finished_at IS NOT NULL
+    `;
+
+    return toServiceExecutionMetrics(serviceId, row);
+  }
+
+  async findAllServiceExecutionMetrics(): Promise<ServiceExecutionMetrics[]> {
+    const rows = await this.prisma.$queryRaw<(ServiceExecutionRow & { service_id: string })[]>`
+      SELECT
+        service_id,
+        COUNT(*) AS execution_count,
+        AVG(EXTRACT(EPOCH FROM (finished_at - started_at)) / 60.0) AS avg_minutes
+      FROM work_order_services
+      WHERE status = ${WorkOrderServiceStatus.COMPLETED}::"WorkOrderServiceStatus"
+        AND started_at IS NOT NULL
+        AND finished_at IS NOT NULL
+      GROUP BY service_id
+    `;
+
+    return rows.map((row) => toServiceExecutionMetrics(row.service_id, row));
+  }
+}
+
+interface ServiceExecutionRow {
+  execution_count: bigint;
+  avg_minutes: Prisma.Decimal | null;
+}
+
+function toServiceExecutionMetrics(
+  serviceId: string,
+  row: ServiceExecutionRow,
+): ServiceExecutionMetrics {
+  return {
+    serviceId,
+    executionCount: Number(row.execution_count),
+    averageTimeMinutes:
+      row.avg_minutes === null ? null : Number.parseFloat(row.avg_minutes.toFixed(2)),
+  };
 }

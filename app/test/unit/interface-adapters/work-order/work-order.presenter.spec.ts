@@ -3,21 +3,27 @@ import { randomUUID } from 'node:crypto';
 import { WorkOrderPresenter } from '@interface-adapters/work-order/work-order.presenter';
 
 import { WorkOrder } from '@domain/entities/work-order.entity';
-import { WorkOrderService } from '@domain/entities/work-order-service.entity';
-import { WorkOrderPartSupply } from '@domain/entities/work-order-part-supply.entity';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
-import { WorkOrderServiceStatus } from '@domain/enums/work-order-service-status.enum';
 import { Plate } from '@domain/value-objects/plate.vo';
 import { WorkOrderNumber } from '@domain/value-objects/work-order-number.vo';
 
-import { createMockService } from '../../../helpers/service-mock.factory';
-import { createMockPartSupply } from '../../../helpers/part-supply-mock.factory';
+import { FindCatalogItemsOutputDto } from '@application/ports/input/catalog/dto/find-catalog-items.dto';
+
+import {
+  createMockInventoryPartSupplyGatewayResponse,
+  createMockInventoryServiceGatewayResponse,
+} from '../../../helpers/inventory-catalog-gateway-mock.factory';
+import { createMockWorkOrder } from '../../../helpers/work-order-mock.factory';
+import { createMockWorkOrderService } from '../../../helpers/work-order-service-mock.factory';
+import { createMockWorkOrderPartSupply } from '../../../helpers/work-order-part-supply-mock.factory';
 import { createMockCustomer } from '../../../helpers/customer-mock.factory';
 import { createMockVehicle } from '../../../helpers/vehicle-mock.factory';
 import { createMockUser } from '../../../helpers/user-mock.factory';
 import { createMockStatusHistory } from '../../../helpers/status-history-mock.factory';
 
 describe('WorkOrderPresenter', () => {
+  const emptyCatalog: FindCatalogItemsOutputDto = { services: [], partsSupplies: [] };
+
   describe('toResponse', () => {
     it('should format a work order correctly', () => {
       const now = new Date();
@@ -47,7 +53,7 @@ describe('WorkOrderPresenter', () => {
       workOrder.customer = customer;
       workOrder.vehicle = vehicle;
 
-      const response = WorkOrderPresenter.toResponse(workOrder);
+      const response = WorkOrderPresenter.toResponse(workOrder, emptyCatalog);
 
       expect(response.id).toBe(workOrder.id);
       expect(response.number).toBe(workOrder.number.toString());
@@ -87,7 +93,7 @@ describe('WorkOrderPresenter', () => {
       workOrder.vehicle = vehicle;
       workOrder.assignedUser = user;
 
-      const response = WorkOrderPresenter.toResponse(workOrder);
+      const response = WorkOrderPresenter.toResponse(workOrder, emptyCatalog);
 
       expect(response.customer.name).toBe('Customer');
       expect(response.vehicle.plate).toBe('ABC1234');
@@ -121,7 +127,7 @@ describe('WorkOrderPresenter', () => {
       });
       workOrder.customer = customer;
       workOrder.vehicle = vehicle;
-      const result = WorkOrderPresenter.toDataResponse(workOrder);
+      const result = WorkOrderPresenter.toDataResponse(workOrder, emptyCatalog);
       expect(result.data).toBeDefined();
       expect(result.data.id).toBe(workOrder.id);
     });
@@ -203,151 +209,100 @@ describe('WorkOrderPresenter', () => {
   });
 
   describe('toResponse with services and partSupplies', () => {
-    it('should include services with nested service entity data', () => {
-      const now = new Date();
-      const customer = createMockCustomer();
-      const vehicle = createMockVehicle({ customerId: customer.id });
-      const service = createMockService();
+    it('should present the item display fields read from the catalog', () => {
+      const service = createMockInventoryServiceGatewayResponse();
+      const partSupply = createMockInventoryPartSupplyGatewayResponse();
 
-      const wos = WorkOrderService.reconstitute({
-        workOrderId: randomUUID(),
-        serviceId: service.id,
+      const workOrder = createMockWorkOrder({
+        customer: createMockCustomer(),
+        vehicle: createMockVehicle(),
+        services: [createMockWorkOrderService({ serviceId: service.id })],
+        partSupplies: [createMockWorkOrderPartSupply({ partSupplyId: partSupply.id })],
+      });
+
+      const response = WorkOrderPresenter.toResponse(workOrder, {
+        services: [service],
+        partsSupplies: [partSupply],
+      });
+
+      expect(response.services![0]).toMatchObject({
+        id: service.id,
+        name: service.name,
+        description: service.description,
+      });
+
+      expect(response.partSupplies![0]).toMatchObject({
+        id: partSupply.id,
+        name: partSupply.name,
+        description: partSupply.description,
+        sku: partSupply.sku,
+        partNumber: partSupply.partNumber,
+        category: partSupply.category,
+        unit: partSupply.unit,
+      });
+    });
+
+    it('should present null display fields for an item the catalog no longer has', () => {
+      const serviceItem = createMockWorkOrderService({
         quantity: 2,
         unitPrice: 100,
         totalPrice: 200,
-        status: WorkOrderServiceStatus.PENDING,
-        startedAt: null,
-        finishedAt: null,
-        createdAt: now,
-        updatedAt: now,
       });
-      wos.service = service;
 
-      const workOrder = WorkOrder.reconstitute({
-        id: randomUUID(),
-        number: WorkOrderNumber.create('002'),
-        customerId: customer.id,
-        vehicleId: vehicle.id,
-        assignedUserId: null,
-        status: WorkOrderStatus.RECEIVED,
-        problemDescription: null,
-        internalNotes: null,
-        mileageAtService: null,
-        totalAmount: 0,
-        version: 0,
-        approvedAt: null,
-        rejectedAt: null,
-        startedAt: null,
-        finishedAt: null,
-        deliveredAt: null,
-        createdAt: now,
-        updatedAt: now,
-        services: [wos],
-      });
-      workOrder.customer = customer;
-      workOrder.vehicle = vehicle;
-
-      const response = WorkOrderPresenter.toResponse(workOrder);
-
-      expect(response.services).toHaveLength(1);
-      expect(response.services![0].id).toBe(service.id);
-      expect(response.services![0].name).toBe(service.name);
-      expect(response.services![0].description).toBe(service.description);
-    });
-
-    it('should include partSupplies with nested partSupply entity data', () => {
-      const now = new Date();
-      const customer = createMockCustomer();
-      const vehicle = createMockVehicle({ customerId: customer.id });
-      const partSupply = createMockPartSupply();
-
-      const wop = WorkOrderPartSupply.reconstitute({
-        workOrderId: randomUUID(),
-        partSupplyId: partSupply.id,
+      const partSupplyItem = createMockWorkOrderPartSupply({
         quantity: 3,
         unitPrice: 25,
         totalPrice: 75,
-        createdAt: now,
-        updatedAt: now,
       });
-      wop.partSupply = partSupply;
 
-      const workOrder = WorkOrder.reconstitute({
-        id: randomUUID(),
-        number: WorkOrderNumber.create('004'),
-        customerId: customer.id,
-        vehicleId: vehicle.id,
-        assignedUserId: null,
-        status: WorkOrderStatus.RECEIVED,
-        problemDescription: null,
-        internalNotes: null,
-        mileageAtService: null,
-        totalAmount: 0,
-        version: 0,
-        approvedAt: null,
-        rejectedAt: null,
-        startedAt: null,
-        finishedAt: null,
-        deliveredAt: null,
-        createdAt: now,
-        updatedAt: now,
-        partSupplies: [wop],
+      const workOrder = createMockWorkOrder({
+        customer: createMockCustomer(),
+        vehicle: createMockVehicle(),
+        services: [serviceItem],
+        partSupplies: [partSupplyItem],
       });
-      workOrder.customer = customer;
-      workOrder.vehicle = vehicle;
 
-      const response = WorkOrderPresenter.toResponse(workOrder);
+      const response = WorkOrderPresenter.toResponse(workOrder, emptyCatalog);
 
-      expect(response.partSupplies).toHaveLength(1);
-      expect(response.partSupplies![0].id).toBe(partSupply.id);
-      expect(response.partSupplies![0].name).toBe(partSupply.name);
-      expect(response.partSupplies![0].sku).toBe(partSupply.sku);
+      expect(response.services![0]).toMatchObject({
+        id: serviceItem.serviceId,
+        name: null,
+        description: null,
+        quantity: 2,
+        unitPrice: 100,
+        totalPrice: 200,
+      });
+
+      expect(response.partSupplies![0]).toEqual({
+        id: partSupplyItem.partSupplyId,
+        name: null,
+        description: null,
+        sku: null,
+        partNumber: null,
+        category: null,
+        unit: null,
+        quantity: 3,
+        unitPrice: 25,
+        totalPrice: 75,
+      });
     });
+  });
 
-    it('should use null for partNumber when partSupply has no partNumber', () => {
-      const now = new Date();
-      const customer = createMockCustomer();
-      const vehicle = createMockVehicle({ customerId: customer.id });
-      const partSupply = createMockPartSupply({ partNumber: undefined });
+  describe('toServiceItemDataResponse', () => {
+    it('should wrap the service item read from the catalog in data', () => {
+      const service = createMockInventoryServiceGatewayResponse();
+      const item = createMockWorkOrderService({ serviceId: service.id });
 
-      const wop = WorkOrderPartSupply.reconstitute({
-        workOrderId: randomUUID(),
-        partSupplyId: partSupply.id,
-        quantity: 1,
-        unitPrice: 10,
-        totalPrice: 10,
-        createdAt: now,
-        updatedAt: now,
+      const result = WorkOrderPresenter.toServiceItemDataResponse(item, {
+        services: [service],
+        partsSupplies: [],
       });
-      wop.partSupply = partSupply;
 
-      const workOrder = WorkOrder.reconstitute({
-        id: randomUUID(),
-        number: WorkOrderNumber.create('005'),
-        customerId: customer.id,
-        vehicleId: vehicle.id,
-        assignedUserId: null,
-        status: WorkOrderStatus.RECEIVED,
-        problemDescription: null,
-        internalNotes: null,
-        mileageAtService: null,
-        totalAmount: 0,
-        version: 0,
-        approvedAt: null,
-        rejectedAt: null,
-        startedAt: null,
-        finishedAt: null,
-        deliveredAt: null,
-        createdAt: now,
-        updatedAt: now,
-        partSupplies: [wop],
+      expect(result.data).toMatchObject({
+        id: service.id,
+        name: service.name,
+        status: item.status,
       });
-      workOrder.customer = customer;
-      workOrder.vehicle = vehicle;
-
-      const response = WorkOrderPresenter.toResponse(workOrder);
-
-      expect(response.partSupplies![0].partNumber).toBeNull();
     });
   });
 

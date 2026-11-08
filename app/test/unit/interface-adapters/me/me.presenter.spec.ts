@@ -4,7 +4,7 @@ import { MePresenter } from '@interface-adapters/me/me.presenter';
 import { QuoteStatus } from '@domain/enums/quote-status.enum';
 import { CustomerType } from '@domain/enums/customer-type.enum';
 import { UserRole } from '@domain/enums/user-role.enum';
-import { FindUserByIdOutput } from '@application/ports/input/user/find-user-by-id.use-case.interface';
+import { FindUserByIdOutput } from '@application/ports/input/user/dto/find-user-by-id.dto';
 
 import { createMockWorkOrder } from '../../../helpers/work-order-mock.factory';
 import { createMockVehicle } from '../../../helpers/vehicle-mock.factory';
@@ -14,8 +14,10 @@ import {
   createMockQuoteService,
   createMockQuotePartSupply,
 } from '../../../helpers/quote-mock.factory';
-import { createMockService } from '../../../helpers/service-mock.factory';
-import { createMockPartSupply } from '../../../helpers/part-supply-mock.factory';
+import {
+  createMockInventoryPartSupplyGatewayResponse,
+  createMockInventoryServiceGatewayResponse,
+} from '../../../helpers/inventory-catalog-gateway-mock.factory';
 
 describe('MePresenter', () => {
   describe('toMeDataResponse', () => {
@@ -161,52 +163,67 @@ describe('MePresenter', () => {
   });
 
   describe('toQuoteResponse', () => {
-    it('should map services and parts supplies with their names', () => {
-      const service = createMockService({ name: 'Troca de óleo' });
-      const partSupply = createMockPartSupply({ name: 'Filtro de óleo' });
-      const quoteService = createMockQuoteService({
-        serviceId: service.id,
-        quantity: 2,
-        unitPrice: 50,
-        totalPrice: 100,
-      });
-      quoteService.service = service;
-      const quotePartSupply = createMockQuotePartSupply({
-        partSupplyId: partSupply.id,
-        quantity: 1,
-        unitPrice: 30,
-        totalPrice: 30,
-      });
-      quotePartSupply.partSupply = partSupply;
+    it('should present the item display fields read from the catalog', () => {
+      const service = createMockInventoryServiceGatewayResponse({ name: 'Troca de óleo' });
+      const partSupply = createMockInventoryPartSupplyGatewayResponse({ name: 'Filtro de óleo' });
 
       const quote = createMockQuote({
         status: QuoteStatus.SENT,
-        services: [quoteService],
-        partsSupplies: [quotePartSupply],
+        services: [
+          createMockQuoteService({
+            serviceId: service.id,
+            quantity: 2,
+            unitPrice: 50,
+            totalPrice: 100,
+          }),
+        ],
+        partsSupplies: [
+          createMockQuotePartSupply({
+            partSupplyId: partSupply.id,
+            quantity: 1,
+            unitPrice: 30,
+            totalPrice: 30,
+          }),
+        ],
       });
 
-      const response = MePresenter.toQuoteResponse(quote);
+      const response = MePresenter.toQuoteResponse(quote, {
+        services: [service],
+        partsSupplies: [partSupply],
+      });
 
       expect(response.id).toBe(quote.id);
       expect(response.status).toBe(QuoteStatus.SENT);
+
       expect(response.services).toEqual([
         { id: service.id, name: 'Troca de óleo', quantity: 2, unitPrice: 50, totalPrice: 100 },
       ]);
+
       expect(response.partsSupplies).toEqual([
         { id: partSupply.id, name: 'Filtro de óleo', quantity: 1, unitPrice: 30, totalPrice: 30 },
       ]);
     });
 
-    /**
-     * `toQuoteResponse` is only called with a Quote loaded through
-     * `findByIdWithDetails` — the `!` assertion must blow up, not stay silent,
-     * if that premise is broken (see docs/testing.md).
-     */
-    it('should throw when an item reference was not loaded', () => {
-      const quoteService = createMockQuoteService();
-      const quote = createMockQuote({ services: [quoteService], partsSupplies: [] });
+    it('should present null display fields for an item the catalog no longer has', () => {
+      const serviceItem = createMockQuoteService({ quantity: 2, unitPrice: 50, totalPrice: 100 });
 
-      expect(() => MePresenter.toQuoteResponse(quote)).toThrow();
+      const partSupplyItem = createMockQuotePartSupply({
+        quantity: 1,
+        unitPrice: 30,
+        totalPrice: 30,
+      });
+
+      const quote = createMockQuote({ services: [serviceItem], partsSupplies: [partSupplyItem] });
+
+      const response = MePresenter.toQuoteResponse(quote, { services: [], partsSupplies: [] });
+
+      expect(response.services).toEqual([
+        { id: serviceItem.serviceId, name: null, quantity: 2, unitPrice: 50, totalPrice: 100 },
+      ]);
+
+      expect(response.partsSupplies).toEqual([
+        { id: partSupplyItem.partSupplyId, name: null, quantity: 1, unitPrice: 30, totalPrice: 30 },
+      ]);
     });
   });
 
@@ -234,13 +251,15 @@ describe('MePresenter', () => {
 
   describe('toQuoteDataResponse', () => {
     it('should wrap the quote response in a data property', () => {
-      const service = createMockService();
-      const quoteService = createMockQuoteService({ serviceId: service.id });
-      quoteService.service = service;
-      const quote = createMockQuote({ services: [quoteService], partsSupplies: [] });
+      const service = createMockInventoryServiceGatewayResponse();
+      const quote = createMockQuote({
+        services: [createMockQuoteService({ serviceId: service.id })],
+      });
 
-      expect(MePresenter.toQuoteDataResponse(quote)).toEqual({
-        data: MePresenter.toQuoteResponse(quote),
+      expect(
+        MePresenter.toQuoteDataResponse(quote, { services: [service], partsSupplies: [] }),
+      ).toEqual({
+        data: MePresenter.toQuoteResponse(quote, { services: [service], partsSupplies: [] }),
       });
     });
   });

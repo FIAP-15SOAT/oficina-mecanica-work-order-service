@@ -1,8 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
 import { Quote } from '@domain/entities/quote.entity';
-import { QuoteService } from '@domain/entities/quote-service.entity';
-import { QuotePartSupply } from '@domain/entities/quote-part-supply.entity';
 import { QuoteStatus } from '@domain/enums/quote-status.enum';
 
 import { QuotePresenter } from '@interface-adapters/quote/quote.presenter';
@@ -10,8 +8,14 @@ import { QuotePresenter } from '@interface-adapters/quote/quote.presenter';
 import { createMockWorkOrder } from '../../../helpers/work-order-mock.factory';
 import { createMockCustomer } from '../../../helpers/customer-mock.factory';
 import { createMockVehicle } from '../../../helpers/vehicle-mock.factory';
-import { createMockService } from '../../../helpers/service-mock.factory';
-import { createMockPartSupply } from '../../../helpers/part-supply-mock.factory';
+import {
+  createMockQuotePartSupply,
+  createMockQuoteService,
+} from '../../../helpers/quote-mock.factory';
+import {
+  createMockInventoryPartSupplyGatewayResponse,
+  createMockInventoryServiceGatewayResponse,
+} from '../../../helpers/inventory-catalog-gateway-mock.factory';
 
 describe('QuotePresenter', () => {
   function buildQuoteWithWorkOrder(extra: object = {}) {
@@ -33,6 +37,8 @@ describe('QuotePresenter', () => {
       sentAt: now,
       approvedAt: null,
       rejectedAt: null,
+      replacedByQuoteId: null,
+      decidedBy: null,
       createdAt: now,
       updatedAt: now,
       ...extra,
@@ -67,78 +73,76 @@ describe('QuotePresenter', () => {
   });
 
   describe('toWithItemsResponse', () => {
-    it('should include services and parts with enrichment data', () => {
-      const service = createMockService({ name: 'Troca de óleo', description: 'Com filtro' });
+    it('should present the item display fields read from the catalog', () => {
+      const service = createMockInventoryServiceGatewayResponse();
+      const partSupply = createMockInventoryPartSupplyGatewayResponse();
 
-      const partSupply = createMockPartSupply({ name: 'Filtro de Óleo', sku: 'FO-001' });
-
-      const qs = QuoteService.reconstitute({
-        quoteId: randomUUID(),
-        serviceId: service.id,
-        quantity: 2,
-        unitPrice: 100,
-        totalPrice: 200,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+      const quote = buildQuoteWithWorkOrder({
+        services: [createMockQuoteService({ serviceId: service.id })],
+        partsSupplies: [createMockQuotePartSupply({ partSupplyId: partSupply.id })],
       });
 
-      qs.service = service;
+      const response = QuotePresenter.toWithItemsResponse(quote, {
+        services: [service],
+        partsSupplies: [partSupply],
+      });
 
-      const qp = QuotePartSupply.reconstitute({
-        quoteId: randomUUID(),
-        partSupplyId: partSupply.id,
+      expect(response.data.services[0]).toMatchObject({
+        id: service.id,
+        name: service.name,
+        description: service.description,
+      });
+
+      expect(response.data.partsSupplies[0]).toMatchObject({
+        id: partSupply.id,
+        name: partSupply.name,
+        description: partSupply.description,
+        sku: partSupply.sku,
+        partNumber: partSupply.partNumber,
+        category: partSupply.category,
+        unit: partSupply.unit,
+      });
+    });
+
+    it('should present null display fields for an item the catalog no longer has', () => {
+      const serviceItem = createMockQuoteService({ quantity: 2, unitPrice: 100, totalPrice: 200 });
+      const partSupplyItem = createMockQuotePartSupply({
         quantity: 1,
         unitPrice: 45,
         totalPrice: 45,
-        createdAt: new Date(),
-        updatedAt: new Date(),
       });
 
-      qp.partSupply = partSupply;
+      const quote = buildQuoteWithWorkOrder({
+        services: [serviceItem],
+        partsSupplies: [partSupplyItem],
+      });
 
-      const quote = buildQuoteWithWorkOrder({ services: [qs], partsSupplies: [qp] });
+      const response = QuotePresenter.toWithItemsResponse(quote, {
+        services: [],
+        partsSupplies: [],
+      });
 
-      const response = QuotePresenter.toWithItemsResponse(quote);
+      expect(response.data.services[0]).toMatchObject({
+        id: serviceItem.serviceId,
+        name: null,
+        description: null,
+        quantity: 2,
+        unitPrice: 100,
+        totalPrice: 200,
+      });
 
-      expect(response.data.services).toHaveLength(1);
-      expect(response.data.partsSupplies).toHaveLength(1);
-      expect(response.data.services[0].id).toBe(service.id);
-      expect(response.data.services[0].name).toBe('Troca de óleo');
-      expect(response.data.services[0].description).toBe('Com filtro');
-      expect(response.data.partsSupplies[0].id).toBe(partSupply.id);
-      expect(response.data.partsSupplies[0].name).toBe('Filtro de Óleo');
-      expect(response.data.partsSupplies[0].sku).toBe('FO-001');
-    });
-
-    it('should return empty arrays when quote has no items', () => {
-      const quote = buildQuoteWithWorkOrder({ services: [], partsSupplies: [] });
-
-      const response = QuotePresenter.toWithItemsResponse(quote);
-
-      expect(response.data.services).toEqual([]);
-      expect(response.data.partsSupplies).toEqual([]);
-    });
-
-    it('should include partSupply with null partNumber when not set', () => {
-      const partSupply = createMockPartSupply({ partNumber: undefined });
-
-      const qp = QuotePartSupply.reconstitute({
-        quoteId: randomUUID(),
-        partSupplyId: partSupply.id,
+      expect(response.data.partsSupplies[0]).toMatchObject({
+        id: partSupplyItem.partSupplyId,
+        name: null,
+        description: null,
+        sku: null,
+        partNumber: null,
+        category: null,
+        unit: null,
         quantity: 1,
-        unitPrice: 20,
-        totalPrice: 20,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        unitPrice: 45,
+        totalPrice: 45,
       });
-
-      qp.partSupply = partSupply;
-
-      const quote = buildQuoteWithWorkOrder({ services: [], partsSupplies: [qp] });
-
-      const response = QuotePresenter.toWithItemsResponse(quote);
-
-      expect(response.data.partsSupplies[0].partNumber).toBeNull();
     });
   });
 

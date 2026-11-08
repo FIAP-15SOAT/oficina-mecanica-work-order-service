@@ -1,9 +1,4 @@
-import { Customer } from '@domain/entities/customer.entity';
-import { UserPublicView } from '@domain/entities/user.entity';
-
-export interface FindUserByIdOutput extends UserPublicView {
-  customers: Customer[];
-}
+import { FindUserByIdOutput } from '@application/ports/input/user/dto/find-user-by-id.dto';
 
 export interface IFindUserByIdUseCase {
   execute(id: string): Promise<FindUserByIdOutput>;

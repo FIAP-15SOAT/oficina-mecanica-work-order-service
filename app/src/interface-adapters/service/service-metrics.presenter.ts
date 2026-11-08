@@ -1,5 +1,5 @@
 import { PaginatedResult } from '@domain/interfaces/common/pagination.interface';
-import { ServiceMetrics } from '@domain/interfaces/repositories/service.repository.interface';
+import { ServiceMetrics } from '@application/ports/input/service/dto/find-service-metrics.dto';
 import {
   ServiceMetricsDataResponse,
   ServiceMetricsPaginatedResponse,

@@ -15,10 +15,19 @@ import { BusinessRuleViolationException } from '@domain/exceptions/business-rule
 export class CreateWorkOrderUseCase {
   constructor(
     private readonly unitOfWork: IUnitOfWork,
+    private readonly quoteItemValidator: QuoteItemValidator,
     private readonly metrics: IMetrics,
   ) {}
 
   async execute(dto: CreateWorkOrderDto): Promise<WorkOrder> {
+    const serviceInputs = dto.services ?? [];
+    const partInputs = dto.partsSupplies ?? [];
+
+    const { services, partsSupplies } = await this.quoteItemValidator.validateAndResolve(
+      serviceInputs,
+      partInputs,
+    );
+
     const workOrder = await this.unitOfWork.executeTransaction(async (repos) => {
       const customer = await repos.customer.findById(dto.customerId);
 
@@ -52,15 +61,6 @@ export class CreateWorkOrderUseCase {
           throw new ResourceNotFoundException('Usuário', dto.assignedUserId);
         }
       }
-
-      const serviceInputs = dto.services ?? [];
-      const partInputs = dto.partsSupplies ?? [];
-
-      const itemValidator = new QuoteItemValidator(repos.service, repos.partSupply);
-      const { services, partsSupplies } = await itemValidator.validateAndResolve(
-        serviceInputs,
-        partInputs,
-      );
 
       const number = await repos.workOrder.generateNextNumber();
 

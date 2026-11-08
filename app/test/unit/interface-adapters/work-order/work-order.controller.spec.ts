@@ -18,6 +18,9 @@ import { IUpdateWorkOrderStatusUseCase } from '@application/ports/input/work-ord
 import { IUpdateWorkOrderServiceStatusUseCase } from '@application/ports/input/work-order/update-work-order-service-status.use-case.interface';
 import { IFindWorkOrderStatusHistoryUseCase } from '@application/ports/input/work-order/find-work-order-status-history.use-case.interface';
 import { IFindWorkOrderQuotesUseCase } from '@application/ports/input/quote/find-work-order-quotes.use-case.interface';
+import { IFindCatalogItemsUseCase } from '@application/ports/input/catalog/find-catalog-items.use-case.interface';
+import { FindCatalogItemsOutputDto } from '@application/ports/input/catalog/dto/find-catalog-items.dto';
+import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
 
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { WorkOrderServiceStatus } from '@domain/enums/work-order-service-status.enum';
@@ -27,7 +30,11 @@ import { createMockCustomer } from '../../../helpers/customer-mock.factory';
 import { createMockVehicle } from '../../../helpers/vehicle-mock.factory';
 import { createMockWorkOrder } from '../../../helpers/work-order-mock.factory';
 import { createMockWorkOrderService } from '../../../helpers/work-order-service-mock.factory';
-import { createMockService } from '../../../helpers/service-mock.factory';
+import { createMockWorkOrderPartSupply } from '../../../helpers/work-order-part-supply-mock.factory';
+import {
+  createMockInventoryPartSupplyGatewayResponse,
+  createMockInventoryServiceGatewayResponse,
+} from '../../../helpers/inventory-catalog-gateway-mock.factory';
 import { createMockQuote } from '../../../helpers/quote-mock.factory';
 
 describe('WorkOrderController', () => {
@@ -40,9 +47,11 @@ describe('WorkOrderController', () => {
   let updateServiceStatusUseCase: jest.Mocked<IUpdateWorkOrderServiceStatusUseCase>;
   let findStatusHistoryUseCase: jest.Mocked<IFindWorkOrderStatusHistoryUseCase>;
   let findWorkOrderQuotesUseCase: jest.Mocked<IFindWorkOrderQuotesUseCase>;
+  let findCatalogItemsUseCase: jest.Mocked<IFindCatalogItemsUseCase>;
 
   const customer = createMockCustomer();
   const vehicle = createMockVehicle({ customerId: customer.id });
+  const emptyCatalog: FindCatalogItemsOutputDto = { services: [], partsSupplies: [] };
 
   beforeEach(() => {
     createUseCase = { execute: jest.fn() };
@@ -53,6 +62,7 @@ describe('WorkOrderController', () => {
     updateServiceStatusUseCase = { execute: jest.fn() };
     findStatusHistoryUseCase = { execute: jest.fn() };
     findWorkOrderQuotesUseCase = { execute: jest.fn() };
+    findCatalogItemsUseCase = { execute: jest.fn() };
 
     controller = new WorkOrderController(
       createUseCase,
@@ -63,6 +73,7 @@ describe('WorkOrderController', () => {
       updateServiceStatusUseCase,
       findStatusHistoryUseCase,
       findWorkOrderQuotesUseCase,
+      findCatalogItemsUseCase,
     );
   });
 
@@ -83,11 +94,17 @@ describe('WorkOrderController', () => {
       });
 
       createUseCase.execute.mockResolvedValue(created);
+      findCatalogItemsUseCase.execute.mockResolvedValue(emptyCatalog);
 
       const result = await controller.create(request, userId);
 
-      expect(result).toEqual(WorkOrderPresenter.toDataResponse(created));
+      expect(result).toEqual(WorkOrderPresenter.toDataResponse(created, emptyCatalog));
       expect(createUseCase.execute).toHaveBeenCalledWith({ ...request, userId });
+
+      expect(findCatalogItemsUseCase.execute).toHaveBeenCalledWith({
+        serviceIds: [],
+        partSupplyIds: [],
+      });
     });
   });
 
@@ -133,15 +150,32 @@ describe('WorkOrderController', () => {
   });
 
   describe('findOne', () => {
-    it('should return the work order wrapped in data', async () => {
-      const workOrder = createMockWorkOrder({ customer, vehicle });
+    it('should read the catalog of the work order items and present the work order with it', async () => {
+      const service = createMockInventoryServiceGatewayResponse();
+      const partSupply = createMockInventoryPartSupplyGatewayResponse();
+
+      const workOrder = createMockWorkOrder({
+        customer,
+        vehicle,
+        services: [createMockWorkOrderService({ serviceId: service.id })],
+        partSupplies: [createMockWorkOrderPartSupply({ partSupplyId: partSupply.id })],
+      });
+
+      const catalog = { services: [service], partsSupplies: [partSupply] };
 
       findByIdUseCase.execute.mockResolvedValue(workOrder);
+      findCatalogItemsUseCase.execute.mockResolvedValue(catalog);
 
       const result = await controller.findOne(workOrder.id);
 
-      expect(result).toEqual(WorkOrderPresenter.toDataResponse(workOrder));
       expect(findByIdUseCase.execute).toHaveBeenCalledWith(workOrder.id);
+
+      expect(findCatalogItemsUseCase.execute).toHaveBeenCalledWith({
+        serviceIds: [service.id],
+        partSupplyIds: [partSupply.id],
+      });
+
+      expect(result).toEqual(WorkOrderPresenter.toDataResponse(workOrder, catalog));
     });
   });
 
@@ -157,52 +191,90 @@ describe('WorkOrderController', () => {
       });
 
       updateUseCase.execute.mockResolvedValue(updated);
+      findCatalogItemsUseCase.execute.mockResolvedValue(emptyCatalog);
 
       const result = await controller.update(updated.id, request, userId);
 
-      expect(result).toEqual(WorkOrderPresenter.toDataResponse(updated));
+      expect(result).toEqual(WorkOrderPresenter.toDataResponse(updated, emptyCatalog));
       expect(updateUseCase.execute).toHaveBeenCalledWith(updated.id, { ...request, userId });
     });
   });
 
   describe('updateStatus', () => {
-    it('should attach the userId and return the updated work order wrapped in data', async () => {
+    it('should read the catalog before changing the status and present the result with it', async () => {
       const userId = randomUUID();
+      const service = createMockInventoryServiceGatewayResponse();
+      const items = [createMockWorkOrderService({ serviceId: service.id })];
+      const catalog = { services: [service], partsSupplies: [] };
 
       const request: UpdateWorkOrderStatusRequest = {
         status: WorkOrderStatus.IN_DIAGNOSIS,
         notes: 'Iniciando diagnóstico',
       };
 
+      const workOrder = createMockWorkOrder({ customer, vehicle, services: items });
+
       const updated = createMockWorkOrder({
+        id: workOrder.id,
         customer,
         vehicle,
+        services: items,
         status: WorkOrderStatus.IN_DIAGNOSIS,
       });
 
+      findByIdUseCase.execute.mockResolvedValue(workOrder);
+      findCatalogItemsUseCase.execute.mockResolvedValue(catalog);
       updateStatusUseCase.execute.mockResolvedValue(updated);
 
-      const result = await controller.updateStatus(updated.id, request, userId);
+      const result = await controller.updateStatus(workOrder.id, request, userId);
 
-      expect(result).toEqual(WorkOrderPresenter.toDataResponse(updated));
-      expect(updateStatusUseCase.execute).toHaveBeenCalledWith(updated.id, {
+      expect(findByIdUseCase.execute).toHaveBeenCalledWith(workOrder.id);
+
+      expect(findCatalogItemsUseCase.execute).toHaveBeenCalledWith({
+        serviceIds: [service.id],
+        partSupplyIds: [],
+      });
+
+      expect(updateStatusUseCase.execute).toHaveBeenCalledWith(workOrder.id, {
         status: request.status,
         notes: request.notes,
         userId,
       });
+
+      expect(result).toEqual(WorkOrderPresenter.toDataResponse(updated, catalog));
+    });
+
+    it('should answer 503 without changing the status when the catalog is unavailable', async () => {
+      const workOrder = createMockWorkOrder({ customer, vehicle });
+
+      findByIdUseCase.execute.mockResolvedValue(workOrder);
+
+      findCatalogItemsUseCase.execute.mockRejectedValue(
+        new ServiceIntegrationException('Serviço de destino indisponível'),
+      );
+
+      await expect(
+        controller.updateStatus(
+          workOrder.id,
+          { status: WorkOrderStatus.IN_DIAGNOSIS },
+          randomUUID(),
+        ),
+      ).rejects.toBeInstanceOf(ServiceIntegrationException);
+
+      expect(updateStatusUseCase.execute).not.toHaveBeenCalled();
     });
   });
 
   describe('updateServiceStatus', () => {
-    it('should attach the userId and return the updated service item wrapped in data', async () => {
+    it('should read the catalog before changing the service status and present the result with it', async () => {
       const userId = randomUUID();
       const workOrderId = randomUUID();
+      const service = createMockInventoryServiceGatewayResponse();
+      const catalog = { services: [service], partsSupplies: [] };
 
       const request: UpdateWorkOrderServiceStatusRequest = {
         status: WorkOrderServiceStatus.COMPLETED,
       };
-
-      const service = createMockService();
 
       const workOrderService = createMockWorkOrderService({
         workOrderId,
@@ -210,23 +282,43 @@ describe('WorkOrderController', () => {
         status: WorkOrderServiceStatus.COMPLETED,
       });
 
-      workOrderService.service = service;
+      findCatalogItemsUseCase.execute.mockResolvedValue(catalog);
       updateServiceStatusUseCase.execute.mockResolvedValue(workOrderService);
 
-      const result = await controller.updateServiceStatus(
-        workOrderId,
-        workOrderService.serviceId,
-        request,
-        userId,
-      );
+      const result = await controller.updateServiceStatus(workOrderId, service.id, request, userId);
 
-      expect(result).toEqual(WorkOrderPresenter.toServiceItemDataResponse(workOrderService));
+      expect(findCatalogItemsUseCase.execute).toHaveBeenCalledWith({
+        serviceIds: [service.id],
+        partSupplyIds: [],
+      });
+
       expect(updateServiceStatusUseCase.execute).toHaveBeenCalledWith({
         workOrderId,
-        serviceId: workOrderService.serviceId,
+        serviceId: service.id,
         status: request.status,
         userId,
       });
+
+      expect(result).toEqual(
+        WorkOrderPresenter.toServiceItemDataResponse(workOrderService, catalog),
+      );
+    });
+
+    it('should answer 503 without changing the service status when the catalog is unavailable', async () => {
+      findCatalogItemsUseCase.execute.mockRejectedValue(
+        new ServiceIntegrationException('Serviço de destino indisponível'),
+      );
+
+      await expect(
+        controller.updateServiceStatus(
+          randomUUID(),
+          randomUUID(),
+          { status: WorkOrderServiceStatus.IN_PROGRESS },
+          randomUUID(),
+        ),
+      ).rejects.toBeInstanceOf(ServiceIntegrationException);
+
+      expect(updateServiceStatusUseCase.execute).not.toHaveBeenCalled();
     });
   });
 

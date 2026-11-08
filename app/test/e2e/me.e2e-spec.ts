@@ -6,19 +6,28 @@ import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
 import { signTestCustomerToken } from '../helpers/customer-jwt.helper';
+import { InternalServicesStub, startInternalServicesStub } from '../helpers/internal-services-stub';
+import {
+  readInternalPartSupplyFixture,
+  readInternalServiceFixture,
+} from '../helpers/inventory-catalog-gateway-mock.factory';
 
 describe('Me (E2E)', () => {
   let ctx: TestContext;
   let httpServer: Server;
   let adminAuth: AuthTokens;
 
+  let stub: InternalServicesStub;
+
   beforeAll(async () => {
-    ctx = await setupTestApp();
+    stub = await startInternalServicesStub();
+    ctx = await setupTestApp({ internalServicesUrl: stub.url });
     httpServer = ctx.httpServer;
   });
 
   afterAll(async () => {
     await teardownTestApp(ctx);
+    await stub.close();
   });
 
   beforeEach(async () => {
@@ -541,25 +550,20 @@ describe('Me (E2E)', () => {
         },
       });
 
-      const serviceRes = await request(httpServer)
-        .post('/api/services')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ name: 'Troca de óleo', basePrice: 100, estimatedTimeMin: 60 })
-        .expect(201);
-      const partSupplyRes = await request(httpServer)
-        .post('/api/parts-supplies')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          name: 'Filtro de óleo',
-          sku: `FO-${Date.now()}`,
-          category: 'PART',
-          unit: 'UN',
-          costPrice: 10,
-          salePrice: 30,
-          stock: 10,
-          minStock: 2,
-        })
-        .expect(201);
+      const serviceId = randomUUID();
+      const partSupplyId = randomUUID();
+
+      stub.services.set(serviceId, {
+        ...readInternalServiceFixture().data,
+        id: serviceId,
+        name: 'Troca de óleo',
+      });
+
+      stub.partsSupplies.set(partSupplyId, {
+        ...readInternalPartSupplyFixture().data,
+        id: partSupplyId,
+        name: 'Filtro de óleo',
+      });
 
       const quote = await ctx.prisma.quote.create({
         data: { workOrderId: workOrder.id, status: 'SENT', totalAmount: 130 },
@@ -567,7 +571,7 @@ describe('Me (E2E)', () => {
       await ctx.prisma.quoteService.create({
         data: {
           quoteId: quote.id,
-          serviceId: serviceRes.body.data.id,
+          serviceId,
           quantity: 1,
           unitPrice: 100,
           totalPrice: 100,
@@ -576,7 +580,7 @@ describe('Me (E2E)', () => {
       await ctx.prisma.quotePartSupply.create({
         data: {
           quoteId: quote.id,
-          partSupplyId: partSupplyRes.body.data.id,
+          partSupplyId,
           quantity: 1,
           unitPrice: 30,
           totalPrice: 30,

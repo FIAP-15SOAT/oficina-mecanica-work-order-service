@@ -6,8 +6,7 @@ import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
 import { createMockWorkOrder } from '../../../../helpers/work-order-mock.factory';
 import { createMockWorkOrderService } from '../../../../helpers/work-order-service-mock.factory';
-import { createMockStockReservation } from '../../../../helpers/stock-reservation-mock.factory';
-import { createMockPartSupply } from '../../../../helpers/part-supply-mock.factory';
+import { createMockWorkOrderPartSupply } from '../../../../helpers/work-order-part-supply-mock.factory';
 import { createMockUnitOfWorkWithRepos } from '../../../../helpers/unit-of-work-mock.factory';
 import { IUnitOfWork, IRepositories } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { randomUUID } from 'node:crypto';
@@ -48,32 +47,20 @@ describe('UpdateWorkOrderServiceStatusUseCase', () => {
   });
 
   describe('transition to IN_PROGRESS', () => {
-    it('should start service and create stock movements when WO is not yet IN_PROGRESS', async () => {
+    it('should write the consume command when the first started service moves a work order with parts to IN_PROGRESS', async () => {
       const serviceId = randomUUID();
-      const woService = createMockWorkOrderService({
-        serviceId,
-        status: WorkOrderServiceStatus.PENDING,
-      });
+
       const workOrder = createMockWorkOrder({
         status: WorkOrderStatus.APPROVED,
-        services: [woService],
-      });
-      const reservation = createMockStockReservation({ workOrderId: workOrder.id });
-      const partSupply = createMockPartSupply({
-        id: reservation.partSupplyId,
-        stock: 10,
-        reservedStock: 2,
+        services: [
+          createMockWorkOrderService({ serviceId, status: WorkOrderServiceStatus.PENDING }),
+        ],
+        partSupplies: [createMockWorkOrderPartSupply()],
       });
 
-      (mockRepos.workOrder.findByIdWithDetails as jest.Mock).mockResolvedValue(workOrder);
-      (mockRepos.stockReservation.findByWorkOrderId as jest.Mock).mockResolvedValue([reservation]);
-      (mockRepos.partSupply.findByIds as jest.Mock).mockResolvedValue([partSupply]);
-      (mockRepos.stockMovement.createMany as jest.Mock).mockResolvedValue(undefined);
-      (mockRepos.partSupply.update as jest.Mock).mockResolvedValue(undefined);
-      (mockRepos.stockReservation.deleteByWorkOrderId as jest.Mock).mockResolvedValue(undefined);
-      (mockRepos.workOrder.updateServiceItemStatus as jest.Mock).mockResolvedValue(undefined);
-      (mockRepos.workOrder.update as jest.Mock).mockResolvedValue(workOrder);
-      (mockRepos.statusHistory.create as jest.Mock).mockResolvedValue({});
+      jest.mocked(mockRepos.workOrder.findByIdWithDetails).mockResolvedValue(workOrder);
+
+      jest.mocked(mockRepos.statusHistory.create).mockResolvedValue(createMockStatusHistory());
 
       const result = await useCase.execute({
         workOrderId: workOrder.id,
@@ -86,33 +73,33 @@ describe('UpdateWorkOrderServiceStatusUseCase', () => {
         expect.objectContaining({ id: workOrder.id }),
         expect.objectContaining({ serviceId }),
       );
-      expect(mockRepos.workOrder.update).not.toHaveBeenCalled();
-      expect(mockRepos.statusHistory.create).toHaveBeenCalled();
-      expect(mockRepos.stockMovement.createMany).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({ partSupplyId: reservation.partSupplyId }),
-        ]),
+      expect(mockRepos.outbox.add).toHaveBeenCalledWith({
+        type: 'inventory.stock.consume',
+        workOrderId: workOrder.id,
+        payload: {},
+      });
+
+      expect(jest.mocked(mockRepos.outbox.add).mock.invocationCallOrder[0]).toBeGreaterThan(
+        jest.mocked(mockRepos.workOrder.updateServiceItemStatus).mock.invocationCallOrder[0],
       );
-      expect(mockRepos.stockReservation.deleteByWorkOrderId).toHaveBeenCalledWith(workOrder.id);
+
+      expect(mockRepos.statusHistory.create).toHaveBeenCalled();
       expect(result.serviceId).toBe(serviceId);
     });
 
-    it('should skip stock movements when WO transitions to IN_PROGRESS but has no reservations', async () => {
+    it('should not write the consume command for a work order without parts', async () => {
       const serviceId = randomUUID();
-      const woService = createMockWorkOrderService({
-        serviceId,
-        status: WorkOrderServiceStatus.PENDING,
-      });
+
       const workOrder = createMockWorkOrder({
         status: WorkOrderStatus.APPROVED,
-        services: [woService],
+        services: [
+          createMockWorkOrderService({ serviceId, status: WorkOrderServiceStatus.PENDING }),
+        ],
       });
 
-      (mockRepos.workOrder.findByIdWithDetails as jest.Mock).mockResolvedValue(workOrder);
-      (mockRepos.stockReservation.findByWorkOrderId as jest.Mock).mockResolvedValue([]);
-      (mockRepos.workOrder.updateServiceItemStatus as jest.Mock).mockResolvedValue(undefined);
-      (mockRepos.workOrder.update as jest.Mock).mockResolvedValue(workOrder);
-      (mockRepos.statusHistory.create as jest.Mock).mockResolvedValue({});
+      jest.mocked(mockRepos.workOrder.findByIdWithDetails).mockResolvedValue(workOrder);
+
+      jest.mocked(mockRepos.statusHistory.create).mockResolvedValue(createMockStatusHistory());
 
       await useCase.execute({
         workOrderId: workOrder.id,
@@ -121,24 +108,23 @@ describe('UpdateWorkOrderServiceStatusUseCase', () => {
         userId: '550e8400-e29b-41d4-a716-446655440099',
       });
 
-      expect(mockRepos.partSupply.findByIds).not.toHaveBeenCalled();
-      expect(mockRepos.stockMovement.createMany).not.toHaveBeenCalled();
-      expect(mockRepos.workOrder.update).not.toHaveBeenCalled();
+      expect(mockRepos.workOrder.updateServiceItemStatus).toHaveBeenCalled();
+      expect(mockRepos.outbox.add).not.toHaveBeenCalled();
     });
 
-    it('should not create stock movements if WO is already IN_PROGRESS', async () => {
+    it('should not write the consume command when the work order was already in progress', async () => {
       const serviceId = randomUUID();
-      const woService = createMockWorkOrderService({
-        serviceId,
-        status: WorkOrderServiceStatus.PENDING,
-      });
+
       const workOrder = createMockWorkOrder({
         status: WorkOrderStatus.IN_PROGRESS,
-        services: [woService],
+        services: [
+          createMockWorkOrderService({ serviceId, status: WorkOrderServiceStatus.PENDING }),
+          createMockWorkOrderService({ status: WorkOrderServiceStatus.IN_PROGRESS }),
+        ],
+        partSupplies: [createMockWorkOrderPartSupply()],
       });
 
-      (mockRepos.workOrder.findByIdWithDetails as jest.Mock).mockResolvedValue(workOrder);
-      (mockRepos.workOrder.updateServiceItemStatus as jest.Mock).mockResolvedValue(undefined);
+      jest.mocked(mockRepos.workOrder.findByIdWithDetails).mockResolvedValue(workOrder);
 
       await useCase.execute({
         workOrderId: workOrder.id,
@@ -147,9 +133,8 @@ describe('UpdateWorkOrderServiceStatusUseCase', () => {
         userId: '550e8400-e29b-41d4-a716-446655440099',
       });
 
-      expect(mockRepos.stockReservation.findByWorkOrderId).not.toHaveBeenCalled();
-      expect(mockRepos.workOrder.update).not.toHaveBeenCalled();
       expect(mockRepos.workOrder.updateServiceItemStatus).toHaveBeenCalled();
+      expect(mockRepos.outbox.add).not.toHaveBeenCalled();
     });
 
     it('should throw ResourceNotFoundException when work order not found', async () => {
@@ -301,7 +286,6 @@ describe('UpdateWorkOrderServiceStatusUseCase', () => {
       });
 
       (mockRepos.workOrder.findByIdWithDetails as jest.Mock).mockResolvedValue(workOrder);
-      (mockRepos.stockReservation.findByWorkOrderId as jest.Mock).mockResolvedValue([]);
       (mockRepos.workOrder.updateServiceItemStatus as jest.Mock).mockResolvedValue(undefined);
       arrangeStatusHistory(
         mockRepos.statusHistory,

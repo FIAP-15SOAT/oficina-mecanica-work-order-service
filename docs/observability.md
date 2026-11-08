@@ -80,7 +80,7 @@ Casos de uso declaram **nomes lógicos** (`quoteId`) no tipo da entrada do catá
 
 O vocabulário lógico (`application/logging/log-field.ts`) e o registro em `infrastructure/logging/field-registry.ts` são a **única** declaração de um campo: dele saem a chave física, a entrada do dicionário e a sensibilidade que decide o mascaramento. O registro é um `Record<LogicalFieldName, …>`, então esquecer uma entrada é erro de compilação — e um teste de tipo em `field-registry.spec.ts` fecha a outra direção, falhando quando um campo declarado não é emitido por nenhum evento.
 
-A sensibilidade declarada é o que mascara: `subjectName`/`subjectEmail` saem mascarados sem que o caso de uso faça nada, e `partSupplyName`/`workOrderServiceName` — nome de catálogo, não de pessoa — saem em claro por declaração explícita, não por acidente.
+A sensibilidade declarada é o que mascara: `subjectName`/`subjectEmail` saem mascarados sem que o caso de uso faça nada, e `dependencyName` — nome de dependência técnica, não de pessoa — sai em claro por declaração explícita, não por acidente.
 
 ### Sucesso transacional é registrado depois do commit
 

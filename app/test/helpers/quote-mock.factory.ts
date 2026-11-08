@@ -21,6 +21,8 @@ export function createMockQuote(overrides: Partial<Quote> = {}): Quote {
     sentAt: null,
     approvedAt: null,
     rejectedAt: null,
+    replacedByQuoteId: null,
+    decidedBy: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -63,13 +65,14 @@ export function createMockQuoteRepository(): jest.Mocked<IQuoteRepository> {
     findByWorkOrderId: jest.fn(),
     findAllPaginated: jest.fn(),
     update: jest.fn(),
-    rejectPendingByWorkOrderId: jest.fn(),
     addServiceItem: jest.fn(),
     removeServiceItem: jest.fn(),
     updateServiceItemQuantity: jest.fn(),
     addPartSupplyItem: jest.fn(),
     removePartSupplyItem: jest.fn(),
     updatePartSupplyItemQuantity: jest.fn(),
+    isServiceInUse: jest.fn(),
+    isPartSupplyInUse: jest.fn(),
   };
 }
 

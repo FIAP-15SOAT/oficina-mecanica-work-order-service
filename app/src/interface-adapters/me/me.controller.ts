@@ -5,11 +5,14 @@ import { IFindMyWorkOrderByIdUseCase } from '@application/ports/input/me/find-my
 import { IFindMyWorkOrdersQuotesUseCase } from '@application/ports/input/me/find-my-work-orders-quotes.use-case.interface';
 import { IFindMyQuoteByIdUseCase } from '@application/ports/input/me/find-my-quote-by-id.use-case.interface';
 import { IDecideMyQuoteUseCase } from '@application/ports/input/me/decide-my-quote.use-case.interface';
+import { IFindCatalogItemsUseCase } from '@application/ports/input/catalog/find-catalog-items.use-case.interface';
+import { FindCatalogItemsOutputDto } from '@application/ports/input/catalog/dto/find-catalog-items.dto';
 
 import { ChangeOwnPasswordDto } from '@application/ports/input/me/dto/change-own-password.dto';
 import { QuoteDecisionDto } from '@application/ports/input/me/dto/quote-decision.dto';
 import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
 import { PaginationInput } from '@domain/interfaces/common/pagination.interface';
+import { Quote } from '@domain/entities/quote.entity';
 
 import { MePresenter } from './me.presenter';
 import {
@@ -29,6 +32,7 @@ export class MeController {
     private readonly findMyWorkOrdersQuotesUseCase: IFindMyWorkOrdersQuotesUseCase,
     private readonly findMyQuoteByIdUseCase: IFindMyQuoteByIdUseCase,
     private readonly decideMyQuoteUseCase: IDecideMyQuoteUseCase,
+    private readonly findCatalogItemsUseCase: IFindCatalogItemsUseCase,
   ) {}
 
   async changePassword(userId: string, input: ChangeOwnPasswordDto): Promise<void> {
@@ -61,7 +65,8 @@ export class MeController {
 
   async getQuote(userId: string, quoteId: string): Promise<MyQuoteDataResponse> {
     const quote = await this.findMyQuoteByIdUseCase.execute(userId, quoteId);
-    return MePresenter.toQuoteDataResponse(quote);
+
+    return MePresenter.toQuoteDataResponse(quote, await this.findItemsCatalog(quote));
   }
 
   async decideQuote(
@@ -69,7 +74,20 @@ export class MeController {
     quoteId: string,
     input: QuoteDecisionDto,
   ): Promise<MyQuoteDataResponse> {
+    // Read before the write: an unavailable inventory fails the request with nothing saved.
+    const catalog = await this.findItemsCatalog(
+      await this.findMyQuoteByIdUseCase.execute(userId, quoteId),
+    );
+
     const quote = await this.decideMyQuoteUseCase.execute(userId, quoteId, input);
-    return MePresenter.toQuoteDataResponse(quote);
+
+    return MePresenter.toQuoteDataResponse(quote, catalog);
+  }
+
+  private findItemsCatalog(quote: Quote): Promise<FindCatalogItemsOutputDto> {
+    return this.findCatalogItemsUseCase.execute({
+      serviceIds: quote.services.map((item) => item.serviceId),
+      partSupplyIds: quote.partsSupplies.map((item) => item.partSupplyId),
+    });
   }
 }

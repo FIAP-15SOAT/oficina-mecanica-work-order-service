@@ -1,8 +1,6 @@
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { CustomerType } from '@domain/enums/customer-type.enum';
 import { UserRole } from '@domain/enums/user-role.enum';
-import { PartSupplyCategory } from '@domain/enums/part-supply-category.enum';
-import { Unit } from '@domain/enums/unit.enum';
 import { WorkOrderServiceStatus } from '@domain/enums/work-order-service-status.enum';
 import { PaginationMeta } from '@domain/interfaces/common/pagination.interface';
 
@@ -34,7 +32,7 @@ export interface WorkOrderAssignedUserResponse {
 
 export interface WorkOrderServiceItemResponse {
   id: string;
-  name: string;
+  name: string | null;
   description: string | null;
   quantity: number;
   unitPrice: number;
@@ -48,12 +46,12 @@ export interface WorkOrderServiceItemResponse {
 
 export interface WorkOrderPartSupplyItemResponse {
   id: string;
-  name: string;
+  name: string | null;
   description: string | null;
-  sku: string;
+  sku: string | null;
   partNumber: string | null;
-  category: PartSupplyCategory;
-  unit: Unit;
+  category: string | null;
+  unit: string | null;
   quantity: number;
   unitPrice: number;
   totalPrice: number;

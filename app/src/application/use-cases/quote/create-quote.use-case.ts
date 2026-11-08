@@ -5,11 +5,20 @@ import { QuoteItemValidator } from '@application/services/quote-item-validator';
 
 import { CreateQuoteDto } from '@application/ports/input/quote/dto/create-quote.dto';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
+import { ResourceConflictException } from '@application/exceptions/resource-conflict.exception';
 
 export class CreateQuoteUseCase {
-  constructor(private readonly unitOfWork: IUnitOfWork) {}
+  constructor(
+    private readonly unitOfWork: IUnitOfWork,
+    private readonly quoteItemValidator: QuoteItemValidator,
+  ) {}
 
   async execute(dto: CreateQuoteDto): Promise<Quote> {
+    const { services, partsSupplies } = await this.quoteItemValidator.validateAndResolve(
+      dto.services ?? [],
+      dto.partsSupplies ?? [],
+    );
+
     return this.unitOfWork.executeTransaction(async (repos) => {
       const workOrder = await repos.workOrder.findById(dto.workOrderId);
 
@@ -19,14 +28,13 @@ export class CreateQuoteUseCase {
 
       workOrder.ensureCanCreateQuote();
 
-      const serviceInputs = dto.services ?? [];
-      const partInputs = dto.partsSupplies ?? [];
+      const hasActiveQuoteApproval = await repos.sagaInstance.hasActiveByWorkOrderId(workOrder.id);
 
-      const itemValidator = new QuoteItemValidator(repos.service, repos.partSupply);
-      const { services, partsSupplies } = await itemValidator.validateAndResolve(
-        serviceInputs,
-        partInputs,
-      );
+      if (hasActiveQuoteApproval) {
+        throw new ResourceConflictException(
+          'Ordem de serviço com aprovação de orçamento em andamento: aguarde a confirmação do estoque',
+        );
+      }
 
       const quote = Quote.create({
         workOrderId: dto.workOrderId,

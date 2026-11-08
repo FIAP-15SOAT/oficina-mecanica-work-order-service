@@ -1,9 +1,20 @@
 import type { Server } from 'http';
+import { randomUUID } from 'node:crypto';
 import type { StartedTestContainer } from 'testcontainers';
 import request from 'supertest';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
+import {
+  InternalServicesStub,
+  startInternalServicesStub,
+  stubPartSupply,
+  stubService,
+} from '../helpers/internal-services-stub';
+import {
+  readInternalPartSupplyFixture,
+  readInternalServiceFixture,
+} from '../helpers/inventory-catalog-gateway-mock.factory';
 
 interface MailhogResponse {
   items: {
@@ -44,13 +55,17 @@ describe('Quote (E2E)', () => {
   let httpServer: Server;
   let adminAuth: AuthTokens;
 
+  let stub: InternalServicesStub;
+
   beforeAll(async () => {
-    ctx = await setupTestApp();
+    stub = await startInternalServicesStub();
+    ctx = await setupTestApp({ internalServicesUrl: stub.url });
     httpServer = ctx.httpServer;
   });
 
   afterAll(async () => {
     await teardownTestApp(ctx);
+    await stub.close();
   });
 
   beforeEach(async () => {
@@ -69,6 +84,7 @@ describe('Quote (E2E)', () => {
   // ─── Helpers ────────────────────────────────────────────────────────────────
 
   let customerCounter = 0;
+
   function generateCPF(index: number) {
     const base = index.toString().padStart(9, '0');
     const n = base.split('').map(Number);
@@ -84,6 +100,7 @@ describe('Quote (E2E)', () => {
   }
   async function createCustomer() {
     const id = ++customerCounter;
+
     const res = await request(httpServer)
       .post('/api/customers')
       .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -107,6 +124,7 @@ describe('Quote (E2E)', () => {
   async function createCustomerWithoutAccess() {
     const id = ++customerCounter;
     const email = `cliente-sem-acesso-${Date.now()}${id}@test.com`;
+
     const res = await request(httpServer)
       .post('/api/customers')
       .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -125,6 +143,7 @@ describe('Quote (E2E)', () => {
         createAccess: false,
       })
       .expect(201);
+
     return { ...(res.body.data as { id: string }), email };
   }
 
@@ -162,38 +181,6 @@ describe('Quote (E2E)', () => {
       .expect(200);
 
     return { workOrderId: wo.id, customer, vehicle };
-  }
-
-  async function createService() {
-    const res = await request(httpServer)
-      .post('/api/services')
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-      .send({
-        name: `Troca de óleo ${Date.now()}`,
-        description: 'Troca de óleo do motor',
-        basePrice: 150,
-        estimatedTimeMin: 30,
-      })
-      .expect(201);
-    return res.body.data as { id: string };
-  }
-
-  async function createPartSupply() {
-    const res = await request(httpServer)
-      .post('/api/parts-supplies')
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-      .send({
-        name: `Filtro de Óleo ${Date.now()}`,
-        sku: `FILT-OL-${Date.now()}`,
-        category: 'PART',
-        unit: 'UN',
-        costPrice: 25,
-        salePrice: 45,
-        stock: 50,
-        minStock: 5,
-      })
-      .expect(201);
-    return res.body.data as { id: string };
   }
 
   // ─── POST /api/quotes ────────────────────────────────────────────────────────
@@ -234,6 +221,54 @@ describe('Quote (E2E)', () => {
         .expect(409);
     });
 
+    it('should answer 409 and save nothing when creating a quote during the stock reservation', async () => {
+      const { workOrderId } = await createWorkOrderInDiagnosis();
+
+      await ctx.prisma.sagaInstance.create({
+        data: {
+          type: 'QUOTE_APPROVAL',
+          correlationId: randomUUID(),
+          workOrderId,
+          status: 'RESERVING_STOCK',
+        },
+      });
+
+      const res = await request(httpServer)
+        .post('/api/quotes')
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ workOrderId })
+        .expect(409);
+
+      const quoteCount = await ctx.prisma.quote.count({ where: { workOrderId } });
+
+      expect(res.body.message).toBe(
+        'Ordem de serviço com aprovação de orçamento em andamento: aguarde a confirmação do estoque',
+      );
+      expect(quoteCount).toBe(0);
+    });
+
+    it('should create a quote after the saga was compensated', async () => {
+      const { workOrderId } = await createWorkOrderInDiagnosis();
+
+      await ctx.prisma.sagaInstance.create({
+        data: {
+          type: 'QUOTE_APPROVAL',
+          correlationId: randomUUID(),
+          workOrderId,
+          status: 'COMPENSATED',
+          failureReason: 'INSUFFICIENT_STOCK',
+        },
+      });
+
+      const res = await request(httpServer)
+        .post('/api/quotes')
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ workOrderId })
+        .expect(201);
+
+      expect(res.body.data.status).toBe('PENDING');
+    });
+
     it('should return 404 when work order does not exist', async () => {
       await request(httpServer)
         .post('/api/quotes')
@@ -262,8 +297,8 @@ describe('Quote (E2E)', () => {
 
     it('should create a quote with inline services and parts and return it with items', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const service = await createService();
-      const part = await createPartSupply();
+      const service = stubService(stub);
+      const part = stubPartSupply(stub);
 
       const res = await request(httpServer)
         .post('/api/quotes')
@@ -281,7 +316,7 @@ describe('Quote (E2E)', () => {
 
     it('should return 409 when parts-only payload (no service) is provided', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const part = await createPartSupply();
+      const part = stubPartSupply(stub);
 
       await request(httpServer)
         .post('/api/quotes')
@@ -309,7 +344,7 @@ describe('Quote (E2E)', () => {
     it('should still enforce the work order status gate when inline items are provided', async () => {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
-      const service = await createService();
+      const service = stubService(stub);
 
       const woRes = await request(httpServer)
         .post('/api/work-orders')
@@ -329,7 +364,7 @@ describe('Quote (E2E)', () => {
 
     it('should create a quote with services only (no parts) and return totalAmount > 0', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const service = await createService();
+      const service = stubService(stub);
 
       const res = await request(httpServer)
         .post('/api/quotes')
@@ -360,7 +395,7 @@ describe('Quote (E2E)', () => {
 
     it('should return 404 when an inline partSupplyId does not exist', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const service = await createService();
+      const service = stubService(stub);
 
       await request(httpServer)
         .post('/api/quotes')
@@ -375,7 +410,7 @@ describe('Quote (E2E)', () => {
 
     it('should return 409 when duplicate serviceId is provided in inline services', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const service = await createService();
+      const service = stubService(stub);
 
       await request(httpServer)
         .post('/api/quotes')
@@ -392,8 +427,8 @@ describe('Quote (E2E)', () => {
 
     it('should return 409 when duplicate partSupplyId is provided in inline partsSupplies', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const service = await createService();
-      const part = await createPartSupply();
+      const service = stubService(stub);
+      const part = stubPartSupply(stub);
 
       await request(httpServer)
         .post('/api/quotes')
@@ -443,10 +478,17 @@ describe('Quote (E2E)', () => {
         .expect(404);
     });
 
-    it('should return quote with populated services and partsSupplies arrays', async () => {
+    it('should return quote with its items presented with the inventory catalog', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const service = await createService();
-      const part = await createPartSupply();
+      const service = stubService(stub);
+      const part = stubPartSupply(stub);
+
+      const catalogService = { ...readInternalServiceFixture().data, id: service.id };
+
+      const catalogPartSupply = { ...readInternalPartSupplyFixture().data, id: part.id };
+
+      stub.services.set(service.id, catalogService);
+      stub.partsSupplies.set(part.id, catalogPartSupply);
 
       const createRes = await request(httpServer)
         .post('/api/quotes')
@@ -472,15 +514,27 @@ describe('Quote (E2E)', () => {
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .expect(200);
 
-      expect(res.body.data.services).toHaveLength(1);
-      expect(res.body.data.partsSupplies).toHaveLength(1);
-      expect(res.body.data.services[0].id).toBe(service.id);
-      expect(res.body.data.services[0].name).toBeDefined();
-      expect(res.body.data.services[0].quantity).toBe(2);
-      expect(res.body.data.partsSupplies[0].id).toBe(part.id);
-      expect(res.body.data.partsSupplies[0].name).toBeDefined();
-      expect(res.body.data.partsSupplies[0].sku).toBeDefined();
-      expect(res.body.data.partsSupplies[0].quantity).toBe(3);
+      expect(res.body.data.services).toEqual([
+        expect.objectContaining({
+          id: service.id,
+          name: catalogService.name,
+          description: catalogService.description,
+          quantity: 2,
+        }),
+      ]);
+
+      expect(res.body.data.partsSupplies).toEqual([
+        expect.objectContaining({
+          id: part.id,
+          name: catalogPartSupply.name,
+          description: catalogPartSupply.description,
+          sku: catalogPartSupply.sku,
+          partNumber: catalogPartSupply.partNumber,
+          category: catalogPartSupply.category,
+          unit: catalogPartSupply.unit,
+          quantity: 3,
+        }),
+      ]);
     });
   });
 
@@ -489,7 +543,8 @@ describe('Quote (E2E)', () => {
   describe('POST /api/quotes/:id/services', () => {
     it('should add a service to the quote', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const service = await createService();
+      const service = stubService(stub);
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -508,6 +563,38 @@ describe('Quote (E2E)', () => {
       expect(res.body.data.totalAmount).toBeGreaterThan(0);
     });
 
+    it('should keep the price read at inclusion after the catalog price changes', async () => {
+      const { workOrderId } = await createWorkOrderInDiagnosis();
+      const service = stubService(stub, { basePrice: 120 });
+
+      const createRes = await request(httpServer)
+        .post('/api/quotes')
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ workOrderId })
+        .expect(201);
+
+      const quoteId = createRes.body.data.id as string;
+
+      await request(httpServer)
+        .post(`/api/quotes/${quoteId}/services`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ serviceId: service.id, quantity: 2 })
+        .expect(200);
+
+      stub.services.set(service.id, { ...service, basePrice: 999 });
+
+      const res = await request(httpServer)
+        .get(`/api/quotes/${quoteId}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .expect(200);
+
+      expect(res.body.data.services).toEqual([
+        expect.objectContaining({ id: service.id, unitPrice: 120, totalPrice: 240 }),
+      ]);
+
+      expect(res.body.data.totalAmount).toBe(240);
+    });
+
     it('should return 409 when adding to a non-PENDING quote', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
       const createRes = await request(httpServer)
@@ -519,7 +606,8 @@ describe('Quote (E2E)', () => {
       const quoteId = createRes.body.data.id as string;
 
       // Add a service first, then submit to move to SENT
-      const serviceForSubmit = await createService();
+      const serviceForSubmit = stubService(stub);
+
       await request(httpServer)
         .post(`/api/quotes/${quoteId}/services`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -533,7 +621,7 @@ describe('Quote (E2E)', () => {
         .send({})
         .expect(200);
 
-      const service = await createService();
+      const service = stubService(stub);
       await request(httpServer)
         .post(`/api/quotes/${quoteId}/services`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -557,7 +645,8 @@ describe('Quote (E2E)', () => {
     });
 
     it('should return 404 when quote does not exist', async () => {
-      const service = await createService();
+      const service = stubService(stub);
+
       await request(httpServer)
         .post(`/api/quotes/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/services`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -567,7 +656,8 @@ describe('Quote (E2E)', () => {
 
     it('should return 400 when quantity is zero', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const service = await createService();
+      const service = stubService(stub);
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -583,6 +673,7 @@ describe('Quote (E2E)', () => {
 
     it('should return 400 when serviceId is not a valid UUID', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -598,12 +689,14 @@ describe('Quote (E2E)', () => {
 
     it('should return 409 when service is already in the quote', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const service = await createService();
+      const service = stubService(stub);
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ workOrderId })
         .expect(201);
+
       const quoteId = createRes.body.data.id;
 
       await request(httpServer)
@@ -625,7 +718,8 @@ describe('Quote (E2E)', () => {
   describe('POST /api/quotes/:id/parts-supplies', () => {
     it('should add a part supply to the quote', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const part = await createPartSupply();
+      const part = stubPartSupply(stub);
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -646,6 +740,7 @@ describe('Quote (E2E)', () => {
 
     it('should return 409 when adding to a non-PENDING quote', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -654,7 +749,8 @@ describe('Quote (E2E)', () => {
 
       const quoteId = createRes.body.data.id as string;
 
-      const serviceForSubmit = await createService();
+      const serviceForSubmit = stubService(stub);
+
       await request(httpServer)
         .post(`/api/quotes/${quoteId}/services`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -667,7 +763,8 @@ describe('Quote (E2E)', () => {
         .send({})
         .expect(200);
 
-      const part = await createPartSupply();
+      const part = stubPartSupply(stub);
+
       await request(httpServer)
         .post(`/api/quotes/${quoteId}/parts-supplies`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -677,6 +774,7 @@ describe('Quote (E2E)', () => {
 
     it('should return 404 when adding non-existent part supply', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -691,7 +789,8 @@ describe('Quote (E2E)', () => {
     });
 
     it('should return 404 when quote does not exist', async () => {
-      const part = await createPartSupply();
+      const part = stubPartSupply(stub);
+
       await request(httpServer)
         .post(`/api/quotes/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/parts-supplies`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -701,7 +800,8 @@ describe('Quote (E2E)', () => {
 
     it('should return 400 when quantity is zero', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const part = await createPartSupply();
+      const part = stubPartSupply(stub);
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -717,6 +817,7 @@ describe('Quote (E2E)', () => {
 
     it('should return 400 when partSupplyId is not a valid UUID', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -732,7 +833,8 @@ describe('Quote (E2E)', () => {
 
     it('should return 409 when part supply is already in the quote', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const part = await createPartSupply();
+      const part = stubPartSupply(stub);
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -759,7 +861,8 @@ describe('Quote (E2E)', () => {
   describe('POST /api/quotes/:id/submissions', () => {
     it('should submit a quote and transition work order to AWAITING_APPROVAL', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const service = await createService();
+      const service = stubService(stub);
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -809,7 +912,8 @@ describe('Quote (E2E)', () => {
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
-      const service = await createService();
+      const service = stubService(stub);
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -836,6 +940,7 @@ describe('Quote (E2E)', () => {
 
     it('should return 409 when submitting quote with no items', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -851,12 +956,14 @@ describe('Quote (E2E)', () => {
 
     it('should transition work order from REJECTED back to AWAITING_APPROVAL when a new quote is submitted', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const firstService = await createService();
+      const firstService = stubService(stub);
+
       const firstQuoteRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ workOrderId })
         .expect(201);
+
       const firstQuoteId = firstQuoteRes.body.data.id as string;
 
       await request(httpServer)
@@ -883,12 +990,14 @@ describe('Quote (E2E)', () => {
         .expect(200);
       expect(woAfterReject.body.data.status).toBe('REJECTED');
 
-      const secondService = await createService();
+      const secondService = stubService(stub);
+
       const secondQuoteRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ workOrderId })
         .expect(201);
+
       const secondQuoteId = secondQuoteRes.body.data.id as string;
 
       await request(httpServer)
@@ -902,12 +1011,14 @@ describe('Quote (E2E)', () => {
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({})
         .expect(200);
+
       expect(submissionRes.body.data.status).toBe('SENT');
 
       const woAfterResubmit = await request(httpServer)
         .get(`/api/work-orders/${workOrderId}`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .expect(200);
+
       expect(woAfterResubmit.body.data.status).toBe('AWAITING_APPROVAL');
     });
 
@@ -915,18 +1026,22 @@ describe('Quote (E2E)', () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
 
       // First quote → submit → work order transitions to AWAITING_APPROVAL.
-      const firstService = await createService();
+      const firstService = stubService(stub);
+
       const firstQuoteRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ workOrderId })
         .expect(201);
+
       const firstQuoteId = firstQuoteRes.body.data.id as string;
+
       await request(httpServer)
         .post(`/api/quotes/${firstQuoteId}/services`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ serviceId: firstService.id, quantity: 1 })
         .expect(200);
+
       await request(httpServer)
         .post(`/api/quotes/${firstQuoteId}/submissions`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -935,13 +1050,16 @@ describe('Quote (E2E)', () => {
 
       // A second (competing) quote can be created AND submitted while the work
       // order is AWAITING_APPROVAL — the work order status is left unchanged.
-      const secondService = await createService();
+      const secondService = stubService(stub);
+
       const secondQuoteRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ workOrderId })
         .expect(201);
+
       const secondQuoteId = secondQuoteRes.body.data.id as string;
+
       await request(httpServer)
         .post(`/api/quotes/${secondQuoteId}/services`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -953,12 +1071,14 @@ describe('Quote (E2E)', () => {
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({})
         .expect(200);
+
       expect(submissionRes.body.data.status).toBe('SENT');
 
       const wo = await request(httpServer)
         .get(`/api/work-orders/${workOrderId}`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .expect(200);
+
       expect(wo.body.data.status).toBe('AWAITING_APPROVAL');
     });
 
@@ -966,7 +1086,7 @@ describe('Quote (E2E)', () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
 
       // Two competing quotes, both submitted → both SENT, work order AWAITING_APPROVAL.
-      const serviceA = await createService();
+      const serviceA = stubService(stub);
 
       const quoteARes = await request(httpServer)
         .post('/api/quotes')
@@ -988,7 +1108,7 @@ describe('Quote (E2E)', () => {
         .send({})
         .expect(200);
 
-      const serviceB = await createService();
+      const serviceB = stubService(stub);
 
       const quoteBRes = await request(httpServer)
         .post('/api/quotes')
@@ -1047,7 +1167,7 @@ describe('Quote (E2E)', () => {
     async function createReceivedWorkOrderWithQuote() {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
-      const service = await createService();
+      const service = stubService(stub);
 
       const woRes = await request(httpServer)
         .post('/api/work-orders')
@@ -1061,6 +1181,7 @@ describe('Quote (E2E)', () => {
         .expect(201);
 
       const workOrderId = woRes.body.data.id as string;
+
       expect(woRes.body.data.status).toBe('RECEIVED');
 
       const quotesRes = await request(httpServer)
@@ -1069,6 +1190,7 @@ describe('Quote (E2E)', () => {
         .expect(200);
 
       const quote = quotesRes.body.data[0] as { id: string; status: string };
+
       expect(quote.status).toBe('PENDING');
 
       return { workOrderId, quoteId: quote.id };
@@ -1144,7 +1266,8 @@ describe('Quote (E2E)', () => {
   describe('PATCH /api/quotes/:id', () => {
     it('should approve a submitted quote', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const service = await createService();
+      const service = stubService(stub);
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1186,7 +1309,8 @@ describe('Quote (E2E)', () => {
 
     it('should reject a submitted quote', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const service = await createService();
+      const service = stubService(stub);
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1218,7 +1342,8 @@ describe('Quote (E2E)', () => {
 
     it('should return 400 when rejecting without reason', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const service = await createService();
+      const service = stubService(stub);
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1273,31 +1398,20 @@ describe('Quote (E2E)', () => {
         .expect(404);
     });
 
-    it('should return 409 when stock is insufficient during approval', async () => {
+    it('should approve a quote with parts and keep the work order awaiting the stock reservation', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const partRes = await request(httpServer)
-        .post('/api/parts-supplies')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          name: 'Pneu',
-          sku: `PNEU-${Date.now()}`,
-          category: 'PART',
-          unit: 'UN',
-          costPrice: 200,
-          salePrice: 400,
-          stock: 1, // Low stock
-          minStock: 0,
-        })
-        .expect(201);
-      const partId = partRes.body.data.id;
-      const service = await createService();
+
+      const service = stubService(stub);
+
+      const partSupply = stubPartSupply(stub);
 
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ workOrderId })
         .expect(201);
-      const quoteId = createRes.body.data.id;
+
+      const quoteId = createRes.body.data.id as string;
 
       await request(httpServer)
         .post(`/api/quotes/${quoteId}/services`)
@@ -1308,7 +1422,7 @@ describe('Quote (E2E)', () => {
       await request(httpServer)
         .post(`/api/quotes/${quoteId}/parts-supplies`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ partSupplyId: partId, quantity: 5 }) // Request more than available
+        .send({ partSupplyId: partSupply.id, quantity: 5 })
         .expect(200);
 
       await request(httpServer)
@@ -1316,21 +1430,45 @@ describe('Quote (E2E)', () => {
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .expect(200);
 
-      await request(httpServer)
+      const res = await request(httpServer)
         .patch(`/api/quotes/${quoteId}`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ status: 'APPROVED' })
-        .expect(409);
+        .expect(200);
+
+      const woRes = await request(httpServer)
+        .get(`/api/work-orders/${workOrderId}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .expect(200);
+
+      const saga = await ctx.prisma.sagaInstance.findFirstOrThrow({
+        where: { correlationId: quoteId },
+      });
+
+      const outbox = await ctx.prisma.outboxMessage.findMany({ where: { workOrderId } });
+
+      expect(res.body.data.status).toBe('APPROVED');
+      expect(woRes.body.data.status).toBe('AWAITING_APPROVAL');
+      expect(woRes.body.data.partSupplies).toEqual([]);
+      expect(saga).toMatchObject({
+        type: 'QUOTE_APPROVAL',
+        workOrderId,
+        status: 'RESERVING_STOCK',
+      });
+      expect(outbox).toEqual([
+        expect.objectContaining({
+          type: 'inventory.stock.reserve',
+          payload: { quoteId, items: [{ partSupplyId: partSupply.id, quantity: 5 }] },
+        }),
+      ]);
     });
   });
-
-  // ─── PUT & DELETE services/parts-supplies ──────────────────────────────────────────────
 
   describe('Quote Items Management', () => {
     it('should update and remove items in a PENDING quote', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const service = await createService();
-      const part = await createPartSupply();
+      const service = stubService(stub);
+      const part = stubPartSupply(stub);
 
       const createRes = await request(httpServer)
         .post('/api/quotes')
@@ -1380,12 +1518,14 @@ describe('Quote (E2E)', () => {
 
     it('should return 400 when updating service item with quantity zero', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const service = await createService();
+      const service = stubService(stub);
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ workOrderId })
         .expect(201);
+
       const quoteId = createRes.body.data.id;
 
       await request(httpServer)
@@ -1403,12 +1543,14 @@ describe('Quote (E2E)', () => {
 
     it('should return 400 when updating part supply item with quantity zero', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const part = await createPartSupply();
+      const part = stubPartSupply(stub);
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ workOrderId })
         .expect(201);
+
       const quoteId = createRes.body.data.id;
 
       await request(httpServer)
@@ -1426,6 +1568,7 @@ describe('Quote (E2E)', () => {
 
     it('should return 404 when updating non-existent item', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1443,6 +1586,7 @@ describe('Quote (E2E)', () => {
 
     it('should return 404 when removing non-existent item', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1463,6 +1607,7 @@ describe('Quote (E2E)', () => {
   describe('PATCH /api/quotes/:id', () => {
     it('should approve a quote manually', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1470,7 +1615,7 @@ describe('Quote (E2E)', () => {
         .expect(201);
 
       const quoteId = createRes.body.data.id;
-      const service = await createService();
+      const service = stubService(stub);
 
       await request(httpServer)
         .post(`/api/quotes/${quoteId}/services`)
@@ -1494,6 +1639,7 @@ describe('Quote (E2E)', () => {
 
     it('should reject a quote manually with reason', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1501,7 +1647,7 @@ describe('Quote (E2E)', () => {
         .expect(201);
 
       const quoteId = createRes.body.data.id;
-      const service = await createService();
+      const service = stubService(stub);
 
       await request(httpServer)
         .post(`/api/quotes/${quoteId}/services`)
@@ -1525,6 +1671,7 @@ describe('Quote (E2E)', () => {
 
     it('should return 400 when rejecting without reason', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1551,7 +1698,8 @@ describe('Quote (E2E)', () => {
 
   describe('Extra Coverage Scenarios', () => {
     it('should return 404 when adding service to non-existent quote', async () => {
-      const service = await createService();
+      const service = stubService(stub);
+
       await request(httpServer)
         .post(`/api/quotes/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/services`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1561,11 +1709,13 @@ describe('Quote (E2E)', () => {
 
     it('should return 404 when adding non-existent service to quote', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ workOrderId })
         .expect(201);
+
       await request(httpServer)
         .post(`/api/quotes/${createRes.body.data.id}/services`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1600,13 +1750,16 @@ describe('Quote (E2E)', () => {
 
     it('should return 409 when submitting a REJECTED quote', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const service = await createService();
+      const service = stubService(stub);
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ workOrderId })
         .expect(201);
+
       const quoteId = createRes.body.data.id;
+
       await request(httpServer)
         .post(`/api/quotes/${quoteId}/services`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1635,11 +1788,13 @@ describe('Quote (E2E)', () => {
 
     it('should return 400 when manual status update is not APPROVED or REJECTED', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ workOrderId })
         .expect(201);
+
       await request(httpServer)
         .patch(`/api/quotes/${createRes.body.data.id}`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1649,12 +1804,15 @@ describe('Quote (E2E)', () => {
 
     it('should return 404 when service is not associated with quote during removal', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ workOrderId })
         .expect(201);
-      const service = await createService();
+
+      const service = stubService(stub);
+
       await request(httpServer)
         .delete(`/api/quotes/${createRes.body.data.id}/services/${service.id}`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1663,12 +1821,15 @@ describe('Quote (E2E)', () => {
 
     it('should return 404 when part is not associated with quote during update', async () => {
       const { workOrderId } = await createWorkOrderInDiagnosis();
+
       const createRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ workOrderId })
         .expect(201);
-      const part = await createPartSupply();
+
+      const part = stubPartSupply(stub);
+
       await request(httpServer)
         .patch(`/api/quotes/${createRes.body.data.id}/parts-supplies/${part.id}`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1677,7 +1838,8 @@ describe('Quote (E2E)', () => {
     });
 
     it('should return 404 when updating service in non-existent quote', async () => {
-      const service = await createService();
+      const service = stubService(stub);
+
       await request(httpServer)
         .patch(`/api/quotes/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/services/${service.id}`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1686,7 +1848,8 @@ describe('Quote (E2E)', () => {
     });
 
     it('should return 404 when updating part in non-existent quote', async () => {
-      const part = await createPartSupply();
+      const part = stubPartSupply(stub);
+
       await request(httpServer)
         .patch(`/api/quotes/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/parts-supplies/${part.id}`)
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1711,6 +1874,7 @@ describe('Quote (E2E)', () => {
     describe('Retrieval', () => {
       it('should list all quotes paginated (GET /api/quotes)', async () => {
         const wo = await createWorkOrderInDiagnosis();
+
         await request(httpServer)
           .post('/api/quotes')
           .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1755,6 +1919,7 @@ describe('Quote (E2E)', () => {
 
       it('should filter quotes by status (GET /api/quotes?status=...)', async () => {
         const wo = await createWorkOrderInDiagnosis();
+
         const quoteRes = await request(httpServer)
           .post('/api/quotes')
           .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1770,6 +1935,7 @@ describe('Quote (E2E)', () => {
           .expect(200);
 
         const hasPending = resPending.body.data.some((q: { id: string }) => q.id === quoteId);
+
         expect(hasPending).toBe(true);
 
         const resSent = await request(httpServer)
@@ -1778,6 +1944,7 @@ describe('Quote (E2E)', () => {
           .expect(200);
 
         const hasSent = resSent.body.data.some((q: { id: string }) => q.id === quoteId);
+
         expect(hasSent).toBe(false);
       });
 
@@ -1794,6 +1961,7 @@ describe('Quote (E2E)', () => {
 
       it('should list quotes of a work order (GET /api/work-orders/:id/quotes)', async () => {
         const wo = await createWorkOrderInDiagnosis();
+
         await request(httpServer)
           .post('/api/quotes')
           .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1816,6 +1984,7 @@ describe('Quote (E2E)', () => {
 
       it('should return 404 when listing quotes for non-existent work order', async () => {
         const invalidId = 'f9b6e8e0-1c2d-4e5f-8a9b-0c1d2e3f4a5b';
+
         await request(httpServer)
           .get(`/api/work-orders/${invalidId}/quotes`)
           .set('Authorization', `Bearer ${adminAuth.accessToken}`)
@@ -1829,13 +1998,15 @@ describe('Quote (E2E)', () => {
   describe('Quote approval — Concurrency (optimistic locking)', () => {
     async function setupSentQuote() {
       const { workOrderId } = await createWorkOrderInDiagnosis();
-      const service = await createService();
+
+      const service = stubService(stub);
 
       const quoteRes = await request(httpServer)
         .post('/api/quotes')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .send({ workOrderId })
         .expect(201);
+
       const quoteId = quoteRes.body.data.id as string;
 
       await request(httpServer)
@@ -1872,11 +2043,13 @@ describe('Quote (E2E)', () => {
 
       // Exactly one succeeds; the other gets ConcurrencyException or BusinessRuleViolation (both 409)
       const statuses = [res1.status, res2.status];
+
       expect(statuses).toContain(200);
       expect(statuses).toContain(409);
 
       // DB state must reflect a single approval
       const record = await ctx.prisma.quote.findUnique({ where: { id: quoteId } });
+
       expect(record!.status).toBe('APPROVED');
     });
 

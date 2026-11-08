@@ -9,6 +9,7 @@ import { IUpdateQuotePartSupplyQuantityUseCase } from '@application/ports/input/
 import { ISubmitQuoteUseCase } from '@application/ports/input/quote/submit-quote.use-case.interface';
 import { IUpdateQuoteStatusUseCase } from '@application/ports/input/quote/update-quote-status.use-case.interface';
 import { IFindAllQuotesPaginatedUseCase } from '@application/ports/input/quote/find-all-quotes-paginated.use-case.interface';
+import { IFindCatalogItemsUseCase } from '@application/ports/input/catalog/find-catalog-items.use-case.interface';
 
 import { CreateQuoteRequest } from './requests/create-quote-request';
 import { AddQuoteServiceRequest } from './requests/add-quote-service-request';
@@ -38,6 +39,7 @@ export class QuoteController {
     private readonly submitQuoteUseCase: ISubmitQuoteUseCase,
     private readonly updateQuoteStatusUseCase: IUpdateQuoteStatusUseCase,
     private readonly findAllQuotesPaginatedUseCase: IFindAllQuotesPaginatedUseCase,
+    private readonly findCatalogItemsUseCase: IFindCatalogItemsUseCase,
   ) {}
 
   async findAll(query: FindAllQuotesQuery): Promise<QuotePaginatedResponse> {
@@ -57,7 +59,13 @@ export class QuoteController {
 
   async findOne(id: string): Promise<QuoteWithItemsDataResponse> {
     const quote = await this.findQuoteByIdUseCase.execute(id);
-    return QuotePresenter.toWithItemsResponse(quote);
+
+    const catalog = await this.findCatalogItemsUseCase.execute({
+      serviceIds: quote.services.map((item) => item.serviceId),
+      partSupplyIds: quote.partsSupplies.map((item) => item.partSupplyId),
+    });
+
+    return QuotePresenter.toWithItemsResponse(quote, catalog);
   }
 
   async addService(quoteId: string, input: AddQuoteServiceRequest): Promise<QuoteDataResponse> {

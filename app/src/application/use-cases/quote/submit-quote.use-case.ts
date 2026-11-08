@@ -17,6 +17,7 @@ import {
 } from '@application/ports/output/services/email-sender.service.interface';
 
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
+import { ResourceConflictException } from '@application/exceptions/resource-conflict.exception';
 import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 
@@ -53,6 +54,14 @@ export class SubmitQuoteUseCase {
       const workOrder = (await repos.workOrder.findById(quote.workOrderId))!;
 
       workOrder.ensureCanSubmitQuote();
+
+      const hasActiveQuoteApproval = await repos.sagaInstance.hasActiveByWorkOrderId(workOrder.id);
+
+      if (hasActiveQuoteApproval) {
+        throw new ResourceConflictException(
+          'Ordem de serviço com aprovação de orçamento em andamento: aguarde a confirmação do estoque',
+        );
+      }
 
       const previousQuoteStatus = quote.status;
 

@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 env:
-  COMPOSE_FILE: app/docker-compose.yml
+  COMPOSE_FILE: app/docker-compose.yml:app/docker-compose.dast.yml
   COMPOSE_PROJECT_NAME: dast
   API_BASE_URL: http://localhost:3000
   SEED_ADMIN_EMAIL: ${{ secrets.SEED_ADMIN_EMAIL }}

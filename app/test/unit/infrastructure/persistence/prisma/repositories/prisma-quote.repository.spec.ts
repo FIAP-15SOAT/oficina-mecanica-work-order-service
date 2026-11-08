@@ -42,6 +42,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: quote.sentAt,
         approvedAt: quote.approvedAt,
         rejectedAt: quote.rejectedAt,
+        replacedByQuoteId: null,
+        decidedBy: null,
         createdAt: quote.createdAt,
         updatedAt: quote.updatedAt,
         services: [],
@@ -59,8 +61,8 @@ describe('PrismaQuoteRepository', () => {
             partsSupplies: { create: [] },
           }),
           include: expect.objectContaining({
-            services: { include: { service: true } },
-            partsSupplies: { include: { partSupply: true } },
+            services: true,
+            partsSupplies: true,
             workOrder: expect.any(Object),
           }),
         }),
@@ -74,24 +76,8 @@ describe('PrismaQuoteRepository', () => {
 
       const quote = Quote.create({
         workOrderId,
-        services: [
-          {
-            service: {
-              id: serviceId,
-              basePrice: 100,
-            } as never,
-            quantity: 1,
-          },
-        ],
-        partsSupplies: [
-          {
-            partSupply: {
-              id: partSupplyId,
-              salePrice: 50,
-            } as never,
-            quantity: 2,
-          },
-        ],
+        services: [{ serviceId, unitPrice: 100, quantity: 1 }],
+        partsSupplies: [{ partSupplyId, unitPrice: 50, quantity: 2 }],
       });
 
       const mockRecord = {
@@ -105,6 +91,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         createdAt: quote.createdAt,
         updatedAt: quote.updatedAt,
         services: [
@@ -116,15 +104,6 @@ describe('PrismaQuoteRepository', () => {
             totalPrice: new Prisma.Decimal(100),
             createdAt: new Date(),
             updatedAt: new Date(),
-            service: {
-              id: serviceId,
-              name: 'Test',
-              basePrice: new Prisma.Decimal(100),
-              estimatedTimeMin: 30,
-              description: null,
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            },
           },
         ],
         partsSupplies: [
@@ -136,7 +115,6 @@ describe('PrismaQuoteRepository', () => {
             totalPrice: new Prisma.Decimal(100),
             createdAt: new Date(),
             updatedAt: new Date(),
-            partSupply: null,
           },
         ],
         workOrder: null,
@@ -158,8 +136,8 @@ describe('PrismaQuoteRepository', () => {
             partsSupplies: { create: expect.any(Array) },
           }),
           include: expect.objectContaining({
-            services: { include: { service: true } },
-            partsSupplies: { include: { partSupply: true } },
+            services: true,
+            partsSupplies: true,
           }),
         }),
       );
@@ -215,8 +193,8 @@ describe('PrismaQuoteRepository', () => {
         expect.objectContaining({
           where: { id },
           include: expect.objectContaining({
-            services: { include: { service: true } },
-            partsSupplies: { include: { partSupply: true } },
+            services: true,
+            partsSupplies: true,
             workOrder: expect.objectContaining({ include: expect.any(Object) }),
           }),
         }),
@@ -245,6 +223,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: randomUUID(),
+        decidedBy: randomUUID(),
         version: 1,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -261,6 +241,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: quote.sentAt,
         approvedAt: quote.approvedAt,
         rejectedAt: quote.rejectedAt,
+        replacedByQuoteId: quote.replacedByQuoteId,
+        decidedBy: quote.decidedBy,
         version: 2,
         createdAt: quote.createdAt,
         updatedAt: quote.updatedAt,
@@ -273,6 +255,10 @@ describe('PrismaQuoteRepository', () => {
       expect(prisma.quote.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: quote.id, version: 1 },
+          data: expect.objectContaining({
+            replacedByQuoteId: quote.replacedByQuoteId,
+            decidedBy: quote.decidedBy,
+          }),
           include: expect.objectContaining({
             workOrder: expect.any(Object),
           }),
@@ -292,6 +278,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         version: 1,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -319,6 +307,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         version: 1,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -356,16 +346,6 @@ describe('PrismaQuoteRepository', () => {
     });
   });
 
-  describe('rejectPendingByWorkOrderId', () => {
-    it('should update pending quotes to rejected', async () => {
-      prisma.quote.updateMany.mockResolvedValue({ count: 1 });
-
-      await repository.rejectPendingByWorkOrderId(randomUUID());
-
-      expect(prisma.quote.updateMany).toHaveBeenCalled();
-    });
-  });
-
   describe('addServiceItem', () => {
     it('should create a quoteService record and update quote totals', async () => {
       const quote = Quote.reconstitute({
@@ -379,6 +359,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         version: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -415,6 +397,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         version: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -442,6 +426,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         version: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -478,6 +464,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         version: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -514,6 +502,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         version: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -541,6 +531,8 @@ describe('PrismaQuoteRepository', () => {
         sentAt: null,
         approvedAt: null,
         rejectedAt: null,
+        replacedByQuoteId: null,
+        decidedBy: null,
         version: 0,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -607,6 +599,40 @@ describe('PrismaQuoteRepository', () => {
           },
         }),
       );
+    });
+  });
+
+  describe('isServiceInUse / isPartSupplyInUse', () => {
+    it.each([
+      [{ createdAt: new Date() }, true],
+      [null, false],
+    ])('should tell whether a quote uses a service (%o -> %s)', async (row, inUse) => {
+      const serviceId = randomUUID();
+
+      prisma.quoteService.findFirst.mockResolvedValue(row);
+
+      await expect(repository.isServiceInUse(serviceId)).resolves.toBe(inUse);
+
+      expect(prisma.quoteService.findFirst).toHaveBeenCalledWith({
+        where: { serviceId },
+        select: { createdAt: true },
+      });
+    });
+
+    it.each([
+      [{ createdAt: new Date() }, true],
+      [null, false],
+    ])('should tell whether a quote uses a part supply (%o -> %s)', async (row, inUse) => {
+      const partSupplyId = randomUUID();
+
+      prisma.quotePartSupply.findFirst.mockResolvedValue(row);
+
+      await expect(repository.isPartSupplyInUse(partSupplyId)).resolves.toBe(inUse);
+
+      expect(prisma.quotePartSupply.findFirst).toHaveBeenCalledWith({
+        where: { partSupplyId },
+        select: { createdAt: true },
+      });
     });
   });
 });

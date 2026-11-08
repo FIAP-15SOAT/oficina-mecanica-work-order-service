@@ -2,6 +2,7 @@ import { UpdateWorkOrderStatusUseCase } from '@application/use-cases/work-order/
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
+import { ResourceConflictException } from '@application/exceptions/resource-conflict.exception';
 import { createMockWorkOrder } from '../../../../helpers/work-order-mock.factory';
 import { createMockUnitOfWorkWithRepos } from '../../../../helpers/unit-of-work-mock.factory';
 import { IUnitOfWork, IRepositories } from '@domain/interfaces/repositories/unit-of-work.interface';
@@ -124,6 +125,32 @@ describe('UpdateWorkOrderStatusUseCase', () => {
       }),
     ).rejects.toThrow(BusinessRuleViolationException);
   });
+
+  it('should answer 409 when cancelling a work order with a quote approval in progress', async () => {
+    const workOrder = createMockWorkOrder({ status: WorkOrderStatus.AWAITING_APPROVAL });
+
+    jest.mocked(mockRepos.workOrder.findById).mockResolvedValue(workOrder);
+
+    jest.mocked(mockRepos.sagaInstance.hasActiveByWorkOrderId).mockResolvedValue(true);
+
+    await expect(
+      useCase.execute(workOrder.id, {
+        status: WorkOrderStatus.CANCELLED,
+        notes: 'Cancelado a pedido do cliente',
+        userId: '550e8400-e29b-41d4-a716-446655440099',
+      }),
+    ).rejects.toThrow(
+      new ResourceConflictException(
+        'Ordem de serviço com aprovação de orçamento em andamento: aguarde a confirmação do estoque',
+      ),
+    );
+
+    expect(mockRepos.sagaInstance.hasActiveByWorkOrderId).toHaveBeenCalledWith(workOrder.id);
+    expect(mockRepos.workOrder.update).not.toHaveBeenCalled();
+    expect(mockRepos.statusHistory.create).not.toHaveBeenCalled();
+    expect(cache.delete).not.toHaveBeenCalled();
+  });
+
   describe('dwell metrics', () => {
     const RECEIVED_AT = new Date('2026-01-01T00:00:00.000Z');
     const DIAGNOSED_AT = new Date('2026-01-01T02:00:00.000Z');

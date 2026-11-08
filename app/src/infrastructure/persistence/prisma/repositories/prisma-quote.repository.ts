@@ -14,13 +14,13 @@ import {
   IQuoteRepository,
   QuoteFilters,
 } from '@domain/interfaces/repositories/quote.repository.interface';
-import { QuoteStatus } from '@domain/enums/quote-status.enum';
 import {
   PaginatedRepositoryResult,
   PaginationInput,
 } from '@domain/interfaces/common/pagination.interface';
 
 import { paginate } from '@infrastructure/persistence/prisma/helpers/prisma-paginate.helper';
+import { existsBy } from '@infrastructure/persistence/prisma/helpers/prisma-exists.helper';
 
 const QUOTE_WORK_ORDER_INCLUDE = {
   customer: true,
@@ -63,8 +63,8 @@ export class PrismaQuoteRepository implements IQuoteRepository {
         },
       },
       include: {
-        services: { include: { service: true } },
-        partsSupplies: { include: { partSupply: true } },
+        services: true,
+        partsSupplies: true,
         workOrder: { include: QUOTE_WORK_ORDER_INCLUDE },
       },
     });
@@ -81,8 +81,8 @@ export class PrismaQuoteRepository implements IQuoteRepository {
     const record = await this.prisma.quote.findUnique({
       where: { id },
       include: {
-        services: { include: { service: true } },
-        partsSupplies: { include: { partSupply: true } },
+        services: true,
+        partsSupplies: true,
         workOrder: { include: QUOTE_WORK_ORDER_INCLUDE },
       },
     });
@@ -139,6 +139,8 @@ export class PrismaQuoteRepository implements IQuoteRepository {
           sentAt: quote.sentAt,
           approvedAt: quote.approvedAt,
           rejectedAt: quote.rejectedAt,
+          replacedByQuoteId: quote.replacedByQuoteId,
+          decidedBy: quote.decidedBy,
           updatedAt: quote.updatedAt,
           version: { increment: 1 },
         },
@@ -158,18 +160,6 @@ export class PrismaQuoteRepository implements IQuoteRepository {
       }
       throw error;
     }
-  }
-
-  async rejectPendingByWorkOrderId(workOrderId: string): Promise<void> {
-    const now = new Date();
-
-    await this.prisma.quote.updateMany({
-      where: {
-        workOrderId,
-        status: { in: [QuoteStatus.PENDING, QuoteStatus.SENT] },
-      },
-      data: { status: QuoteStatus.REJECTED, rejectedAt: now, updatedAt: now },
-    });
   }
 
   async addServiceItem(item: QuoteService): Promise<void> {
@@ -230,5 +220,13 @@ export class PrismaQuoteRepository implements IQuoteRepository {
         updatedAt: item.updatedAt,
       },
     });
+  }
+
+  async isServiceInUse(serviceId: string): Promise<boolean> {
+    return existsBy(this.prisma.quoteService, { serviceId });
+  }
+
+  async isPartSupplyInUse(partSupplyId: string): Promise<boolean> {
+    return existsBy(this.prisma.quotePartSupply, { partSupplyId });
   }
 }

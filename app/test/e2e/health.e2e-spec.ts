@@ -377,17 +377,25 @@ describe('Health endpoints during graceful shutdown (E2E)', () => {
     );
 
     const created = await request(httpServer)
-      .post('/api/services')
+      .post('/api/customers')
       .set('Authorization', `Bearer ${auth.accessToken}`)
-      .send({ name: 'Troca de óleo drain', basePrice: 150.5, estimatedTimeMin: 45 })
+      .send({
+        name: 'Cliente Drain',
+        document: '52998224725',
+        type: 'INDIVIDUAL',
+        email: 'cliente.drain@test.com',
+        phone: '11999999999',
+        address: { street: 'Rua Teste, 123', city: 'São Paulo', state: 'SP', zipCode: '01310-100' },
+      })
       .expect(201);
 
-    const serviceId = created.body.data.id as string;
+    const customerId = created.body.data.id as string;
 
-    const delegate = ctx.prisma.service as unknown as {
+    const delegate = ctx.prisma.customer as unknown as {
       findUnique: (args: unknown) => Promise<unknown>;
     };
-    const findUnique = delegate.findUnique.bind(ctx.prisma.service);
+
+    const findUnique = delegate.findUnique.bind(ctx.prisma.customer);
 
     let handlerReached!: () => void;
     const reached = new Promise<void>((resolve) => {
@@ -408,7 +416,7 @@ describe('Health endpoints during graceful shutdown (E2E)', () => {
     };
 
     const inFlight = request(httpServer)
-      .get(`/api/services/${serviceId}`)
+      .get(`/api/customers/${customerId}`)
       .set('Authorization', `Bearer ${auth.accessToken}`)
       .then((response) => response);
 
@@ -421,7 +429,7 @@ describe('Health endpoints during graceful shutdown (E2E)', () => {
     const response = await inFlight;
 
     expect(response.status).toBe(200);
-    expect(response.body.data.id).toBe(serviceId);
+    expect(response.body.data.id).toBe(customerId);
 
     delegate.findUnique = findUnique;
 

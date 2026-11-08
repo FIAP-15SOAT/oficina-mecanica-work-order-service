@@ -69,6 +69,20 @@ enum PartSupplyCategory {
   SUPPLY
 }
 
+enum SagaType {
+  QUOTE_APPROVAL
+}
+
+enum SagaStatus {
+  RESERVING_STOCK
+  COMPLETED
+  COMPENSATED
+}
+
+enum SagaFailureReason {
+  INSUFFICIENT_STOCK
+}
+
 // ─── Models ───────────────────────────────────────────────────────────────────
 
 model User {
@@ -150,9 +164,6 @@ model Service {
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
 
-  workOrderServices WorkOrderService[]
-  quoteServices     QuoteService[]
-
   @@map("services")
 }
 
@@ -174,10 +185,8 @@ model PartSupply {
   createdAt     DateTime           @default(now()) @map("created_at")
   updatedAt     DateTime           @default(now()) @updatedAt @map("updated_at")
 
-  stockMovements        StockMovement[]
-  workOrderPartSupplies WorkOrderPartSupply[]
-  quotePartSupplies     QuotePartSupply[]
-  stockReservations     StockReservation[]
+  stockMovements    StockMovement[]
+  stockReservations StockReservation[]
 
   @@map("parts_supplies")
 }
@@ -221,6 +230,7 @@ model WorkOrder {
   stockMovements    StockMovement[]
   stockReservations StockReservation[]
   outboxMessages    OutboxMessage[]
+  sagaInstances     SagaInstance[]
 
   @@index([customerId])
   @@index([vehicleId])
@@ -243,7 +253,6 @@ model WorkOrderService {
   updatedAt   DateTime               @default(now()) @updatedAt @map("updated_at")
 
   workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-  service   Service   @relation(fields: [serviceId], references: [id])
 
   @@id([workOrderId, serviceId])
   @@index([serviceId])
@@ -259,8 +268,7 @@ model WorkOrderPartSupply {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
 
-  workOrder  WorkOrder  @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-  partSupply PartSupply @relation(fields: [partSupplyId], references: [id])
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
 
   @@id([workOrderId, partSupplyId])
   @@index([partSupplyId])
@@ -268,19 +276,21 @@ model WorkOrderPartSupply {
 }
 
 model Quote {
-  id             String      @id @default(uuid()) @db.Uuid
-  workOrderId    String      @map("work_order_id") @db.Uuid
-  servicesAmount Decimal     @default(0) @map("services_amount") @db.Decimal(10, 2)
-  partsAmount    Decimal     @default(0) @map("parts_amount") @db.Decimal(10, 2)
-  totalAmount    Decimal     @default(0) @map("total_amount") @db.Decimal(10, 2)
-  version        Int         @default(1)
-  status         QuoteStatus @default(PENDING)
-  notes          String?     @db.Text
-  sentAt         DateTime?   @map("sent_at")
-  approvedAt     DateTime?   @map("approved_at")
-  rejectedAt     DateTime?   @map("rejected_at")
-  createdAt      DateTime    @default(now()) @map("created_at")
-  updatedAt      DateTime    @default(now()) @updatedAt @map("updated_at")
+  id                String      @id @default(uuid()) @db.Uuid
+  workOrderId       String      @map("work_order_id") @db.Uuid
+  servicesAmount    Decimal     @default(0) @map("services_amount") @db.Decimal(10, 2)
+  partsAmount       Decimal     @default(0) @map("parts_amount") @db.Decimal(10, 2)
+  totalAmount       Decimal     @default(0) @map("total_amount") @db.Decimal(10, 2)
+  version           Int         @default(1)
+  status            QuoteStatus @default(PENDING)
+  notes             String?     @db.Text
+  sentAt            DateTime?   @map("sent_at")
+  approvedAt        DateTime?   @map("approved_at")
+  rejectedAt        DateTime?   @map("rejected_at")
+  replacedByQuoteId String?     @map("replaced_by_quote_id") @db.Uuid
+  decidedBy         String?     @map("decided_by") @db.Uuid
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @default(now()) @updatedAt @map("updated_at")
 
   workOrder     WorkOrder         @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
   services      QuoteService[]
@@ -300,8 +310,7 @@ model QuoteService {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
 
-  quote   Quote   @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  service Service @relation(fields: [serviceId], references: [id])
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
   @@id([quoteId, serviceId])
   @@index([serviceId])
@@ -317,8 +326,7 @@ model QuotePartSupply {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
 
-  quote      Quote      @relation(fields: [quoteId], references: [id], onDelete: Cascade)
-  partSupply PartSupply @relation(fields: [partSupplyId], references: [id])
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
 
   @@id([quoteId, partSupplyId])
   @@index([partSupplyId])
@@ -340,6 +348,23 @@ model StatusHistory {
   @@index([workOrderId])
   @@index([changedById])
   @@map("status_history")
+}
+
+model SagaInstance {
+  id            String             @id @default(uuid()) @db.Uuid
+  type          SagaType
+  correlationId String             @map("correlation_id") @db.Uuid
+  workOrderId   String             @map("work_order_id") @db.Uuid
+  status        SagaStatus
+  failureReason SagaFailureReason? @map("failure_reason")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @default(now()) @updatedAt @map("updated_at")
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+
+  @@unique([type, correlationId])
+  @@index([workOrderId])
+  @@map("saga_instances")
 }
 
 model StockMovement {

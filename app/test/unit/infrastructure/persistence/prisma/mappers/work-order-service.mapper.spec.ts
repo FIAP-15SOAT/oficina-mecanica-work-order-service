@@ -57,38 +57,5 @@ describe('WorkOrderServiceMapper', () => {
       expect(domainEntity.startedAt).toBeNull();
       expect(domainEntity.finishedAt).toBeNull();
     });
-
-    it('should map service relation when present', () => {
-      const now = new Date();
-      const serviceId = randomUUID();
-      const prismaRecord = {
-        id: randomUUID(),
-        workOrderId: randomUUID(),
-        serviceId,
-        quantity: 1,
-        unitPrice: new Prisma.Decimal(150.0),
-        totalPrice: new Prisma.Decimal(150.0),
-        status: WorkOrderServiceStatus.PENDING,
-        startedAt: null,
-        finishedAt: null,
-        createdAt: now,
-        updatedAt: now,
-        service: {
-          id: serviceId,
-          name: 'Troca de Óleo',
-          description: 'Troca completa do óleo do motor',
-          basePrice: new Prisma.Decimal(99.99),
-          estimatedTimeMin: 30,
-          createdAt: now,
-          updatedAt: now,
-        },
-      };
-
-      const domainEntity = WorkOrderServiceMapper.toDomain(prismaRecord);
-
-      expect(domainEntity.service).toBeDefined();
-      expect(domainEntity.service!.id).toBe(serviceId);
-      expect(domainEntity.service!.name).toBe('Troca de Óleo');
-    });
   });
 });

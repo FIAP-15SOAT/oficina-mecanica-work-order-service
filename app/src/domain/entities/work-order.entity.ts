@@ -256,6 +256,14 @@ export class WorkOrder {
     }
   }
 
+  ensureCanApproveQuote(): void {
+    if (this.status !== WorkOrderStatus.AWAITING_APPROVAL) {
+      throw new BusinessRuleViolationException(
+        `Orçamento só pode ser aprovado com a Ordem de Serviço aguardando aprovação. Status atual: "${this.status}"`,
+      );
+    }
+  }
+
   ensureCanSubmitQuote(): void {
     const allowedStatuses = [
       WorkOrderStatus.IN_DIAGNOSIS,

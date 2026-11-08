@@ -1,7 +1,6 @@
 import { validate as isUuid } from 'uuid';
 import { DomainValidationException } from '../exceptions/domain-validation.exception';
 import { LineItemPrice } from '../value-objects/line-item-price.vo';
-import { PartSupply } from './part-supply.entity';
 
 export interface CreateWorkOrderPartSupplyProps {
   workOrderId: string;
@@ -34,8 +33,6 @@ export class WorkOrderPartSupply {
   private readonly _lineItem: LineItemPrice;
   readonly createdAt: Date;
   updatedAt: Date;
-
-  partSupply?: PartSupply;
 
   private constructor(props: WorkOrderPartSupplyProps) {
     this.workOrderId = props.workOrderId;

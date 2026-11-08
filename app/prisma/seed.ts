@@ -4,10 +4,8 @@ import { PrismaClient } from './generated/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
 import { seedUsers } from './seeds/user.seed';
-import { seedServices } from './seeds/service.seed';
 import { seedCustomers } from './seeds/customer.seed';
 import { seedVehicles } from './seeds/vehicle.seed';
-import { seedPartSupplies } from './seeds/part-supply.seed';
 import { seedWorkOrders } from './seeds/work-order.seed';
 import { seedWorkOrderStatusInfos } from './seeds/work-order-status-info.seed';
 import { seedUserCustomers } from './seeds/user-customer.seed';
@@ -20,12 +18,10 @@ async function main(): Promise<void> {
 
   await seedWorkOrderStatusInfos(prisma);
   await seedUsers(prisma);
-  await seedPartSupplies(prisma);
-  const serviceIds = await seedServices(prisma);
   const customerIds = await seedCustomers(prisma);
   await seedUserCustomers(prisma, customerIds);
   const vehicleIds = await seedVehicles(prisma, customerIds);
-  await seedWorkOrders(prisma, customerIds, vehicleIds, serviceIds);
+  await seedWorkOrders(prisma, customerIds, vehicleIds);
 
   console.log('\n🎉 Seed completed successfully!');
 }

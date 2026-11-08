@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { FindCatalogItemsOutputDto } from '@application/ports/input/catalog/dto/find-catalog-items.dto';
 
 import { WorkOrderController } from '@infrastructure/http/controllers/work-order/work-order.controller';
 import { WorkOrderController as WorkOrderCleanController } from '@interface-adapters/work-order/work-order.controller';
@@ -22,10 +23,11 @@ import { createMockCustomer } from '../../../../../helpers/customer-mock.factory
 import { createMockVehicle } from '../../../../../helpers/vehicle-mock.factory';
 import { createMockWorkOrder } from '../../../../../helpers/work-order-mock.factory';
 import { createMockWorkOrderService } from '../../../../../helpers/work-order-service-mock.factory';
-import { createMockService } from '../../../../../helpers/service-mock.factory';
 import { createMockQuote } from '../../../../../helpers/quote-mock.factory';
 
 describe('WorkOrderController', () => {
+  const emptyCatalog: FindCatalogItemsOutputDto = { services: [], partsSupplies: [] };
+
   let httpController: WorkOrderController;
   let cleanController: WorkOrderCleanController;
 
@@ -53,6 +55,7 @@ describe('WorkOrderController', () => {
       { execute: jest.fn() },
       { execute: jest.fn() },
       { execute: jest.fn() },
+      { execute: jest.fn() },
     );
     httpController = new WorkOrderController(cleanController);
   });
@@ -61,6 +64,7 @@ describe('WorkOrderController', () => {
     it('should delegate to the clean controller with the current user id', async () => {
       const response = WorkOrderPresenter.toDataResponse(
         createMockWorkOrder({ customer, vehicle }),
+        emptyCatalog,
       );
 
       jest.spyOn(cleanController, 'create').mockResolvedValue(response);
@@ -93,7 +97,7 @@ describe('WorkOrderController', () => {
   describe('findOne', () => {
     it('should delegate to the clean controller and return its result', async () => {
       const workOrder = createMockWorkOrder({ customer, vehicle });
-      const response = WorkOrderPresenter.toDataResponse(workOrder);
+      const response = WorkOrderPresenter.toDataResponse(workOrder, emptyCatalog);
 
       jest.spyOn(cleanController, 'findOne').mockResolvedValue(response);
 
@@ -112,6 +116,7 @@ describe('WorkOrderController', () => {
 
       const response = WorkOrderPresenter.toDataResponse(
         createMockWorkOrder({ customer, vehicle }),
+        emptyCatalog,
       );
 
       jest.spyOn(cleanController, 'update').mockResolvedValue(response);
@@ -132,6 +137,7 @@ describe('WorkOrderController', () => {
       };
       const response = WorkOrderPresenter.toDataResponse(
         createMockWorkOrder({ customer, vehicle, status: WorkOrderStatus.IN_DIAGNOSIS }),
+        emptyCatalog,
       );
 
       jest.spyOn(cleanController, 'updateStatus').mockResolvedValue(response);
@@ -150,15 +156,13 @@ describe('WorkOrderController', () => {
   describe('updateServiceStatus', () => {
     it('should delegate to the clean controller with the current user id', async () => {
       const workOrderId = randomUUID();
-      const service = createMockService();
-      const workOrderService = createMockWorkOrderService({ workOrderId, serviceId: service.id });
-      workOrderService.service = service;
+      const workOrderService = createMockWorkOrderService({ workOrderId });
 
       const serviceStatusRequestStub: UpdateWorkOrderServiceStatusRequestDto = {
         status: WorkOrderServiceStatus.COMPLETED,
       };
 
-      const response = WorkOrderPresenter.toServiceItemDataResponse(workOrderService);
+      const response = WorkOrderPresenter.toServiceItemDataResponse(workOrderService, emptyCatalog);
 
       jest.spyOn(cleanController, 'updateServiceStatus').mockResolvedValue(response);
 

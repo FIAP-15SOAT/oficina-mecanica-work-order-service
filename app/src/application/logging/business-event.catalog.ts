@@ -74,25 +74,30 @@ export const BUSINESS_EVENTS = {
     message: 'quote rejected by customer decision',
     level: 'info',
   }),
-  STOCK_RESERVED: defineLogEvent<{
+  QUOTE_APPROVAL_COMPLETED: defineLogEvent<{
+    sagaId: string;
     quoteId: string;
     workOrderId: string;
     workOrderNumber: string;
-    reservedItemCount: number;
-    reservedQuantity: number;
   }>({
-    name: 'stock.reserved',
-    message: 'stock reserved for the approved work order',
+    name: 'quote_approval.completed',
+    message: 'stock reserved and work order approved with the quote items',
     level: 'info',
   }),
-  STOCK_CONSUMED: defineLogEvent<{
+  QUOTE_APPROVAL_COMPENSATED: defineLogEvent<{
+    sagaId: string;
+    quoteId: string;
     workOrderId: string;
     workOrderNumber: string;
-    consumedItemCount: number;
-    consumedQuantity: number;
+    missingItemCount: number;
   }>({
-    name: 'stock.consumed',
-    message: 'reserved stock consumed as the work order started',
+    name: 'quote_approval.compensated',
+    message: 'stock reservation refused and quote approval undone',
+    level: 'info',
+  }),
+  QUOTE_APPROVAL_STEP_SKIPPED: defineLogEvent<{ quoteId: string; sagaStatus?: string }>({
+    name: 'quote_approval.step_skipped',
+    message: 'stock reservation reply skipped because the saga is not reserving stock',
     level: 'info',
   }),
   WORK_ORDER_STATUS_UPDATED: defineLogEvent<{
@@ -109,7 +114,6 @@ export const BUSINESS_EVENTS = {
     workOrderId: string;
     workOrderNumber: string;
     workOrderServiceId: string;
-    workOrderServiceName?: string;
     previousWorkOrderServiceStatus?: string;
     currentWorkOrderServiceStatus: string;
     previousWorkOrderStatus: string;
@@ -117,18 +121,6 @@ export const BUSINESS_EVENTS = {
   }>({
     name: 'work_order.service.status.updated',
     message: 'work order service item moved to a new status',
-    level: 'info',
-  }),
-  STOCK_UPDATED: defineLogEvent<{
-    partSupplyId: string;
-    partSupplyName: string;
-    movementType: string;
-    movementQuantity: number;
-    currentQuantity: number;
-    workOrderId?: string;
-  }>({
-    name: 'stock.updated',
-    message: 'stock movement applied to a part or supply',
     level: 'info',
   }),
   USER_STATUS_UPDATED: defineLogEvent<{ targetUserId: string; targetUserActive: boolean }>({

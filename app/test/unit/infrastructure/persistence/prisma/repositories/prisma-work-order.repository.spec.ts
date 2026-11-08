@@ -720,4 +720,42 @@ describe('PrismaWorkOrderRepository', () => {
       );
     });
   });
+
+  describe('findServiceExecutionMetrics', () => {
+    it('should return the completed executions of a service with the average rounded to 2 decimals', async () => {
+      const serviceId = randomUUID();
+
+      prisma.$queryRaw.mockResolvedValue([
+        { execution_count: 3n, avg_minutes: new Prisma.Decimal('30.567') },
+      ]);
+
+      const result = await repository.findServiceExecutionMetrics(serviceId);
+
+      expect(result).toEqual({ serviceId, executionCount: 3, averageTimeMinutes: 30.57 });
+    });
+
+    it('should return a null average when the service has no completed execution', async () => {
+      const serviceId = randomUUID();
+
+      prisma.$queryRaw.mockResolvedValue([{ execution_count: 0n, avg_minutes: null }]);
+
+      const result = await repository.findServiceExecutionMetrics(serviceId);
+
+      expect(result).toEqual({ serviceId, executionCount: 0, averageTimeMinutes: null });
+    });
+  });
+
+  describe('findAllServiceExecutionMetrics', () => {
+    it('should return the completed executions grouped by service', async () => {
+      const serviceId = randomUUID();
+
+      prisma.$queryRaw.mockResolvedValue([
+        { service_id: serviceId, execution_count: 4n, avg_minutes: new Prisma.Decimal('12.3456') },
+      ]);
+
+      const result = await repository.findAllServiceExecutionMetrics();
+
+      expect(result).toEqual([{ serviceId, executionCount: 4, averageTimeMinutes: 12.35 }]);
+    });
+  });
 });

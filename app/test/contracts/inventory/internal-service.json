@@ -1,0 +1,13 @@
+{
+  "$source": "oficina-mecanica-inventory-service app/test/contracts/internal-service.json",
+  "$description": "GET /internal/services/:id responde 200 com este corpo; o e2e internal.e2e-spec.ts confere a resposta real contra ele.",
+  "data": {
+    "id": "5b1f7c2e-8a4d-4c63-9e1b-3d2a6f8c9b01",
+    "name": "Troca de Óleo Interna",
+    "description": "Troca completa com filtro",
+    "basePrice": 129.9,
+    "estimatedTimeMin": 60,
+    "createdAt": "2026-10-25T10:00:00.000-03:00",
+    "updatedAt": "2026-10-25T10:00:00.000-03:00"
+  }
+}

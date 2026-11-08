@@ -5,7 +5,6 @@ import {
   WorkOrderCacheMapper,
 } from '@application/mappers/work-order-cache.mapper';
 import { WorkOrder } from '@domain/entities/work-order.entity';
-import { WorkOrderPartSupply } from '@domain/entities/work-order-part-supply.entity';
 import { CustomerType } from '@domain/enums/customer-type.enum';
 import { WorkOrderServiceStatus } from '@domain/enums/work-order-service-status.enum';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
@@ -13,12 +12,11 @@ import { Address } from '@domain/value-objects/address.vo';
 import { Document } from '@domain/value-objects/document.vo';
 
 import { createMockCustomer } from '../../../helpers/customer-mock.factory';
-import { createMockPartSupply } from '../../../helpers/part-supply-mock.factory';
-import { createMockService } from '../../../helpers/service-mock.factory';
 import { createMockUser } from '../../../helpers/user-mock.factory';
 import { createMockVehicle } from '../../../helpers/vehicle-mock.factory';
 import { createMockWorkOrder } from '../../../helpers/work-order-mock.factory';
 import { createMockWorkOrderService } from '../../../helpers/work-order-service-mock.factory';
+import { createMockWorkOrderPartSupply } from '../../../helpers/work-order-part-supply-mock.factory';
 
 function roundTrip(workOrder: WorkOrder): WorkOrder {
   return WorkOrderCacheMapper.toDomain(
@@ -36,21 +34,14 @@ function createDetailedWorkOrder(): WorkOrder {
     startedAt,
   });
 
-  serviceItem.service = createMockService({ description: 'Troca de óleo e filtro' });
-
-  const partSupply = createMockPartSupply({ expiresAt: new Date('2027-01-01T00:00:00.000Z') });
-
-  const partSupplyItem = WorkOrderPartSupply.reconstitute({
+  const partSupplyItem = createMockWorkOrderPartSupply({
     workOrderId: id,
-    partSupplyId: partSupply.id,
     quantity: 2,
     unitPrice: 45,
     totalPrice: 90,
     createdAt: startedAt,
     updatedAt: startedAt,
   });
-
-  partSupplyItem.partSupply = partSupply;
 
   return createMockWorkOrder({
     id,

@@ -6,22 +6,14 @@ import { ServiceController as ServiceCleanController } from '@interface-adapters
 import { ServiceMetricsPresenter } from '@interface-adapters/service/service-metrics.presenter';
 
 import { PaginationDto } from '@infrastructure/http/common/dto/pagination.dto';
-import { ServiceMetrics } from '@domain/interfaces/repositories/service.repository.interface';
+import { ServiceMetrics } from '@application/ports/input/service/dto/find-service-metrics.dto';
 
 describe('ServicesMetricsController', () => {
   let httpController: ServicesMetricsController;
   let cleanController: ServiceCleanController;
 
   beforeEach(() => {
-    cleanController = new ServiceCleanController(
-      { execute: jest.fn() },
-      { execute: jest.fn() },
-      { execute: jest.fn() },
-      { execute: jest.fn() },
-      { execute: jest.fn() },
-      { execute: jest.fn() },
-      { execute: jest.fn() },
-    );
+    cleanController = new ServiceCleanController({ execute: jest.fn() }, { execute: jest.fn() });
     httpController = new ServicesMetricsController(cleanController);
   });
 

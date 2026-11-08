@@ -5,7 +5,8 @@ import {
   PaginatedRepositoryResult,
   PaginationInput,
 } from '@domain/interfaces/common/pagination.interface';
-import { FindUserByIdOutput } from '@application/ports/input/user/find-user-by-id.use-case.interface';
+import { FindUserByIdOutput } from '@application/ports/input/user/dto/find-user-by-id.dto';
+import { FindCatalogItemsOutputDto } from '@application/ports/input/catalog/dto/find-catalog-items.dto';
 import { buildPaginationMeta } from '@application/utils/pagination.util';
 
 import {
@@ -89,19 +90,21 @@ export class MePresenter {
   }
 
   /** Detail — requires a Quote loaded with findByIdWithDetails. */
-  static toQuoteResponse(quote: Quote): MyQuoteResponse {
+  static toQuoteResponse(quote: Quote, catalog: FindCatalogItemsOutputDto): MyQuoteResponse {
     return {
       ...MePresenter.toQuoteSummaryResponse(quote),
       services: quote.services.map((item) => ({
         id: item.serviceId,
-        name: item.service!.name,
+        name: catalog.services.find((service) => service.id === item.serviceId)?.name ?? null,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         totalPrice: item.totalPrice,
       })),
       partsSupplies: quote.partsSupplies.map((item) => ({
         id: item.partSupplyId,
-        name: item.partSupply!.name,
+        name:
+          catalog.partsSupplies.find((partSupply) => partSupply.id === item.partSupplyId)?.name ??
+          null,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
         totalPrice: item.totalPrice,
@@ -109,8 +112,11 @@ export class MePresenter {
     };
   }
 
-  static toQuoteDataResponse(quote: Quote): MyQuoteDataResponse {
-    return { data: MePresenter.toQuoteResponse(quote) };
+  static toQuoteDataResponse(
+    quote: Quote,
+    catalog: FindCatalogItemsOutputDto,
+  ): MyQuoteDataResponse {
+    return { data: MePresenter.toQuoteResponse(quote, catalog) };
   }
 
   static toQuoteListResponse(quotes: Quote[]): MyQuoteListResponse {

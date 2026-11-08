@@ -1,12 +1,10 @@
 import type { WorkOrderResponse } from '@interface-adapters/work-order/responses/work-order.response';
 import { QuoteStatus } from '@domain/enums/quote-status.enum';
-import { PartSupplyCategory } from '@domain/enums/part-supply-category.enum';
-import { Unit } from '@domain/enums/unit.enum';
 import { PaginationMeta } from '@domain/interfaces/common/pagination.interface';
 
 export interface QuoteServiceItemResponse {
   id: string;
-  name: string;
+  name: string | null;
   description: string | null;
   quantity: number;
   unitPrice: number;
@@ -17,12 +15,12 @@ export interface QuoteServiceItemResponse {
 
 export interface QuotePartSupplyItemResponse {
   id: string;
-  name: string;
+  name: string | null;
   description: string | null;
-  sku: string;
+  sku: string | null;
   partNumber: string | null;
-  category: PartSupplyCategory;
-  unit: Unit;
+  category: string | null;
+  unit: string | null;
   quantity: number;
   unitPrice: number;
   totalPrice: number;

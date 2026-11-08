@@ -16,8 +16,12 @@ export class MyQuoteItemResponseDto implements MyQuoteItemResponse {
   })
   id!: string;
 
-  @ApiProperty({ example: 'Troca de óleo', description: 'Nome do serviço ou peça/insumo' })
-  name!: string;
+  @ApiPropertyOptional({
+    example: 'Troca de óleo',
+    description: 'Nome do serviço ou peça/insumo',
+    nullable: true,
+  })
+  name!: string | null;
 
   @ApiProperty({ example: 2, description: 'Quantidade' })
   quantity!: number;

@@ -2,8 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { QuoteStatus } from '../enums/quote-status.enum';
 import { QuoteService } from './quote-service.entity';
 import { QuotePartSupply } from './quote-part-supply.entity';
-import { Service } from './service.entity';
-import { PartSupply } from './part-supply.entity';
 import { WorkOrder } from './work-order.entity';
 import { BusinessRuleViolationException } from '../exceptions/business-rule-violation.exception';
 import { DomainValidationException } from '../exceptions/domain-validation.exception';
@@ -13,12 +11,14 @@ import { validate as isUuid } from 'uuid';
 import { MAX_NOTES_LENGTH } from '../constants/validation/quote.constants';
 
 export interface CreateQuoteItemServiceProps {
-  service: Service;
+  serviceId: string;
+  unitPrice: number;
   quantity: number;
 }
 
 export interface CreateQuoteItemPartSupplyProps {
-  partSupply: PartSupply;
+  partSupplyId: string;
+  unitPrice: number;
   quantity: number;
 }
 
@@ -41,6 +41,8 @@ interface QuoteProps {
   sentAt: Date | null;
   approvedAt: Date | null;
   rejectedAt: Date | null;
+  replacedByQuoteId: string | null;
+  decidedBy: string | null;
   createdAt: Date;
   updatedAt: Date;
   services?: QuoteService[];
@@ -59,6 +61,8 @@ export class Quote {
   sentAt: Date | null;
   approvedAt: Date | null;
   rejectedAt: Date | null;
+  private _replacedByQuoteId: string | null;
+  private _decidedBy: string | null;
   readonly createdAt: Date;
   updatedAt: Date;
 
@@ -78,6 +82,8 @@ export class Quote {
     this.sentAt = props.sentAt;
     this.approvedAt = props.approvedAt;
     this.rejectedAt = props.rejectedAt;
+    this._replacedByQuoteId = props.replacedByQuoteId;
+    this._decidedBy = props.decidedBy;
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;
     this._services = props.services ?? [];
@@ -96,8 +102,8 @@ export class Quote {
     Quote.validateWorkOrderId(props.workOrderId);
     Quote.validateNotes(props.notes ?? null);
     Quote.validateItems(
-      services.map((item) => item.service.id),
-      partsSupplies.map((item) => item.partSupply.id),
+      services.map((item) => item.serviceId),
+      partsSupplies.map((item) => item.partSupplyId),
     );
 
     const quote = new Quote({
@@ -112,6 +118,8 @@ export class Quote {
       sentAt: null,
       approvedAt: null,
       rejectedAt: null,
+      replacedByQuoteId: null,
+      decidedBy: null,
       createdAt: now,
       updatedAt: now,
     });
@@ -123,21 +131,16 @@ export class Quote {
     return quote;
   }
 
-  addService(service: Service, quantity: number): QuoteService {
+  addService(input: CreateQuoteItemServiceProps): QuoteService {
     this.ensureCanChangeItems();
 
-    const alreadyAdded = this._services.some((s) => s.serviceId === service.id);
+    const alreadyAdded = this._services.some((s) => s.serviceId === input.serviceId);
 
     if (alreadyAdded) {
       throw new BusinessRuleViolationException('Serviço já adicionado ao orçamento.');
     }
 
-    const item = QuoteService.create({
-      quoteId: this.id,
-      serviceId: service.id,
-      quantity,
-      unitPrice: service.basePrice,
-    });
+    const item = QuoteService.create({ quoteId: this.id, ...input });
 
     this._services = [...this._services, item];
     this.recalculateTotals();
@@ -173,21 +176,16 @@ export class Quote {
     return item;
   }
 
-  addPartSupply(partSupply: PartSupply, quantity: number): QuotePartSupply {
+  addPartSupply(input: CreateQuoteItemPartSupplyProps): QuotePartSupply {
     this.ensureCanChangeItems();
 
-    const alreadyAdded = this._partsSupplies.some((p) => p.partSupplyId === partSupply.id);
+    const alreadyAdded = this._partsSupplies.some((p) => p.partSupplyId === input.partSupplyId);
 
     if (alreadyAdded) {
       throw new BusinessRuleViolationException('Peça/Insumo já adicionado ao orçamento.');
     }
 
-    const item = QuotePartSupply.create({
-      quoteId: this.id,
-      partSupplyId: partSupply.id,
-      quantity,
-      unitPrice: partSupply.salePrice,
-    });
+    const item = QuotePartSupply.create({ quoteId: this.id, ...input });
 
     this._partsSupplies = [...this._partsSupplies, item];
     this.recalculateTotals();
@@ -239,21 +237,11 @@ export class Quote {
     partsSupplies: CreateQuoteItemPartSupplyProps[];
   }): void {
     const serviceItems = items.services.map((input) =>
-      QuoteService.create({
-        quoteId: this.id,
-        serviceId: input.service.id,
-        quantity: input.quantity,
-        unitPrice: input.service.basePrice,
-      }),
+      QuoteService.create({ quoteId: this.id, ...input }),
     );
 
     const partItems = items.partsSupplies.map((input) =>
-      QuotePartSupply.create({
-        quoteId: this.id,
-        partSupplyId: input.partSupply.id,
-        quantity: input.quantity,
-        unitPrice: input.partSupply.salePrice,
-      }),
+      QuotePartSupply.create({ quoteId: this.id, ...input }),
     );
 
     this._services = [...this._services, ...serviceItems];
@@ -262,13 +250,14 @@ export class Quote {
     this.recalculateTotals();
   }
 
-  approve(): void {
+  approve(decidedBy: string | null): void {
     this.ensureCanApprove();
 
     const now = new Date();
 
     this._status = QuoteStatus.APPROVED;
     this.approvedAt = now;
+    this._decidedBy = decidedBy;
     this.updatedAt = now;
   }
 
@@ -280,6 +269,48 @@ export class Quote {
     this._status = QuoteStatus.REJECTED;
     this.rejectedAt = now;
     this.updatedAt = now;
+  }
+
+  rejectByApprovalOf(approvedQuoteId: string): void {
+    if (this.status !== QuoteStatus.PENDING && this.status !== QuoteStatus.SENT) {
+      throw new BusinessRuleViolationException(
+        `Orçamento só pode ser rejeitado pela aprovação de outro se estiver no status PENDING ou SENT. Status atual: "${this.status}"`,
+      );
+    }
+
+    const now = new Date();
+
+    this._replacedByQuoteId = approvedQuoteId;
+    this._status = QuoteStatus.REJECTED;
+    this.rejectedAt = now;
+    this.updatedAt = now;
+  }
+
+  undoRejectionByApproval(): void {
+    if (!this._replacedByQuoteId) {
+      throw new BusinessRuleViolationException(
+        'Só um orçamento rejeitado pela aprovação de outro pode voltar ao status anterior',
+      );
+    }
+
+    // Only submit() sets sentAt and nothing goes back to PENDING, so sentAt tells the status before the rejection.
+    this._status = this.sentAt ? QuoteStatus.SENT : QuoteStatus.PENDING;
+    this._replacedByQuoteId = null;
+    this.rejectedAt = null;
+    this.updatedAt = new Date();
+  }
+
+  revertApproval(): void {
+    if (this.status !== QuoteStatus.APPROVED) {
+      throw new BusinessRuleViolationException(
+        `Só um orçamento aprovado pode ter a aprovação revertida. Status atual: "${this.status}"`,
+      );
+    }
+
+    this._status = QuoteStatus.SENT;
+    this.approvedAt = null;
+    this._decidedBy = null;
+    this.updatedAt = new Date();
   }
 
   private recalculateTotals(): void {
@@ -405,6 +436,14 @@ export class Quote {
 
   get status(): QuoteStatus {
     return this._status;
+  }
+
+  get replacedByQuoteId(): string | null {
+    return this._replacedByQuoteId;
+  }
+
+  get decidedBy(): string | null {
+    return this._decidedBy;
   }
 
   get services(): QuoteService[] {
