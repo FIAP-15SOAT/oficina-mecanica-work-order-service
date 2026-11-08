@@ -601,4 +601,38 @@ describe('PrismaQuoteRepository', () => {
       );
     });
   });
+
+  describe('isServiceInUse / isPartSupplyInUse', () => {
+    it.each([
+      [{ createdAt: new Date() }, true],
+      [null, false],
+    ])('should tell whether a quote uses a service (%o -> %s)', async (row, inUse) => {
+      const serviceId = randomUUID();
+
+      prisma.quoteService.findFirst.mockResolvedValue(row);
+
+      await expect(repository.isServiceInUse(serviceId)).resolves.toBe(inUse);
+
+      expect(prisma.quoteService.findFirst).toHaveBeenCalledWith({
+        where: { serviceId },
+        select: { createdAt: true },
+      });
+    });
+
+    it.each([
+      [{ createdAt: new Date() }, true],
+      [null, false],
+    ])('should tell whether a quote uses a part supply (%o -> %s)', async (row, inUse) => {
+      const partSupplyId = randomUUID();
+
+      prisma.quotePartSupply.findFirst.mockResolvedValue(row);
+
+      await expect(repository.isPartSupplyInUse(partSupplyId)).resolves.toBe(inUse);
+
+      expect(prisma.quotePartSupply.findFirst).toHaveBeenCalledWith({
+        where: { partSupplyId },
+        select: { createdAt: true },
+      });
+    });
+  });
 });

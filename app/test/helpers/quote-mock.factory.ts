@@ -71,6 +71,8 @@ export function createMockQuoteRepository(): jest.Mocked<IQuoteRepository> {
     addPartSupplyItem: jest.fn(),
     removePartSupplyItem: jest.fn(),
     updatePartSupplyItemQuantity: jest.fn(),
+    isServiceInUse: jest.fn(),
+    isPartSupplyInUse: jest.fn(),
   };
 }
 

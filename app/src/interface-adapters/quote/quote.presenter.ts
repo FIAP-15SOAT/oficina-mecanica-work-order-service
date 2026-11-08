@@ -19,6 +19,7 @@ import {
   QuoteServiceItemResponse,
   QuotePartSupplyItemResponse,
 } from './responses/quote.response';
+import { InternalQuoteUsageDataResponse } from './responses/internal-quote.response';
 
 export class QuotePresenter {
   static toResponse(quote: Quote): QuoteResponse {
@@ -120,5 +121,9 @@ export class QuotePresenter {
       data: items.map((q) => QuotePresenter.toResponse(q)),
       pagination,
     };
+  }
+
+  static toInternalUsageDataResponse(inUse: boolean): InternalQuoteUsageDataResponse {
+    return { data: { inUse } };
   }
 }

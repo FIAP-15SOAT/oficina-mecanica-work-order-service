@@ -15,6 +15,8 @@ import { CompensateQuoteApprovalUseCase } from '@application/use-cases/quote-app
 import { RejectQuoteUseCase } from '@application/use-cases/quote/reject-quote.use-case';
 import { UpdateQuoteStatusUseCase } from '@application/use-cases/quote/update-quote-status.use-case';
 import { FindAllQuotesPaginatedUseCase } from '@application/use-cases/quote/find-all-quotes-paginated.use-case';
+import { CheckServiceQuoteUsageUseCase } from '@application/use-cases/quote/check-service-quote-usage.use-case';
+import { CheckPartSupplyQuoteUsageUseCase } from '@application/use-cases/quote/check-part-supply-quote-usage.use-case';
 import { FindCatalogItemsUseCase } from '@application/use-cases/catalog/find-catalog-items.use-case';
 import { IInventoryCatalogGateway } from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.interface';
 import { QuoteItemValidator } from '@application/services/quote-item-validator';
@@ -30,6 +32,7 @@ import { ICache } from '@application/ports/output/services/cache.service.interfa
 import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
 
 import { QuoteController as QuoteCleanController } from '@interface-adapters/quote/quote.controller';
+import { InternalQuoteController as InternalQuoteCleanController } from '@interface-adapters/quote/internal-quote.controller';
 import { QuoteApprovalMessageHandlers } from '@infrastructure/messaging/handlers/quote-approval-message-handlers';
 import { QuoteController } from './quote.controller';
 
@@ -98,6 +101,15 @@ import { QuoteController } from './quote.controller';
       ],
     },
     {
+      provide: InternalQuoteCleanController,
+      useFactory: (quoteRepository: IQuoteRepository) =>
+        new InternalQuoteCleanController(
+          new CheckServiceQuoteUsageUseCase(quoteRepository),
+          new CheckPartSupplyQuoteUsageUseCase(quoteRepository),
+        ),
+      inject: ['IQuoteRepository'],
+    },
+    {
       provide: CompleteQuoteApprovalUseCase,
       useFactory: (
         unitOfWork: IUnitOfWork,
@@ -127,5 +139,6 @@ import { QuoteController } from './quote.controller';
     },
     QuoteApprovalMessageHandlers,
   ],
+  exports: [InternalQuoteCleanController],
 })
 export class QuoteModule {}

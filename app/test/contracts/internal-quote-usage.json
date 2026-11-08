@@ -1,0 +1,6 @@
+{
+  "$source": "oficina-mecanica-work-order-service app/test/contracts/internal-quote-usage.json",
+  "data": {
+    "inUse": true
+  }
+}
