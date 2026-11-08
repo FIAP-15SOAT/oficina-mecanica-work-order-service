@@ -100,16 +100,6 @@ export const BUSINESS_EVENTS = {
     message: 'stock reservation reply skipped because the saga is not reserving stock',
     level: 'info',
   }),
-  STOCK_CONSUMED: defineLogEvent<{
-    workOrderId: string;
-    workOrderNumber: string;
-    consumedItemCount: number;
-    consumedQuantity: number;
-  }>({
-    name: 'stock.consumed',
-    message: 'reserved stock consumed as the work order started',
-    level: 'info',
-  }),
   WORK_ORDER_STATUS_UPDATED: defineLogEvent<{
     workOrderId: string;
     workOrderNumber: string;

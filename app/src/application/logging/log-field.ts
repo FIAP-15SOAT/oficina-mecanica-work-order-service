@@ -18,8 +18,6 @@ export type LogicalFieldName =
   | 'movementType'
   | 'movementQuantity'
   | 'currentQuantity'
-  | 'consumedItemCount'
-  | 'consumedQuantity'
   | 'missingItemCount'
   | 'sagaId'
   | 'sagaStatus'
