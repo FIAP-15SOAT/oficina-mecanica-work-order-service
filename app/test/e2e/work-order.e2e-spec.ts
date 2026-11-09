@@ -4,6 +4,11 @@ import Redis from 'ioredis';
 import request from 'supertest';
 import { CompleteQuoteApprovalUseCase } from '@application/use-cases/quote-approval/complete-quote-approval.use-case';
 import { ICompleteQuoteApprovalUseCase } from '@application/ports/input/quote-approval/complete-quote-approval.use-case.interface';
+import { ICache } from '@application/ports/output/services/cache.service.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
+import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
+import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
+import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
@@ -32,7 +37,13 @@ describe('WorkOrder (E2E)', () => {
     ctx = await setupTestApp({ captureLogs: true, internalServicesUrl: stub.url });
     httpServer = ctx.httpServer;
     redis = new Redis(ctx.valkeyContainer.getConnectionUrl());
-    completeQuoteApprovalUseCase = ctx.app.get(CompleteQuoteApprovalUseCase);
+    completeQuoteApprovalUseCase = new CompleteQuoteApprovalUseCase(
+      ctx.app.get<IUnitOfWork>('IUnitOfWork'),
+      ctx.app.get<ILogger>('ILogger'),
+      ctx.app.get<IMetrics>('IMetrics'),
+      ctx.app.get<IStatusHistoryRepository>('IStatusHistoryRepository'),
+      ctx.app.get<ICache>('ICache'),
+    );
   });
 
   afterAll(async () => {
