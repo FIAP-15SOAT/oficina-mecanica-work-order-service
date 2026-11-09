@@ -432,7 +432,7 @@ Para cada mensagem, o consumidor:
 
 1. extrai o contexto W3C dos atributos e abre um span `CONSUMER` (`process work-order.fifo`), a única instrumentação manual da aplicação (ver [Observabilidade](observability.md#consumo-de-mensagens));
 2. valida o envelope (`MessageEnvelopeDto`, class-validator) e o payload, pela classe que todo handler declara ao se registrar. A classe é obrigatória: o payload vem de outro serviço, e o tipo TypeScript do catálogo não é conferido em execução. Uma classe sem campos declara payload vazio (`inventory.stock.consume`). A mensagem de erro leva só os nomes das propriedades, nunca valores;
-3. procura o handler pelo `type` no `MessageHandlerRegistry`, que os módulos preenchem no `onModuleInit`, e o chama. Hoje os handlers são os das respostas do Inventory à reserva de estoque, `inventory.stock.reserved` e `inventory.stock.reservation_failed`, registrados pelo `QuoteApprovalMessageHandlers` (`infrastructure/messaging/handlers/`).
+3. procura o handler pelo `type` no `MessageHandlerRegistry`, que os módulos preenchem no `onModuleInit`, e o chama. Hoje os handlers são os das respostas do Inventory à reserva de estoque, `inventory.stock.reserved` e `inventory.stock.reservation_failed`, registrados pelo `QuoteApprovalMessageHandlers`, que o `QuoteApprovalMessagingModule` compõe em `infrastructure/messaging/handlers/quote-approval/`, com as classes de payload em `dto/`.
 
 Toda linha de log desse processamento carrega `messaging.*`, `oficina.messaging.message.type`, `oficina.work_order.id` e `request.id` igual ao `messageId`, então as linhas de uma mensagem se correlacionam como as de uma requisição.
 

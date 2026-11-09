@@ -10,8 +10,6 @@ import { UpdateQuoteServiceQuantityUseCase } from '@application/use-cases/quote/
 import { UpdateQuotePartSupplyQuantityUseCase } from '@application/use-cases/quote/update-quote-part-supply-quantity.use-case';
 import { SubmitQuoteUseCase } from '@application/use-cases/quote/submit-quote.use-case';
 import { ApproveQuoteUseCase } from '@application/use-cases/quote-approval/approve-quote.use-case';
-import { CompleteQuoteApprovalUseCase } from '@application/use-cases/quote-approval/complete-quote-approval.use-case';
-import { CompensateQuoteApprovalUseCase } from '@application/use-cases/quote-approval/compensate-quote-approval.use-case';
 import { RejectQuoteUseCase } from '@application/use-cases/quote/reject-quote.use-case';
 import { UpdateQuoteStatusUseCase } from '@application/use-cases/quote/update-quote-status.use-case';
 import { FindAllQuotesPaginatedUseCase } from '@application/use-cases/quote/find-all-quotes-paginated.use-case';
@@ -33,7 +31,6 @@ import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status
 
 import { QuoteController as QuoteCleanController } from '@interface-adapters/quote/quote.controller';
 import { InternalQuoteController as InternalQuoteCleanController } from '@interface-adapters/quote/internal-quote.controller';
-import { QuoteApprovalMessageHandlers } from '@infrastructure/messaging/handlers/quote-approval-message-handlers';
 import { QuoteController } from './quote.controller';
 
 @Module({
@@ -109,35 +106,6 @@ import { QuoteController } from './quote.controller';
         ),
       inject: ['IQuoteRepository'],
     },
-    {
-      provide: CompleteQuoteApprovalUseCase,
-      useFactory: (
-        unitOfWork: IUnitOfWork,
-        logger: ILogger,
-        metrics: IMetrics,
-        statusHistoryRepository: IStatusHistoryRepository,
-        cache: ICache,
-      ) =>
-        new CompleteQuoteApprovalUseCase(
-          unitOfWork,
-          logger.forContext(CompleteQuoteApprovalUseCase.name),
-          metrics,
-          statusHistoryRepository,
-          cache,
-        ),
-      inject: ['IUnitOfWork', 'ILogger', 'IMetrics', 'IStatusHistoryRepository', 'ICache'],
-    },
-    {
-      provide: CompensateQuoteApprovalUseCase,
-      useFactory: (unitOfWork: IUnitOfWork, logger: ILogger, emailSender: IEmailSenderService) =>
-        new CompensateQuoteApprovalUseCase(
-          unitOfWork,
-          logger.forContext(CompensateQuoteApprovalUseCase.name),
-          emailSender,
-        ),
-      inject: ['IUnitOfWork', 'ILogger', 'IEmailSenderService'],
-    },
-    QuoteApprovalMessageHandlers,
   ],
   exports: [InternalQuoteCleanController],
 })

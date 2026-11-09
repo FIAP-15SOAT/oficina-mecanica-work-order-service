@@ -1,11 +1,12 @@
+import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
 
 import { MessageEnvelope } from '@application/messaging/message-envelope';
 import { ICompleteQuoteApprovalUseCase } from '@application/ports/input/quote-approval/complete-quote-approval.use-case.interface';
 import { ICompensateQuoteApprovalUseCase } from '@application/ports/input/quote-approval/compensate-quote-approval.use-case.interface';
-import { QuoteApprovalMessageHandlers } from '@infrastructure/messaging/handlers/quote-approval-message-handlers';
-import { StockReservedPayloadDto } from '@infrastructure/messaging/handlers/stock-reserved-payload.dto';
-import { StockReservationFailedPayloadDto } from '@infrastructure/messaging/handlers/stock-reservation-failed-payload.dto';
+import { QuoteApprovalMessageHandlers } from '@infrastructure/messaging/handlers/quote-approval/quote-approval-message-handlers';
+import { StockReservedPayloadDto } from '@infrastructure/messaging/handlers/quote-approval/dto/stock-reserved-payload.dto';
+import { StockReservationFailedPayloadDto } from '@infrastructure/messaging/handlers/quote-approval/dto/stock-reservation-failed-payload.dto';
 import { MessageHandlerRegistry } from '@infrastructure/messaging/message-handler.registry';
 
 describe('QuoteApprovalMessageHandlers', () => {
