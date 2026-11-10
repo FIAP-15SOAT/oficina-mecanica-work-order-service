@@ -27,7 +27,4 @@ export interface IQuoteRepository {
   addPartSupplyItem(item: QuotePartSupply): Promise<void>;
   removePartSupplyItem(quoteId: string, partSupplyId: string): Promise<void>;
   updatePartSupplyItemQuantity(item: QuotePartSupply): Promise<void>;
-
-  isServiceInUse(serviceId: string): Promise<boolean>;
-  isPartSupplyInUse(partSupplyId: string): Promise<boolean>;
 }

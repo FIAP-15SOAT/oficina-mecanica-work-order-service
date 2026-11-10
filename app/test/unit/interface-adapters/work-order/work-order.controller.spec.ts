@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto';
 import { WorkOrderController } from '@interface-adapters/work-order/work-order.controller';
 
 import { WorkOrderPresenter } from '@interface-adapters/work-order/work-order.presenter';
-import { QuotePresenter } from '@interface-adapters/quote/quote.presenter';
 
 import { CreateWorkOrderRequest } from '@interface-adapters/work-order/requests/create-work-order-request';
 import { UpdateWorkOrderRequest } from '@interface-adapters/work-order/requests/update-work-order-request';
@@ -17,7 +16,6 @@ import { IUpdateWorkOrderUseCase } from '@application/ports/input/work-order/upd
 import { IUpdateWorkOrderStatusUseCase } from '@application/ports/input/work-order/update-work-order-status.use-case.interface';
 import { IUpdateWorkOrderServiceStatusUseCase } from '@application/ports/input/work-order/update-work-order-service-status.use-case.interface';
 import { IFindWorkOrderStatusHistoryUseCase } from '@application/ports/input/work-order/find-work-order-status-history.use-case.interface';
-import { IFindWorkOrderQuotesUseCase } from '@application/ports/input/quote/find-work-order-quotes.use-case.interface';
 import { IFindCatalogItemsUseCase } from '@application/ports/input/catalog/find-catalog-items.use-case.interface';
 import { FindCatalogItemsOutputDto } from '@application/ports/input/catalog/dto/find-catalog-items.dto';
 import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
@@ -35,7 +33,6 @@ import {
   createMockInventoryPartSupplyGatewayResponse,
   createMockInventoryServiceGatewayResponse,
 } from '../../../helpers/inventory-catalog-gateway-mock.factory';
-import { createMockQuote } from '../../../helpers/quote-mock.factory';
 
 describe('WorkOrderController', () => {
   let controller: WorkOrderController;
@@ -46,7 +43,6 @@ describe('WorkOrderController', () => {
   let updateStatusUseCase: jest.Mocked<IUpdateWorkOrderStatusUseCase>;
   let updateServiceStatusUseCase: jest.Mocked<IUpdateWorkOrderServiceStatusUseCase>;
   let findStatusHistoryUseCase: jest.Mocked<IFindWorkOrderStatusHistoryUseCase>;
-  let findWorkOrderQuotesUseCase: jest.Mocked<IFindWorkOrderQuotesUseCase>;
   let findCatalogItemsUseCase: jest.Mocked<IFindCatalogItemsUseCase>;
 
   const customer = createMockCustomer();
@@ -61,7 +57,6 @@ describe('WorkOrderController', () => {
     updateStatusUseCase = { execute: jest.fn() };
     updateServiceStatusUseCase = { execute: jest.fn() };
     findStatusHistoryUseCase = { execute: jest.fn() };
-    findWorkOrderQuotesUseCase = { execute: jest.fn() };
     findCatalogItemsUseCase = { execute: jest.fn() };
 
     controller = new WorkOrderController(
@@ -72,7 +67,6 @@ describe('WorkOrderController', () => {
       updateStatusUseCase,
       updateServiceStatusUseCase,
       findStatusHistoryUseCase,
-      findWorkOrderQuotesUseCase,
       findCatalogItemsUseCase,
     );
   });
@@ -341,22 +335,6 @@ describe('WorkOrderController', () => {
       await controller.getStatusHistory(id);
 
       expect(findStatusHistoryUseCase.execute).toHaveBeenCalledWith(id);
-    });
-  });
-
-  describe('findQuotes', () => {
-    it('should return quotes of the work order wrapped in data', async () => {
-      const workOrder = createMockWorkOrder({ customer, vehicle });
-
-      const quote = createMockQuote({ workOrderId: workOrder.id });
-      quote.workOrder = workOrder;
-
-      findWorkOrderQuotesUseCase.execute.mockResolvedValue([quote]);
-
-      const result = await controller.findQuotes(workOrder.id);
-
-      expect(result).toEqual(QuotePresenter.toListResponse([quote]));
-      expect(findWorkOrderQuotesUseCase.execute).toHaveBeenCalledWith(workOrder.id);
     });
   });
 });

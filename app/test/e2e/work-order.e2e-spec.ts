@@ -2,13 +2,8 @@ import type { Server } from 'http';
 import { randomUUID } from 'node:crypto';
 import Redis from 'ioredis';
 import request from 'supertest';
-import { CompleteQuoteApprovalUseCase } from '@application/use-cases/quote-approval/complete-quote-approval.use-case';
-import { ICompleteQuoteApprovalUseCase } from '@application/ports/input/quote-approval/complete-quote-approval.use-case.interface';
-import { ICache } from '@application/ports/output/services/cache.service.interface';
-import { ILogger } from '@application/ports/output/services/logger.service.interface';
-import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
-import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
-import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
+import { MessagePayloads, MessageType } from '@domain/messaging/message-catalog';
+import { MessageHandlerRegistry } from '@infrastructure/messaging/message-handler.registry';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
@@ -29,21 +24,15 @@ describe('WorkOrder (E2E)', () => {
   let adminAuth: AuthTokens;
   let redis: Redis;
   let stub: InternalServicesStub;
-  // The consumer is off in this suite, so the test runs the Inventory reply handler's use case itself.
-  let completeQuoteApprovalUseCase: ICompleteQuoteApprovalUseCase;
+  // The consumer is off in this suite, so the test hands the messages to the registered handlers itself.
+  let registry: MessageHandlerRegistry;
 
   beforeAll(async () => {
     stub = await startInternalServicesStub();
     ctx = await setupTestApp({ captureLogs: true, internalServicesUrl: stub.url });
     httpServer = ctx.httpServer;
     redis = new Redis(ctx.valkeyContainer.getConnectionUrl());
-    completeQuoteApprovalUseCase = new CompleteQuoteApprovalUseCase(
-      ctx.app.get<IUnitOfWork>('IUnitOfWork'),
-      ctx.app.get<ILogger>('ILogger'),
-      ctx.app.get<IMetrics>('IMetrics'),
-      ctx.app.get<IStatusHistoryRepository>('IStatusHistoryRepository'),
-      ctx.app.get<ICache>('ICache'),
-    );
+    registry = ctx.app.get(MessageHandlerRegistry);
   });
 
   afterAll(async () => {
@@ -125,6 +114,65 @@ describe('WorkOrder (E2E)', () => {
       .send({ customerId, vehicleId, problemDescription: 'Barulho no motor' })
       .expect(201);
     return res.body.data as { id: string; number: string; status: string };
+  }
+
+  function deliver<T extends MessageType>(
+    type: T,
+    workOrderId: string,
+    payload: MessagePayloads[T],
+  ) {
+    return registry.find(type)!.handler({
+      messageId: randomUUID(),
+      type,
+      occurredAt: new Date().toISOString(),
+      workOrderId,
+      payload,
+    });
+  }
+
+  async function approveWorkOrder(
+    workOrderId: string,
+    services: { serviceId: string; quantity: number; unitPrice: number }[],
+    partsSupplies: { partSupplyId: string; quantity: number; unitPrice: number }[] = [],
+  ) {
+    const quoteId = randomUUID();
+
+    await deliver('billing.quote.sent', workOrderId, {
+      quoteId,
+      sentBy: adminAuth.user.id,
+      total: '0.00',
+      items: [],
+    });
+
+    // shortcut: seeds the approved quote and the saga reserving stock, until billing.quote.approved starts the saga
+    await ctx.prisma.quote.create({
+      data: {
+        id: quoteId,
+        workOrderId,
+        status: 'APPROVED',
+        decidedBy: adminAuth.user.id,
+        services: {
+          create: services.map((item) => ({ ...item, totalPrice: item.unitPrice * item.quantity })),
+        },
+        partsSupplies: {
+          create: partsSupplies.map((item) => ({
+            ...item,
+            totalPrice: item.unitPrice * item.quantity,
+          })),
+        },
+      },
+    });
+
+    await ctx.prisma.sagaInstance.create({
+      data: {
+        type: 'QUOTE_APPROVAL',
+        correlationId: quoteId,
+        workOrderId,
+        status: 'RESERVING_STOCK',
+      },
+    });
+
+    await deliver('inventory.stock.reserved', workOrderId, { quoteId });
   }
 
   // ─── POST /api/work-orders ──────────────────────────────────────────────────
@@ -373,14 +421,9 @@ describe('WorkOrder (E2E)', () => {
         .send({ customerId: customer.id, vehicleId: vehicle.id })
         .expect(201);
 
-      const woId = res.body.data.id as string;
-
-      const quotesRes = await request(httpServer)
-        .get(`/api/work-orders/${woId}/quotes`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      expect(quotesRes.body.data).toHaveLength(0);
+      expect([...stub.quotes.values()]).not.toContainEqual(
+        expect.objectContaining({ workOrderId: res.body.data.id }),
+      );
     });
   });
 
@@ -584,7 +627,10 @@ describe('WorkOrder (E2E)', () => {
       expect(res.body.data.id).toBe(wo.id);
     });
 
-    async function createApprovedWorkOrder(serviceId: string, partSupplyId: string) {
+    async function createApprovedWorkOrder(
+      service: { id: string; basePrice: number },
+      partSupply: { id: string; salePrice: number },
+    ) {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
       const wo = await createWorkOrder(customer.id, vehicle.id);
@@ -595,38 +641,11 @@ describe('WorkOrder (E2E)', () => {
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
-      const quoteRes = await request(httpServer)
-        .post('/api/quotes')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ workOrderId: wo.id })
-        .expect(201);
-
-      const quoteId = quoteRes.body.data.id;
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/services`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ serviceId, quantity: 2 })
-        .expect(200);
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/parts-supplies`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ partSupplyId, quantity: 3 })
-        .expect(200);
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/submissions`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      await request(httpServer)
-        .patch(`/api/quotes/${quoteId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ status: 'APPROVED' })
-        .expect(200);
-
-      await completeQuoteApprovalUseCase.execute(quoteId);
+      await approveWorkOrder(
+        wo.id,
+        [{ serviceId: service.id, quantity: 2, unitPrice: service.basePrice }],
+        [{ partSupplyId: partSupply.id, quantity: 3, unitPrice: partSupply.salePrice }],
+      );
 
       return wo;
     }
@@ -642,7 +661,7 @@ describe('WorkOrder (E2E)', () => {
       stub.services.set(service.id, catalogService);
       stub.partsSupplies.set(partSupply.id, catalogPartSupply);
 
-      const wo = await createApprovedWorkOrder(service.id, partSupply.id);
+      const wo = await createApprovedWorkOrder(service, partSupply);
 
       const res = await request(httpServer)
         .get(`/api/work-orders/${wo.id}`)
@@ -681,7 +700,7 @@ describe('WorkOrder (E2E)', () => {
       const service = stubService(stub);
       const partSupply = stubPartSupply(stub);
 
-      const wo = await createApprovedWorkOrder(service.id, partSupply.id);
+      const wo = await createApprovedWorkOrder(service, partSupply);
 
       stub.partsSupplies.delete(partSupply.id);
 
@@ -1028,29 +1047,7 @@ describe('WorkOrder (E2E)', () => {
       const service = stubService(stub, { basePrice: 100 });
       const serviceId = service.id;
 
-      const quoteRes = await request(httpServer)
-        .post('/api/quotes')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ workOrderId: wo.id })
-        .expect(201);
-      const quoteId = quoteRes.body.data.id;
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/services`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ serviceId, quantity: 1 })
-        .expect(200);
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/submissions`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      await request(httpServer)
-        .patch(`/api/quotes/${quoteId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ status: 'APPROVED' })
-        .expect(200);
+      await approveWorkOrder(wo.id, [{ serviceId, quantity: 1, unitPrice: service.basePrice }]);
 
       // Now the service is in the work order with status PENDING
       // Move to IN_PROGRESS first (to move WO to IN_PROGRESS)
@@ -1117,39 +1114,13 @@ describe('WorkOrder (E2E)', () => {
       const service = stubService(stub, { basePrice: 100 });
       const serviceId = service.id;
 
-      const partId = stubPartSupply(stub).id;
+      const partSupply = stubPartSupply(stub);
 
-      const quoteRes = await request(httpServer)
-        .post('/api/quotes')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ workOrderId: wo.id })
-        .expect(201);
-      const quoteId = quoteRes.body.data.id;
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/services`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ serviceId, quantity: 1 })
-        .expect(200);
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/parts-supplies`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ partSupplyId: partId, quantity: 1 })
-        .expect(200);
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/submissions`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      await request(httpServer)
-        .patch(`/api/quotes/${quoteId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ status: 'APPROVED' })
-        .expect(200);
-
-      await completeQuoteApprovalUseCase.execute(quoteId);
+      await approveWorkOrder(
+        wo.id,
+        [{ serviceId, quantity: 1, unitPrice: service.basePrice }],
+        [{ partSupplyId: partSupply.id, quantity: 1, unitPrice: partSupply.salePrice }],
+      );
 
       // Transition to IN_PROGRESS
       const res = await request(httpServer)
@@ -1182,29 +1153,7 @@ describe('WorkOrder (E2E)', () => {
       const service = stubService(stub, { basePrice: 100 });
       const serviceId = service.id;
 
-      const quoteRes = await request(httpServer)
-        .post('/api/quotes')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ workOrderId: wo.id })
-        .expect(201);
-      const quoteId = quoteRes.body.data.id as string;
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/services`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ serviceId, quantity: 1 })
-        .expect(200);
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/submissions`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      await request(httpServer)
-        .patch(`/api/quotes/${quoteId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ status: 'APPROVED' })
-        .expect(200);
+      await approveWorkOrder(wo.id, [{ serviceId, quantity: 1, unitPrice: service.basePrice }]);
 
       // Service is now PENDING — trying to complete it without starting it first
       await request(httpServer)
@@ -1228,29 +1177,7 @@ describe('WorkOrder (E2E)', () => {
       const service = stubService(stub, { basePrice: 200 });
       const serviceId = service.id;
 
-      const quoteRes = await request(httpServer)
-        .post('/api/quotes')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ workOrderId: wo.id })
-        .expect(201);
-      const quoteId = quoteRes.body.data.id;
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/services`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ serviceId, quantity: 1 })
-        .expect(200);
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/submissions`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      await request(httpServer)
-        .patch(`/api/quotes/${quoteId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ status: 'APPROVED' })
-        .expect(200);
+      await approveWorkOrder(wo.id, [{ serviceId, quantity: 1, unitPrice: service.basePrice }]);
 
       // Transition to IN_PROGRESS
       await request(httpServer)
@@ -1281,29 +1208,7 @@ describe('WorkOrder (E2E)', () => {
       const service = stubService(stub, { basePrice: 100 });
       const serviceId = service.id;
 
-      const quoteRes = await request(httpServer)
-        .post('/api/quotes')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ workOrderId: wo.id })
-        .expect(201);
-      const quoteId = quoteRes.body.data.id;
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/services`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ serviceId, quantity: 1 })
-        .expect(200);
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/submissions`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      await request(httpServer)
-        .patch(`/api/quotes/${quoteId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ status: 'APPROVED' })
-        .expect(200);
+      await approveWorkOrder(wo.id, [{ serviceId, quantity: 1, unitPrice: service.basePrice }]);
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
@@ -1340,29 +1245,7 @@ describe('WorkOrder (E2E)', () => {
 
       const serviceId = service.id;
 
-      const quoteRes = await request(httpServer)
-        .post('/api/quotes')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ workOrderId: wo.id })
-        .expect(201);
-      const quoteId = quoteRes.body.data.id;
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/services`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ serviceId, quantity: 1 })
-        .expect(200);
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/submissions`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      await request(httpServer)
-        .patch(`/api/quotes/${quoteId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ status: 'APPROVED' })
-        .expect(200);
+      await approveWorkOrder(wo.id, [{ serviceId, quantity: 1, unitPrice: service.basePrice }]);
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
@@ -1475,35 +1358,10 @@ describe('WorkOrder (E2E)', () => {
 
       const service2 = stubService(stub, { basePrice: 80 });
 
-      const quoteRes = await request(httpServer)
-        .post('/api/quotes')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ workOrderId: wo.id })
-        .expect(201);
-      const quoteId = quoteRes.body.data.id as string;
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/services`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ serviceId: service1.id, quantity: 1 })
-        .expect(200);
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/services`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ serviceId: service2.id, quantity: 1 })
-        .expect(200);
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/submissions`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      await request(httpServer)
-        .patch(`/api/quotes/${quoteId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ status: 'APPROVED' })
-        .expect(200);
+      await approveWorkOrder(wo.id, [
+        { serviceId: service1.id, quantity: 1, unitPrice: service1.basePrice },
+        { serviceId: service2.id, quantity: 1, unitPrice: service2.basePrice },
+      ]);
 
       // Start and complete service 1
       await request(httpServer)
@@ -1593,29 +1451,9 @@ describe('WorkOrder (E2E)', () => {
 
       const service = stubService(stub, { basePrice: 100 });
 
-      const quoteRes = await request(httpServer)
-        .post('/api/quotes')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ workOrderId: wo.id })
-        .expect(201);
-      const quoteId = quoteRes.body.data.id;
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/services`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ serviceId: service.id, quantity: 1 })
-        .expect(200);
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/submissions`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      await request(httpServer)
-        .patch(`/api/quotes/${quoteId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ status: 'APPROVED' })
-        .expect(200);
+      await approveWorkOrder(wo.id, [
+        { serviceId: service.id, quantity: 1, unitPrice: service.basePrice },
+      ]);
 
       // WO is now APPROVED — update must be rejected
       await request(httpServer)
@@ -1659,29 +1497,7 @@ describe('WorkOrder (E2E)', () => {
       const service = stubService(stub, { basePrice: 150 });
       const serviceId = service.id;
 
-      const quoteRes = await request(httpServer)
-        .post('/api/quotes')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ workOrderId: wo.id })
-        .expect(201);
-      const quoteId = quoteRes.body.data.id;
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/services`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ serviceId, quantity: 1 })
-        .expect(200);
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/submissions`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      await request(httpServer)
-        .patch(`/api/quotes/${quoteId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ status: 'APPROVED' })
-        .expect(200);
+      await approveWorkOrder(wo.id, [{ serviceId, quantity: 1, unitPrice: service.basePrice }]);
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
@@ -1943,30 +1759,9 @@ describe('WorkOrder (E2E)', () => {
         .expect(200);
 
       const service = stubService(stub);
-      const quoteRes = await request(httpServer)
-        .post('/api/quotes')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ workOrderId: id })
-        .expect(201);
-
-      const quoteId = quoteRes.body.data.id as string;
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/services`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ serviceId: service.id, quantity: 1 })
-        .expect(200);
-
-      await request(httpServer)
-        .post(`/api/quotes/${quoteId}/submissions`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      await request(httpServer)
-        .patch(`/api/quotes/${quoteId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ status: 'APPROVED' })
-        .expect(200);
+      await approveWorkOrder(id, [
+        { serviceId: service.id, quantity: 1, unitPrice: service.basePrice },
+      ]);
 
       await getDetail(id);
 

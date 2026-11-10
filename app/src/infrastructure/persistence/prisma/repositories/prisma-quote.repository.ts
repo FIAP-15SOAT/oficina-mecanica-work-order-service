@@ -20,7 +20,6 @@ import {
 } from '@domain/interfaces/common/pagination.interface';
 
 import { paginate } from '@infrastructure/persistence/prisma/helpers/prisma-paginate.helper';
-import { existsBy } from '@infrastructure/persistence/prisma/helpers/prisma-exists.helper';
 
 const QUOTE_WORK_ORDER_INCLUDE = {
   customer: true,
@@ -220,13 +219,5 @@ export class PrismaQuoteRepository implements IQuoteRepository {
         updatedAt: item.updatedAt,
       },
     });
-  }
-
-  async isServiceInUse(serviceId: string): Promise<boolean> {
-    return existsBy(this.prisma.quoteService, { serviceId });
-  }
-
-  async isPartSupplyInUse(partSupplyId: string): Promise<boolean> {
-    return existsBy(this.prisma.quotePartSupply, { partSupplyId });
   }
 }

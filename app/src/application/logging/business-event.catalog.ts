@@ -39,41 +39,6 @@ export const BUSINESS_EVENTS = {
     message: 'refresh token rejected',
     level: 'warn',
   }),
-  QUOTE_SUBMITTED: defineLogEvent<{
-    quoteId: string;
-    previousQuoteStatus: string;
-    workOrderId: string;
-    workOrderNumber: string;
-  }>({
-    name: 'quote.submitted',
-    message: 'quote submitted to the customer for decision',
-    level: 'info',
-  }),
-  QUOTE_APPROVED: defineLogEvent<{
-    quoteId: string;
-    previousQuoteStatus: string;
-    workOrderId: string;
-    workOrderNumber: string;
-    previousWorkOrderStatus: string;
-    customerId: string;
-  }>({
-    name: 'quote.approved',
-    message: 'quote approved and work order items applied',
-    level: 'info',
-  }),
-  QUOTE_REJECTED: defineLogEvent<{
-    quoteId: string;
-    previousQuoteStatus: string;
-    workOrderId: string;
-    workOrderNumber: string;
-    previousWorkOrderStatus?: string;
-    workOrderStatusChanged: boolean;
-    customerId: string;
-  }>({
-    name: 'quote.rejected',
-    message: 'quote rejected by customer decision',
-    level: 'info',
-  }),
   QUOTE_APPROVAL_COMPLETED: defineLogEvent<{
     sagaId: string;
     quoteId: string;

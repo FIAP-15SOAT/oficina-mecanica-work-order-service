@@ -243,38 +243,10 @@ export class WorkOrder {
     this._totalAmount = servicesTotal + partsTotal;
   }
 
-  ensureCanCreateQuote(): void {
-    const allowedStatuses = [
-      WorkOrderStatus.IN_DIAGNOSIS,
-      WorkOrderStatus.AWAITING_APPROVAL,
-      WorkOrderStatus.REJECTED,
-    ];
-
-    if (!allowedStatuses.includes(this.status)) {
-      throw new BusinessRuleViolationException(
-        `Orçamento só pode ser criado quando a Ordem de Serviço está nos status permitidos. Status atual: "${this.status}".`,
-      );
-    }
-  }
-
   ensureAwaitingQuoteDecision(): void {
     if (this.status !== WorkOrderStatus.AWAITING_APPROVAL) {
       throw new BusinessRuleViolationException(
         `Orçamento só pode ser decidido com a Ordem de Serviço aguardando aprovação. Status atual: "${this.status}"`,
-      );
-    }
-  }
-
-  ensureCanSubmitQuote(): void {
-    const allowedStatuses = [
-      WorkOrderStatus.IN_DIAGNOSIS,
-      WorkOrderStatus.AWAITING_APPROVAL,
-      WorkOrderStatus.REJECTED,
-    ];
-
-    if (!allowedStatuses.includes(this.status)) {
-      throw new BusinessRuleViolationException(
-        `Orçamento só pode ser enviado após o diagnóstico da Ordem de Serviço. Status atual: "${this.status}".`,
       );
     }
   }

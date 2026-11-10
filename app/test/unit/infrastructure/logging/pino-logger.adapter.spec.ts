@@ -1,6 +1,5 @@
 import { Logger as NestLogger, PinoLogger } from 'nestjs-pino';
 
-import { QuoteStatus } from '@domain/enums/quote-status.enum';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { defineLogEvent } from '@application/logging/log-event';
 import { buildLoggerParams } from '@infrastructure/logging/logging.module';
@@ -77,24 +76,21 @@ describe('PinoLoggerAdapter', () => {
   });
 
   it('should map logical event fields to their physical telemetry keys', () => {
-    adapter.event(BUSINESS_EVENTS.QUOTE_APPROVED, {
+    adapter.event(BUSINESS_EVENTS.QUOTE_APPROVAL_COMPLETED, {
+      sagaId: 'saga-1',
       quoteId: 'quote-1',
-      previousQuoteStatus: QuoteStatus.SENT,
       workOrderId: 'wo-1',
       workOrderNumber: 'OS-0001',
-      previousWorkOrderStatus: 'AWAITING_APPROVAL',
-      customerId: 'customer-1',
     });
 
     expect(lines[0]).toMatchObject({
       level: 'info',
-      message: BUSINESS_EVENTS.QUOTE_APPROVED.message,
-      'oficina.event.name': 'quote.approved',
+      message: BUSINESS_EVENTS.QUOTE_APPROVAL_COMPLETED.message,
+      'oficina.event.name': 'quote_approval.completed',
+      'oficina.saga.id': 'saga-1',
       'oficina.quote.id': 'quote-1',
-      'oficina.quote.status.previous': QuoteStatus.SENT,
       'oficina.work_order.id': 'wo-1',
       'oficina.work_order.number': 'OS-0001',
-      'oficina.work_order.status.previous': 'AWAITING_APPROVAL',
     });
     expect(lines[0]).not.toHaveProperty('quoteId');
   });

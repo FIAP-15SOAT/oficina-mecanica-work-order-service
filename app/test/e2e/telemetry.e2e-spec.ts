@@ -14,9 +14,12 @@ import {
 } from '@opentelemetry/sdk-trace-node';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 
+import { MessagePayloads, MessageType } from '@domain/messaging/message-catalog';
 import { DECLARED_FIELD_NAMES } from '@infrastructure/logging/field-registry';
+import { MessageHandlerRegistry } from '@infrastructure/messaging/message-handler.registry';
 import { METRIC_VIEWS } from '@infrastructure/telemetry/metric-registry';
 
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
@@ -284,17 +287,69 @@ describe('Telemetry (E2E)', () => {
       return workOrder.body.data.id as string;
     }
 
-    async function submitQuote(workOrderId: string, serviceId: string): Promise<string> {
-      const quote = await authorized('post', '/api/quotes').send({ workOrderId }).expect(201);
-      const quoteId = quote.body.data.id as string;
+    // The consumer is off in this suite, so the test hands the Billing and Inventory messages to the handlers.
+    function deliver<T extends MessageType>(
+      type: T,
+      workOrderId: string,
+      payload: MessagePayloads[T],
+    ) {
+      return ctx.app.get(MessageHandlerRegistry).find(type)!.handler({
+        messageId: randomUUID(),
+        type,
+        occurredAt: new Date().toISOString(),
+        workOrderId,
+        payload,
+      });
+    }
 
-      await authorized('post', `/api/quotes/${quoteId}/services`)
-        .send({ serviceId, quantity: 1 })
-        .expect(200);
+    async function sendQuote(workOrderId: string): Promise<string> {
+      const quoteId = randomUUID();
 
-      await authorized('post', `/api/quotes/${quoteId}/submissions`).send({}).expect(200);
+      await deliver('billing.quote.sent', workOrderId, {
+        quoteId,
+        sentBy: adminAuth.user.id,
+        total: '0.00',
+        items: [],
+      });
 
       return quoteId;
+    }
+
+    async function approveQuote(
+      workOrderId: string,
+      quoteId: string,
+      service: { id: string; basePrice: number },
+    ) {
+      // shortcut: seeds the approved quote and the saga reserving stock, until billing.quote.approved starts the saga
+      await ctx.prisma.quote.create({
+        data: {
+          id: quoteId,
+          workOrderId,
+          status: 'APPROVED',
+          decidedBy: adminAuth.user.id,
+          services: {
+            create: [
+              {
+                serviceId: service.id,
+                quantity: 1,
+                unitPrice: service.basePrice,
+                totalPrice: service.basePrice,
+              },
+            ],
+          },
+        },
+      });
+
+      await ctx.prisma.sagaInstance.create({
+        data: {
+          type: 'QUOTE_APPROVAL',
+          correlationId: quoteId,
+          workOrderId,
+          status: 'RESERVING_STOCK',
+        },
+      });
+
+      await deliver('inventory.stock.reserved', workOrderId, { quoteId });
     }
 
     interface CollectedPoint {
@@ -325,21 +380,19 @@ describe('Telemetry (E2E)', () => {
 
     it('should count the creation and measure every step of a full cycle up to delivery', async () => {
       const workOrderId = await createWorkOrder();
-      const serviceId = stubService(stub).id;
+      const service = stubService(stub);
 
       await authorized('patch', `/api/work-orders/${workOrderId}`)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
-      const quoteId = await submitQuote(workOrderId, serviceId);
+      await approveQuote(workOrderId, await sendQuote(workOrderId), service);
 
-      await authorized('patch', `/api/quotes/${quoteId}`).send({ status: 'APPROVED' }).expect(200);
-
-      await authorized('patch', `/api/work-orders/${workOrderId}/services/${serviceId}`)
+      await authorized('patch', `/api/work-orders/${workOrderId}/services/${service.id}`)
         .send({ status: 'IN_PROGRESS' })
         .expect(200);
 
-      await authorized('patch', `/api/work-orders/${workOrderId}/services/${serviceId}`)
+      await authorized('patch', `/api/work-orders/${workOrderId}/services/${service.id}`)
         .send({ status: 'COMPLETED' })
         .expect(200);
 
@@ -368,23 +421,20 @@ describe('Telemetry (E2E)', () => {
 
     it('should measure the wait in REJECTED when there is a rejection and a new quote', async () => {
       const workOrderId = await createWorkOrder();
-      const serviceId = stubService(stub).id;
+      const service = stubService(stub);
 
       await authorized('patch', `/api/work-orders/${workOrderId}`)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
-      const firstQuote = await submitQuote(workOrderId, serviceId);
+      await deliver('billing.quote.rejected', workOrderId, {
+        quoteId: await sendQuote(workOrderId),
+        reason: 'Cliente pediu nova proposta',
+        remainingSentCount: 0,
+        decidedBy: adminAuth.user.id,
+      });
 
-      await authorized('patch', `/api/quotes/${firstQuote}`)
-        .send({ status: 'REJECTED', reason: 'Cliente pediu nova proposta' })
-        .expect(200);
-
-      const secondQuote = await submitQuote(workOrderId, serviceId);
-
-      await authorized('patch', `/api/quotes/${secondQuote}`)
-        .send({ status: 'APPROVED' })
-        .expect(200);
+      await approveQuote(workOrderId, await sendQuote(workOrderId), service);
 
       const points = await takeSnapshot();
 

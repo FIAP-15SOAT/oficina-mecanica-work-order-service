@@ -87,13 +87,6 @@ export const LOGICAL_FIELDS: Readonly<Record<LogicalFieldName, LogicalFieldDefin
     owner: 'use-case',
     sensitivity: 'identifier',
   },
-  previousQuoteStatus: {
-    key: 'oficina.quote.status.previous',
-    type: 'string',
-    cardinality: 'low',
-    owner: 'use-case',
-    sensitivity: 'clear',
-  },
   workOrderId: {
     key: 'oficina.work_order.id',
     type: 'string',
@@ -107,13 +100,6 @@ export const LOGICAL_FIELDS: Readonly<Record<LogicalFieldName, LogicalFieldDefin
     cardinality: 'high',
     owner: 'use-case',
     sensitivity: 'identifier',
-  },
-  workOrderStatusChanged: {
-    key: 'oficina.work_order.status.changed',
-    type: 'boolean',
-    cardinality: 'fixed',
-    owner: 'use-case',
-    sensitivity: 'clear',
   },
   previousWorkOrderStatus: {
     key: 'oficina.work_order.status.previous',

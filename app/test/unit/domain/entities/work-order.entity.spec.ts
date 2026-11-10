@@ -372,28 +372,6 @@ describe('WorkOrder Entity', () => {
     });
   });
 
-  describe('ensureCanCreateQuote()', () => {
-    it('should not throw for IN_DIAGNOSIS status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.IN_DIAGNOSIS });
-      expect(() => workOrder.ensureCanCreateQuote()).not.toThrow();
-    });
-
-    it('should not throw for AWAITING_APPROVAL status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.AWAITING_APPROVAL });
-      expect(() => workOrder.ensureCanCreateQuote()).not.toThrow();
-    });
-
-    it('should not throw for REJECTED status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.REJECTED });
-      expect(() => workOrder.ensureCanCreateQuote()).not.toThrow();
-    });
-
-    it('should throw for RECEIVED status', () => {
-      const workOrder = WorkOrder.create(baseProps);
-      expect(() => workOrder.ensureCanCreateQuote()).toThrow(BusinessRuleViolationException);
-    });
-  });
-
   describe('ensureAwaitingQuoteDecision()', () => {
     it('should allow a quote decision in AWAITING_APPROVAL', () => {
       const workOrder = createMockWorkOrder({ status: WorkOrderStatus.AWAITING_APPROVAL });
@@ -413,53 +391,6 @@ describe('WorkOrder Entity', () => {
         );
       },
     );
-  });
-
-  describe('ensureCanSubmitQuote()', () => {
-    it('should not throw for IN_DIAGNOSIS status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.IN_DIAGNOSIS });
-      expect(() => workOrder.ensureCanSubmitQuote()).not.toThrow();
-    });
-
-    it('should not throw for REJECTED status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.REJECTED });
-      expect(() => workOrder.ensureCanSubmitQuote()).not.toThrow();
-    });
-
-    it('should throw for RECEIVED status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.RECEIVED });
-      expect(() => workOrder.ensureCanSubmitQuote()).toThrow(BusinessRuleViolationException);
-    });
-
-    it('should not throw for AWAITING_APPROVAL status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.AWAITING_APPROVAL });
-      expect(() => workOrder.ensureCanSubmitQuote()).not.toThrow();
-    });
-
-    it('should throw for APPROVED status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.APPROVED });
-      expect(() => workOrder.ensureCanSubmitQuote()).toThrow(BusinessRuleViolationException);
-    });
-
-    it('should throw for IN_PROGRESS status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.IN_PROGRESS });
-      expect(() => workOrder.ensureCanSubmitQuote()).toThrow(BusinessRuleViolationException);
-    });
-
-    it('should throw for COMPLETED status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.COMPLETED });
-      expect(() => workOrder.ensureCanSubmitQuote()).toThrow(BusinessRuleViolationException);
-    });
-
-    it('should throw for DELIVERED status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.DELIVERED });
-      expect(() => workOrder.ensureCanSubmitQuote()).toThrow(BusinessRuleViolationException);
-    });
-
-    it('should throw for CANCELLED status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.CANCELLED });
-      expect(() => workOrder.ensureCanSubmitQuote()).toThrow(BusinessRuleViolationException);
-    });
   });
 
   describe('startServiceItem()', () => {
