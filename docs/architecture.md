@@ -239,7 +239,7 @@ app/test/
 app/prisma.config.ts                 # Configuração do Prisma v7 (schema, migrations, seed e datasource)
 
 app/prisma/
-├── schema.prisma                    # Schema do banco (20 modelos, 11 enums)
+├── schema.prisma                    # Schema do banco (16 modelos, 8 enums)
 ├── migrations/                      # Migrations geradas pelo Prisma — inclui a sequence
 │                                    # `work_order_number_seq` (números de OS),
 │                                    # endurecimento de cascade deletes,
@@ -253,7 +253,7 @@ app/prisma/
 
 ## Modelos do banco de dados
 
-20 modelos, cobrindo identidade/acesso, veículos, Ordem de Serviço, orçamento, o estado da Saga de aprovação e o outbox da mensageria, mais as tabelas de catálogo e estoque, sem uso desde que o Inventory passou a ser o dono delas e removidas numa migration seguinte. Diagrama entidade-relacionamento (com os tipos reais do Postgres), explicação tabela a tabela, enums e convenções de modelagem: ver [`docs/database.md`](database.md).
+16 modelos, cobrindo identidade/acesso, veículos, Ordem de Serviço, orçamento, o estado da Saga de aprovação e o outbox da mensageria. Diagrama entidade-relacionamento (com os tipos reais do Postgres), explicação tabela a tabela, enums e convenções de modelagem: ver [`docs/database.md`](database.md).
 
 ## DDD — Aggregate Roots, Entidades e Value Objects
 

@@ -46,29 +46,6 @@ enum QuoteStatus {
   REJECTED
 }
 
-enum StockMovementType {
-  ENTRY
-  EXIT
-  ADJUSTMENT
-}
-
-enum Unit {
-  UN
-  KG
-  L
-  ML
-  M
-  CX
-  PC
-  JG
-}
-
-// Category tells a part from a supply
-enum PartSupplyCategory {
-  PART
-  SUPPLY
-}
-
 enum SagaType {
   QUOTE_APPROVAL
 }
@@ -155,42 +132,6 @@ model Vehicle {
   @@map("vehicles")
 }
 
-model Service {
-  id               String   @id @default(uuid()) @db.Uuid
-  name             String   @unique @db.VarChar(150)
-  description      String?  @db.Text
-  basePrice        Decimal  @map("base_price") @db.Decimal(10, 2)
-  estimatedTimeMin Int      @default(60) @map("estimated_time_min")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @default(now()) @updatedAt @map("updated_at")
-
-  @@map("services")
-}
-
-model PartSupply {
-  id            String             @id @default(uuid()) @db.Uuid
-  name          String             @db.VarChar(150)
-  description   String?            @db.Text
-  sku           String             @unique @db.VarChar(60)
-  partNumber    String?            @map("part_number") @db.VarChar(60)
-  category      PartSupplyCategory
-  unit          Unit               @default(UN)
-  costPrice     Decimal            @map("cost_price") @db.Decimal(10, 2)
-  salePrice     Decimal            @map("sale_price") @db.Decimal(10, 2)
-  stock         Int                @default(0)
-  minStock      Int                @default(0) @map("min_stock")
-  reservedStock Int                @default(0) @map("reserved_stock")
-  version       Int                @default(1)
-  expiresAt     DateTime?          @map("expires_at")
-  createdAt     DateTime           @default(now()) @map("created_at")
-  updatedAt     DateTime           @default(now()) @updatedAt @map("updated_at")
-
-  stockMovements    StockMovement[]
-  stockReservations StockReservation[]
-
-  @@map("parts_supplies")
-}
-
 model WorkOrderStatusInfo {
   code       WorkOrderStatus @id
   priority   Int             @unique
@@ -219,18 +160,16 @@ model WorkOrder {
   createdAt          DateTime        @default(now()) @map("created_at")
   updatedAt          DateTime        @default(now()) @updatedAt @map("updated_at")
 
-  customer          Customer              @relation(fields: [customerId], references: [id])
-  vehicle           Vehicle               @relation(fields: [vehicleId], references: [id])
-  assignedUser      User?                 @relation("AssignedUser", fields: [assignedUserId], references: [id])
-  statusInfo        WorkOrderStatusInfo   @relation(fields: [status], references: [code])
-  services          WorkOrderService[]
-  partSupplies      WorkOrderPartSupply[]
-  quotes            Quote[]
-  statusHistory     StatusHistory[]
-  stockMovements    StockMovement[]
-  stockReservations StockReservation[]
-  outboxMessages    OutboxMessage[]
-  sagaInstances     SagaInstance[]
+  customer       Customer              @relation(fields: [customerId], references: [id])
+  vehicle        Vehicle               @relation(fields: [vehicleId], references: [id])
+  assignedUser   User?                 @relation("AssignedUser", fields: [assignedUserId], references: [id])
+  statusInfo     WorkOrderStatusInfo   @relation(fields: [status], references: [code])
+  services       WorkOrderService[]
+  partSupplies   WorkOrderPartSupply[]
+  quotes         Quote[]
+  statusHistory  StatusHistory[]
+  outboxMessages OutboxMessage[]
+  sagaInstances  SagaInstance[]
 
   @@index([customerId])
   @@index([vehicleId])
@@ -365,39 +304,6 @@ model SagaInstance {
   @@unique([type, correlationId])
   @@index([workOrderId])
   @@map("saga_instances")
-}
-
-model StockMovement {
-  id           String            @id @default(uuid()) @db.Uuid
-  partSupplyId String            @map("part_supply_id") @db.Uuid
-  workOrderId  String?           @map("work_order_id") @db.Uuid
-  type         StockMovementType
-  quantity     Int
-  reason       String?           @db.VarChar(255)
-  createdAt    DateTime          @default(now()) @map("created_at")
-
-  partSupply PartSupply @relation(fields: [partSupplyId], references: [id])
-  workOrder  WorkOrder? @relation(fields: [workOrderId], references: [id], onDelete: SetNull)
-
-  @@index([partSupplyId])
-  @@index([workOrderId])
-  @@index([type])
-  @@map("stock_movements")
-}
-
-model StockReservation {
-  id           String   @id @default(uuid()) @db.Uuid
-  partSupplyId String   @map("part_supply_id") @db.Uuid
-  workOrderId  String   @map("work_order_id") @db.Uuid
-  quantity     Int
-  createdAt    DateTime @default(now()) @map("created_at")
-
-  partSupply PartSupply @relation(fields: [partSupplyId], references: [id])
-  workOrder  WorkOrder  @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-
-  @@index([partSupplyId])
-  @@index([workOrderId])
-  @@map("stock_reservations")
 }
 
 model UserCustomer {
