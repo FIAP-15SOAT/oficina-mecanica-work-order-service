@@ -363,61 +363,6 @@ describe('WorkOrder (E2E)', () => {
         .expect(409);
     });
 
-    it('should create work order with services only and a PENDING quote', async () => {
-      const customer = await createCustomer();
-      const vehicle = await createVehicle(customer.id);
-      const service = stubService(stub);
-
-      const res = await request(httpServer)
-        .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          customerId: customer.id,
-          vehicleId: vehicle.id,
-          services: [{ serviceId: service.id, quantity: 1 }],
-        })
-        .expect(201);
-
-      const woId = res.body.data.id as string;
-      expect(res.body.data.status).toBe('RECEIVED');
-
-      const quotesRes = await request(httpServer)
-        .get(`/api/work-orders/${woId}/quotes`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      expect(quotesRes.body.data).toHaveLength(1);
-      expect(quotesRes.body.data[0].status).toBe('PENDING');
-    });
-
-    it('should create work order with services + parts and a PENDING quote', async () => {
-      const customer = await createCustomer();
-      const vehicle = await createVehicle(customer.id);
-      const service = stubService(stub);
-      const part = stubPartSupply(stub);
-
-      const res = await request(httpServer)
-        .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          customerId: customer.id,
-          vehicleId: vehicle.id,
-          services: [{ serviceId: service.id, quantity: 2 }],
-          partsSupplies: [{ partSupplyId: part.id, quantity: 3 }],
-        })
-        .expect(201);
-
-      const woId = res.body.data.id as string;
-
-      const quotesRes = await request(httpServer)
-        .get(`/api/work-orders/${woId}/quotes`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      expect(quotesRes.body.data).toHaveLength(1);
-      expect(quotesRes.body.data[0].status).toBe('PENDING');
-    });
-
     it('should create work order without items and NO quote', async () => {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
@@ -437,97 +382,9 @@ describe('WorkOrder (E2E)', () => {
 
       expect(quotesRes.body.data).toHaveLength(0);
     });
-
-    it('should return 409 when parts-only are provided (no service)', async () => {
-      const customer = await createCustomer();
-      const vehicle = await createVehicle(customer.id);
-      const part = stubPartSupply(stub);
-
-      await request(httpServer)
-        .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          customerId: customer.id,
-          vehicleId: vehicle.id,
-          partsSupplies: [{ partSupplyId: part.id, quantity: 1 }],
-        })
-        .expect(409);
-    });
-
-    it('should return 404 when unknown serviceId is provided', async () => {
-      const customer = await createCustomer();
-      const vehicle = await createVehicle(customer.id);
-
-      await request(httpServer)
-        .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          customerId: customer.id,
-          vehicleId: vehicle.id,
-          services: [{ serviceId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', quantity: 1 }],
-        })
-        .expect(404);
-    });
-
-    it('should return 409 when duplicate serviceId is provided', async () => {
-      const customer = await createCustomer();
-      const vehicle = await createVehicle(customer.id);
-      const service = stubService(stub);
-
-      await request(httpServer)
-        .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          customerId: customer.id,
-          vehicleId: vehicle.id,
-          services: [
-            { serviceId: service.id, quantity: 1 },
-            { serviceId: service.id, quantity: 2 },
-          ],
-        })
-        .expect(409);
-    });
-
-    it('should return 404 when unknown partSupplyId is provided', async () => {
-      const customer = await createCustomer();
-      const vehicle = await createVehicle(customer.id);
-      const service = stubService(stub);
-
-      await request(httpServer)
-        .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          customerId: customer.id,
-          vehicleId: vehicle.id,
-          services: [{ serviceId: service.id, quantity: 1 }],
-          partsSupplies: [{ partSupplyId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', quantity: 1 }],
-        })
-        .expect(404);
-    });
-
-    it('should return 409 when duplicate partSupplyId is provided', async () => {
-      const customer = await createCustomer();
-      const vehicle = await createVehicle(customer.id);
-      const service = stubService(stub);
-      const part = stubPartSupply(stub);
-
-      await request(httpServer)
-        .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          customerId: customer.id,
-          vehicleId: vehicle.id,
-          services: [{ serviceId: service.id, quantity: 1 }],
-          partsSupplies: [
-            { partSupplyId: part.id, quantity: 1 },
-            { partSupplyId: part.id, quantity: 2 },
-          ],
-        })
-        .expect(409);
-    });
   });
 
-  describe('POST /api/work-orders — items validated in the Inventory', () => {
+  describe('POST /api/work-orders — initial quote in the Billing', () => {
     async function createWorkOrderWithItems(
       services: { serviceId: string; quantity: number }[],
       partsSupplies: { partSupplyId: string; quantity: number }[] = [],
@@ -550,60 +407,52 @@ describe('WorkOrder (E2E)', () => {
       expect(Number(next.number)).toBe(Number(previousNumber) + 1);
     }
 
-    it('should create the pending quote with the Inventory base price', async () => {
-      const service = stubService(stub, { basePrice: 210 });
-      const partSupply = stubPartSupply(stub, { salePrice: 35 });
-
+    it('should open a work order with items after the Billing creates the initial quote', async () => {
       const res = await createWorkOrderWithItems(
-        [{ serviceId: service.id, quantity: 2 }],
-        [{ partSupplyId: partSupply.id, quantity: 3 }],
+        [{ serviceId: randomUUID(), quantity: 2 }],
+        [{ partSupplyId: randomUUID(), quantity: 3 }],
       );
 
       expect(res.status).toBe(201);
-
-      const quotesRes = await request(httpServer)
-        .get(`/api/work-orders/${res.body.data.id}/quotes`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      expect(quotesRes.body.data).toEqual([
-        expect.objectContaining({
-          status: 'PENDING',
-          servicesAmount: 420,
-          partsAmount: 105,
-          totalAmount: 525,
-        }),
-      ]);
+      expect(res.body.data.status).toBe('RECEIVED');
+      expect([...stub.quotes.values()]).toContainEqual(
+        expect.objectContaining({ workOrderId: res.body.data.id }),
+      );
     });
 
-    it('should answer 404 for an unknown item without consuming a work order number', async () => {
+    it('should answer the Billing 404 without consuming a work order number', async () => {
+      const serviceId = randomUUID();
+      const message = `Serviço não encontrado(a) com identificador: ${serviceId}`;
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
       const previous = await createWorkOrder(customer.id, vehicle.id);
 
-      const res = await createWorkOrderWithItems([{ serviceId: randomUUID(), quantity: 1 }]);
+      stub.nextResponses.set('POST /internal/quotes', {
+        status: 404,
+        body: { statusCode: 404, error: 'Not Found', message },
+      });
+
+      const res = await createWorkOrderWithItems([{ serviceId, quantity: 1 }]);
 
       expect(res.status).toBe(404);
+      expect(res.body.message).toBe(message);
 
       await expectNextWorkOrderNumberAfter(previous.number);
     });
 
-    it('should answer 503 when the Inventory fails without consuming a work order number', async () => {
-      const service = stubService(stub);
-      const customer = await createCustomer();
-      const vehicle = await createVehicle(customer.id);
-      const previous = await createWorkOrder(customer.id, vehicle.id);
+    it('should answer the Billing 409 for parts without a service', async () => {
+      const message = 'O orçamento deve ter pelo menos um serviço quando contém peças/insumos';
 
-      stub.failingIds.add(service.id);
+      stub.nextResponses.set('POST /internal/quotes', {
+        status: 409,
+        body: { statusCode: 409, error: 'Conflict', message },
+      });
 
-      const res = await createWorkOrderWithItems([{ serviceId: service.id, quantity: 1 }]);
+      const res = await createWorkOrderWithItems([], [{ partSupplyId: randomUUID(), quantity: 1 }]);
 
-      stub.failingIds.delete(service.id);
-
-      expect(res.status).toBe(503);
-      expect(await ctx.prisma.quote.count()).toBe(0);
-
-      await expectNextWorkOrderNumberAfter(previous.number);
+      expect(res.status).toBe(409);
+      expect(res.body.message).toBe(message);
+      expect(await ctx.prisma.workOrder.count()).toBe(0);
     });
   });
 
@@ -2140,5 +1989,53 @@ describe('WorkOrder (E2E)', () => {
         expect.objectContaining({ 'oficina.event.name': 'cache.unavailable' }),
       );
     });
+  });
+});
+
+describe('WorkOrder (E2E) — Billing unavailable', () => {
+  let ctx: TestContext;
+  let adminAuth: AuthTokens;
+
+  beforeAll(async () => {
+    ctx = await setupTestApp();
+    adminAuth = await registerAndLogin(
+      ctx.httpServer,
+      { name: 'Admin E2E', email: 'admin@e2e.test', role: 'ADMIN' },
+      ctx.prisma,
+    );
+  });
+
+  afterAll(async () => {
+    await teardownTestApp(ctx);
+  });
+
+  it('should answer 503 when the Billing is unavailable without consuming a work order number', async () => {
+    const customer = await ctx.prisma.customer.create({
+      data: {
+        name: 'Cliente Billing Fora',
+        document: '52998224725',
+        email: 'billing-fora@e2e.test',
+        phone: '11999999999',
+      },
+    });
+
+    const vehicle = await ctx.prisma.vehicle.create({
+      data: { customerId: customer.id, plate: 'BIL1A23', brand: 'Fiat', model: 'Uno', year: 2020 },
+    });
+
+    const openWorkOrder = (items: object) =>
+      request(ctx.httpServer)
+        .post('/api/work-orders')
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ customerId: customer.id, vehicleId: vehicle.id, ...items });
+
+    const previous = await openWorkOrder({}).expect(201);
+
+    const res = await openWorkOrder({ services: [{ serviceId: randomUUID(), quantity: 1 }] });
+
+    const next = await openWorkOrder({}).expect(201);
+
+    expect(res.status).toBe(503);
+    expect(Number(next.body.data.number)).toBe(Number(previous.body.data.number) + 1);
   });
 });

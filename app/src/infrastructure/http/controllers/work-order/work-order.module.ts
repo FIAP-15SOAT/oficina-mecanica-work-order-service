@@ -10,9 +10,11 @@ import { FindWorkOrderStatusHistoryUseCase } from '@application/use-cases/work-o
 import { FindWorkOrderQuotesUseCase } from '@application/use-cases/quote/find-work-order-quotes.use-case';
 import { FindCatalogItemsUseCase } from '@application/use-cases/catalog/find-catalog-items.use-case';
 import { IInventoryCatalogGateway } from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.interface';
-import { QuoteItemValidator } from '@application/services/quote-item-validator';
+import { IBillingQuotesGateway } from '@application/ports/output/gateways/billing/billing-quotes-gateway.interface';
 
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
+import { ICustomerRepository } from '@domain/interfaces/repositories/customer.repository.interface';
+import { IVehicleRepository } from '@domain/interfaces/repositories/vehicle.repository.interface';
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
 import { IQuoteRepository } from '@domain/interfaces/repositories/quote.repository.interface';
@@ -39,11 +41,18 @@ import { WorkOrderController } from './work-order.controller';
         metrics: IMetrics,
         cache: ICache,
         inventoryCatalogGateway: IInventoryCatalogGateway,
+        customerRepository: ICustomerRepository,
+        vehicleRepository: IVehicleRepository,
+        billingQuotesGateway: IBillingQuotesGateway,
       ) =>
         new WorkOrderCleanController(
           new CreateWorkOrderUseCase(
             unitOfWork,
-            new QuoteItemValidator(inventoryCatalogGateway),
+            customerRepository,
+            vehicleRepository,
+            userRepository,
+            billingQuotesGateway,
+            logger.forContext(CreateWorkOrderUseCase.name),
             metrics,
           ),
           new FindWorkOrderByIdUseCase(workOrderRepository, userRepository, cache),
@@ -77,6 +86,9 @@ import { WorkOrderController } from './work-order.controller';
         'IMetrics',
         'ICache',
         'IInventoryCatalogGateway',
+        'ICustomerRepository',
+        'IVehicleRepository',
+        'IBillingQuotesGateway',
       ],
     },
   ],

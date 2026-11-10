@@ -123,6 +123,14 @@ export const BUSINESS_EVENTS = {
     message: 'work order service item moved to a new status',
     level: 'info',
   }),
+  WORK_ORDER_OPENING_COMPENSATION_FAILED: defineLogEvent<{
+    quoteId: string;
+    workOrderId: string;
+  }>({
+    name: 'work_order.opening.compensation_failed',
+    message: 'initial quote left in the billing after the work order write failed',
+    level: 'warn',
+  }),
   USER_STATUS_UPDATED: defineLogEvent<{ targetUserId: string; targetUserActive: boolean }>({
     name: 'user.status.updated',
     message: 'user account activation changed',

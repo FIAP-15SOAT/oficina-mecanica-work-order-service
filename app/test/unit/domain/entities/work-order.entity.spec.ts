@@ -39,6 +39,14 @@ describe('WorkOrder Entity', () => {
       expect(workOrder.deliveredAt).toBeNull();
     });
 
+    it('should keep the id given by the caller', () => {
+      const id = randomUUID();
+
+      const workOrder = WorkOrder.create({ ...baseProps, id });
+
+      expect(workOrder.id).toBe(id);
+    });
+
     it('should throw DomainValidationException when customerId is empty', () => {
       expect(() => WorkOrder.create({ ...baseProps, customerId: '' })).toThrow(
         DomainValidationException,

@@ -20,6 +20,7 @@ import {
 } from '../constants/validation/work-order.constants';
 
 export interface CreateWorkOrderProps {
+  id?: string;
   number: string;
   customerId: string;
   vehicleId: string;
@@ -128,7 +129,7 @@ export class WorkOrder {
     WorkOrder.validateAssignedUser(props.assignedUser ?? null);
 
     const workOrder = new WorkOrder({
-      id: randomUUID(),
+      id: props.id ?? randomUUID(),
       number: WorkOrderNumber.create(props.number),
       customerId: props.customerId,
       vehicleId: props.vehicleId,
@@ -435,7 +436,7 @@ export class WorkOrder {
     }
   }
 
-  private static validateAssignedUser(assignedUser: User | null): void {
+  static validateAssignedUser(assignedUser: User | null): void {
     if (assignedUser) {
       if (assignedUser.role !== UserRole.MECHANIC || !assignedUser.isActive) {
         throw new BusinessRuleViolationException(

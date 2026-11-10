@@ -1172,26 +1172,24 @@ describe('Quote (E2E)', () => {
       const woRes = await request(httpServer)
         .post('/api/work-orders')
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          customerId: customer.id,
-          vehicleId: vehicle.id,
-          problemDescription: 'Revisão',
-          services: [{ serviceId: service.id, quantity: 1 }],
-        })
+        .send({ customerId: customer.id, vehicleId: vehicle.id, problemDescription: 'Revisão' })
         .expect(201);
 
       const workOrderId = woRes.body.data.id as string;
 
+      // The opening creates the initial quote in the Billing, so the local one is seeded here.
+      const quote = await ctx.prisma.quote.create({
+        data: {
+          workOrderId,
+          servicesAmount: 100,
+          totalAmount: 100,
+          services: {
+            create: [{ serviceId: service.id, quantity: 1, unitPrice: 100, totalPrice: 100 }],
+          },
+        },
+      });
+
       expect(woRes.body.data.status).toBe('RECEIVED');
-
-      const quotesRes = await request(httpServer)
-        .get(`/api/work-orders/${workOrderId}/quotes`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      const quote = quotesRes.body.data[0] as { id: string; status: string };
-
-      expect(quote.status).toBe('PENDING');
 
       return { workOrderId, quoteId: quote.id };
     }
