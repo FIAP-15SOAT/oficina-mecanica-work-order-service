@@ -8,19 +8,12 @@ import { CustomerType } from '@domain/enums/customer-type.enum';
 import { QuoteDecisionAction } from '@domain/enums/quote-decision-action.enum';
 import { AuthFlow } from '@domain/enums/auth-flow.enum';
 import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
-import { IFindCatalogItemsUseCase } from '@application/ports/input/catalog/find-catalog-items.use-case.interface';
-import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
 
 import { createMockWorkOrder } from '../../../helpers/work-order-mock.factory';
 import {
-  createMockQuote,
-  createMockQuotePartSupply,
-  createMockQuoteService,
-} from '../../../helpers/quote-mock.factory';
-import {
-  createMockInventoryPartSupplyGatewayResponse,
-  createMockInventoryServiceGatewayResponse,
-} from '../../../helpers/inventory-catalog-gateway-mock.factory';
+  readInternalQuoteFixture,
+  readInternalWorkOrderQuotesFixture,
+} from '../../../helpers/billing-quotes-gateway-mock.factory';
 import { createMockCustomer } from '../../../helpers/customer-mock.factory';
 
 describe('MeController', () => {
@@ -32,7 +25,6 @@ describe('MeController', () => {
   let findMyWorkOrdersQuotesUseCase: { execute: jest.Mock };
   let findMyQuoteByIdUseCase: { execute: jest.Mock };
   let decideQuoteUseCase: { execute: jest.Mock };
-  let findCatalogItemsUseCase: jest.Mocked<IFindCatalogItemsUseCase>;
 
   beforeEach(() => {
     changePasswordUseCase = { execute: jest.fn() };
@@ -42,7 +34,6 @@ describe('MeController', () => {
     findMyWorkOrdersQuotesUseCase = { execute: jest.fn() };
     findMyQuoteByIdUseCase = { execute: jest.fn() };
     decideQuoteUseCase = { execute: jest.fn() };
-    findCatalogItemsUseCase = { execute: jest.fn() };
 
     controller = new MeController(
       changePasswordUseCase,
@@ -52,7 +43,6 @@ describe('MeController', () => {
       findMyWorkOrdersQuotesUseCase,
       findMyQuoteByIdUseCase,
       decideQuoteUseCase,
-      findCatalogItemsUseCase,
     );
   });
 
@@ -139,7 +129,7 @@ describe('MeController', () => {
     it('should forward to the use case and wrap the result in data', async () => {
       const userId = randomUUID();
       const workOrderId = randomUUID();
-      const quotes = [createMockQuote()];
+      const quotes = readInternalWorkOrderQuotesFixture().data;
 
       findMyWorkOrdersQuotesUseCase.execute.mockResolvedValue(quotes);
 
@@ -151,74 +141,32 @@ describe('MeController', () => {
   });
 
   describe('getQuote', () => {
-    it('should read the catalog of the quote items and present the quote with it', async () => {
+    it('should forward to the use case and present the Billing quote', async () => {
       const userId = randomUUID();
-      const service = createMockInventoryServiceGatewayResponse();
-      const quote = createMockQuote({
-        services: [createMockQuoteService({ serviceId: service.id })],
-      });
-      const catalog = { services: [service], partsSupplies: [] };
+      const quote = readInternalQuoteFixture().data;
 
       findMyQuoteByIdUseCase.execute.mockResolvedValue(quote);
-      findCatalogItemsUseCase.execute.mockResolvedValue(catalog);
 
       const response = await controller.getQuote(userId, quote.id);
 
       expect(findMyQuoteByIdUseCase.execute).toHaveBeenCalledWith(userId, quote.id);
-
-      expect(findCatalogItemsUseCase.execute).toHaveBeenCalledWith({
-        serviceIds: [service.id],
-        partSupplyIds: [],
-      });
-
-      expect(response).toEqual(MePresenter.toQuoteDataResponse(quote, catalog));
+      expect(response).toEqual(MePresenter.toQuoteDataResponse(quote));
     });
   });
 
   describe('decideQuote', () => {
-    it('should read the catalog before deciding and present the result with it', async () => {
+    it('should forward to the use case and present the decided quote', async () => {
       const userId = randomUUID();
-      const partSupply = createMockInventoryPartSupplyGatewayResponse();
-
-      const quote = createMockQuote({
-        partsSupplies: [createMockQuotePartSupply({ partSupplyId: partSupply.id })],
-      });
-
-      const decided = createMockQuote({ id: quote.id, partsSupplies: quote.partsSupplies });
-      const catalog = { services: [], partsSupplies: [partSupply] };
+      const decided = readInternalQuoteFixture().data;
       const input = { action: QuoteDecisionAction.APPROVE };
 
-      findMyQuoteByIdUseCase.execute.mockResolvedValue(quote);
-      findCatalogItemsUseCase.execute.mockResolvedValue(catalog);
       decideQuoteUseCase.execute.mockResolvedValue(decided);
 
-      const response = await controller.decideQuote(userId, quote.id, input);
+      const response = await controller.decideQuote(userId, decided.id, input);
 
-      expect(findMyQuoteByIdUseCase.execute).toHaveBeenCalledWith(userId, quote.id);
-
-      expect(findCatalogItemsUseCase.execute).toHaveBeenCalledWith({
-        serviceIds: [],
-        partSupplyIds: [partSupply.id],
-      });
-
-      expect(decideQuoteUseCase.execute).toHaveBeenCalledWith(userId, quote.id, input);
-      expect(response).toEqual(MePresenter.toQuoteDataResponse(decided, catalog));
-    });
-
-    it('should answer 503 without deciding when the catalog is unavailable', async () => {
-      const quote = createMockQuote();
-
-      findMyQuoteByIdUseCase.execute.mockResolvedValue(quote);
-
-      findCatalogItemsUseCase.execute.mockRejectedValue(
-        new ServiceIntegrationException('Serviço de destino indisponível'),
-      );
-
-      await expect(
-        controller.decideQuote(randomUUID(), quote.id, { action: QuoteDecisionAction.APPROVE }),
-      ).rejects.toBeInstanceOf(ServiceIntegrationException);
-
-      expect(decideQuoteUseCase.execute).not.toHaveBeenCalled();
+      expect(decideQuoteUseCase.execute).toHaveBeenCalledWith(userId, decided.id, input);
+      expect(findMyQuoteByIdUseCase.execute).not.toHaveBeenCalled();
+      expect(response).toEqual(MePresenter.toQuoteDataResponse(decided));
     });
   });
 });

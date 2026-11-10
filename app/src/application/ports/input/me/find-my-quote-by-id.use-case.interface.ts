@@ -1,5 +1,5 @@
-import { Quote } from '@domain/entities/quote.entity';
+import { BillingQuoteWithItemsGatewayResponse } from '@application/ports/output/gateways/billing/billing-quotes-gateway.response';
 
 export interface IFindMyQuoteByIdUseCase {
-  execute(userId: string, quoteId: string): Promise<Quote>;
+  execute(userId: string, quoteId: string): Promise<BillingQuoteWithItemsGatewayResponse>;
 }

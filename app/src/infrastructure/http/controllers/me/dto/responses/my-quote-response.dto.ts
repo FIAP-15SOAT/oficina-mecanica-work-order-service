@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { QuoteStatus } from '@domain/enums/quote-status.enum';
+import { BillingQuoteStatus } from '@application/ports/output/gateways/billing/billing-quotes-gateway.response';
 import {
   MyQuoteSummaryResponse,
   MyQuoteResponse,
@@ -33,10 +33,7 @@ export class MyQuoteItemResponseDto implements MyQuoteItemResponse {
   totalPrice!: number;
 }
 
-/**
- * Summary — used in listings, where the items are not loaded
- * (`findByWorkOrderId` leaves out `services`/`partsSupplies` on purpose).
- */
+/** Summary — used in listings, where the Billing answers without items. */
 export class MyQuoteSummaryResponseDto implements MyQuoteSummaryResponse {
   @ApiProperty({
     format: 'uuid',
@@ -46,11 +43,11 @@ export class MyQuoteSummaryResponseDto implements MyQuoteSummaryResponse {
   id!: string;
 
   @ApiProperty({
-    enum: QuoteStatus,
-    example: QuoteStatus.SENT,
+    enum: BillingQuoteStatus,
+    example: BillingQuoteStatus.SENT,
     description: 'Status do orçamento',
   })
-  status!: QuoteStatus;
+  status!: BillingQuoteStatus;
 
   @ApiProperty({ example: 150, description: 'Soma dos valores de serviços' })
   servicesAmount!: number;
@@ -74,7 +71,7 @@ export class MyQuoteSummaryResponseDto implements MyQuoteSummaryResponse {
     format: 'date-time',
     description: 'Data de envio do orçamento para aprovação',
   })
-  sentAt!: Date | null;
+  sentAt!: string | null;
 
   @ApiPropertyOptional({
     nullable: true,
@@ -82,7 +79,7 @@ export class MyQuoteSummaryResponseDto implements MyQuoteSummaryResponse {
     format: 'date-time',
     description: 'Data de aprovação do orçamento',
   })
-  approvedAt!: Date | null;
+  approvedAt!: string | null;
 
   @ApiPropertyOptional({
     nullable: true,
@@ -90,10 +87,10 @@ export class MyQuoteSummaryResponseDto implements MyQuoteSummaryResponse {
     format: 'date-time',
     description: 'Data de rejeição do orçamento',
   })
-  rejectedAt!: Date | null;
+  rejectedAt!: string | null;
 }
 
-/** Detail — returned when the quote was loaded with `findByIdWithDetails`. */
+/** Detail — the quote with the items the Billing resolved. */
 export class MyQuoteResponseDto extends MyQuoteSummaryResponseDto implements MyQuoteResponse {
   @ApiProperty({ type: [MyQuoteItemResponseDto], description: 'Serviços do orçamento' })
   services!: MyQuoteItemResponseDto[];

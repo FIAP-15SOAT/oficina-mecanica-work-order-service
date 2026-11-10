@@ -317,7 +317,7 @@ describe('ApproveQuoteUseCase', () => {
 
     await expect(useCase.execute(quote.id, randomUUID())).rejects.toThrow(
       new BusinessRuleViolationException(
-        'Orçamento só pode ser aprovado com a Ordem de Serviço aguardando aprovação. Status atual: "APPROVED"',
+        'Orçamento só pode ser decidido com a Ordem de Serviço aguardando aprovação. Status atual: "APPROVED"',
       ),
     );
 

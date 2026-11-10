@@ -7,10 +7,7 @@ import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
 import { signTestCustomerToken } from '../helpers/customer-jwt.helper';
 import { InternalServicesStub, startInternalServicesStub } from '../helpers/internal-services-stub';
-import {
-  readInternalPartSupplyFixture,
-  readInternalServiceFixture,
-} from '../helpers/inventory-catalog-gateway-mock.factory';
+import { readInternalQuoteFixture } from '../helpers/billing-quotes-gateway-mock.factory';
 
 describe('Me (E2E)', () => {
   let ctx: TestContext;
@@ -413,6 +410,7 @@ describe('Me (E2E)', () => {
           year: 2015,
         },
       });
+
       const workOrderA = await ctx.prisma.workOrder.create({
         data: {
           number: '900001',
@@ -421,9 +419,14 @@ describe('Me (E2E)', () => {
           status: 'AWAITING_APPROVAL',
         },
       });
-      const quote = await ctx.prisma.quote.create({
-        data: { workOrderId: workOrderA.id, status: 'SENT', servicesAmount: 100, totalAmount: 100 },
-      });
+
+      const quote = {
+        ...readInternalQuoteFixture().data,
+        id: randomUUID(),
+        workOrderId: workOrderA.id,
+      };
+
+      stub.quotes.set(quote.id, { ...quote, status: 'SENT' });
 
       const otherVehicle = await ctx.prisma.vehicle.create({
         data: {
@@ -521,26 +524,42 @@ describe('Me (E2E)', () => {
 
       expect(decisionResponse.status).toBe(200);
       expect(decisionResponse.body.data.status).toBe('APPROVED');
-
-      // Deciding again on an already-decided quote is rejected as a business rule violation
-      const secondDecisionResponse = await request(httpServer)
-        .post(`/api/me/quotes/${quote.id}/decisions`)
-        .set('Authorization', `Bearer ${externalToken}`)
-        .send({ action: 'reject', reason: 'tarde demais' });
-
-      expect(secondDecisionResponse.status).toBe(409);
     });
+  });
 
-    /**
-     * The work order quote listing (`findByWorkOrderId`) does not load the
-     * items on purpose — but the detail (`GET /:quoteId`) and the decision
-     * (`POST /:quoteId/decisions`, both approve and reject) must return the
-     * items with the real service/part name, never blank.
-     */
-    it('should return quote items with real names on detail and on both decision outcomes, and omit items from the list', async () => {
+  // ─── Quotes read and decided in the Billing ─────────────────────────────────
+
+  describe('Quotes read and decided in the Billing', () => {
+    let token: string;
+    let userId: string;
+    let workOrderId: string;
+    let unlinkedWorkOrderId: string;
+
+    beforeEach(async () => {
       const customer = await createCustomer();
+      const otherCustomer = await createCustomer();
       const user = await createExternalUserLinkedTo(customer.id, generateCPF(2100));
-      const vehicle = await createVehicle(customer.id);
+
+      const vehicle = await ctx.prisma.vehicle.create({
+        data: {
+          customerId: customer.id,
+          plate: 'BIL1A23',
+          brand: 'Fiat',
+          model: 'Uno',
+          year: 2015,
+        },
+      });
+
+      const otherVehicle = await ctx.prisma.vehicle.create({
+        data: {
+          customerId: otherCustomer.id,
+          plate: 'BIL9Z99',
+          brand: 'VW',
+          model: 'Gol',
+          year: 2018,
+        },
+      });
+
       const workOrder = await ctx.prisma.workOrder.create({
         data: {
           number: '900101',
@@ -550,79 +569,155 @@ describe('Me (E2E)', () => {
         },
       });
 
-      const serviceId = randomUUID();
-      const partSupplyId = randomUUID();
-
-      stub.services.set(serviceId, {
-        ...readInternalServiceFixture().data,
-        id: serviceId,
-        name: 'Troca de óleo',
-      });
-
-      stub.partsSupplies.set(partSupplyId, {
-        ...readInternalPartSupplyFixture().data,
-        id: partSupplyId,
-        name: 'Filtro de óleo',
-      });
-
-      const quote = await ctx.prisma.quote.create({
-        data: { workOrderId: workOrder.id, status: 'SENT', totalAmount: 130 },
-      });
-      await ctx.prisma.quoteService.create({
+      const unlinkedWorkOrder = await ctx.prisma.workOrder.create({
         data: {
-          quoteId: quote.id,
-          serviceId,
-          quantity: 1,
-          unitPrice: 100,
-          totalPrice: 100,
-        },
-      });
-      await ctx.prisma.quotePartSupply.create({
-        data: {
-          quoteId: quote.id,
-          partSupplyId,
-          quantity: 1,
-          unitPrice: 30,
-          totalPrice: 30,
+          number: '900102',
+          customerId: otherCustomer.id,
+          vehicleId: otherVehicle.id,
+          status: 'AWAITING_APPROVAL',
         },
       });
 
-      const token = signTestCustomerToken(user.id);
+      token = signTestCustomerToken(user.id);
+      userId = user.id;
+      workOrderId = workOrder.id;
+      unlinkedWorkOrderId = unlinkedWorkOrder.id;
+    });
 
-      const listResponse = await request(httpServer)
-        .get(`/api/me/work-orders/${workOrder.id}/quotes`)
+    it('should list the quotes of a linked work order from the Billing', async () => {
+      const quote = { ...readInternalQuoteFixture().data, id: randomUUID(), workOrderId };
+
+      stub.quotes.set(quote.id, quote);
+
+      const res = await request(httpServer)
+        .get(`/api/me/work-orders/${workOrderId}/quotes`)
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
-      expect(listResponse.body.data).toHaveLength(1);
-      expect(listResponse.body.data[0]).not.toHaveProperty('services');
-      expect(listResponse.body.data[0]).not.toHaveProperty('partsSupplies');
+      expect(res.body.data).toEqual([
+        {
+          id: quote.id,
+          status: quote.status,
+          servicesAmount: quote.servicesAmount,
+          partsAmount: quote.partsAmount,
+          totalAmount: quote.totalAmount,
+          notes: quote.notes,
+          sentAt: quote.sentAt,
+          approvedAt: quote.approvedAt,
+          rejectedAt: quote.rejectedAt,
+        },
+      ]);
+    });
+
+    it('should answer 404 for the quotes of an unlinked work order', async () => {
+      await request(httpServer)
+        .get(`/api/me/work-orders/${unlinkedWorkOrderId}/quotes`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('should answer 404 without quote data for a quote of an unlinked work order', async () => {
+      const quote = {
+        ...readInternalQuoteFixture().data,
+        id: randomUUID(),
+        workOrderId: unlinkedWorkOrderId,
+        status: 'SENT',
+      };
+
+      stub.quotes.set(quote.id, quote);
 
       const detailResponse = await request(httpServer)
         .get(`/api/me/quotes/${quote.id}`)
         .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+
+      const decisionResponse = await request(httpServer)
+        .post(`/api/me/quotes/${quote.id}/decisions`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ action: 'approve' })
+        .expect(404);
+
+      expect(detailResponse.body).not.toHaveProperty('data');
+      expect(decisionResponse.body).not.toHaveProperty('data');
+      expect(stub.quotes.get(quote.id)).toEqual(quote);
+    });
+
+    it('should forward the approval to the Billing and answer its quote', async () => {
+      const quote = { ...readInternalQuoteFixture().data, id: randomUUID(), workOrderId };
+
+      stub.quotes.set(quote.id, { ...quote, status: 'SENT', decidedBy: null });
+
+      const res = await request(httpServer)
+        .post(`/api/me/quotes/${quote.id}/decisions`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ action: 'approve' })
         .expect(200);
 
-      expect(detailResponse.body.data.services).toEqual([
-        expect.objectContaining({ name: 'Troca de óleo' }),
-      ]);
-      expect(detailResponse.body.data.partsSupplies).toEqual([
-        expect.objectContaining({ name: 'Filtro de óleo' }),
-      ]);
+      expect(res.body.data).toMatchObject({
+        id: quote.id,
+        status: 'APPROVED',
+        services: [expect.objectContaining({ name: quote.services[0].name })],
+        partsSupplies: [expect.objectContaining({ name: quote.partsSupplies[0].name })],
+      });
 
-      const rejectResponse = await request(httpServer)
+      expect(stub.quotes.get(quote.id)).toMatchObject({ status: 'APPROVED', decidedBy: userId });
+    });
+
+    it('should answer 409 without forwarding when a quote approval is in progress', async () => {
+      const quote = {
+        ...readInternalQuoteFixture().data,
+        id: randomUUID(),
+        workOrderId,
+        status: 'SENT',
+      };
+
+      stub.quotes.set(quote.id, quote);
+
+      await ctx.prisma.sagaInstance.create({
+        data: {
+          type: 'QUOTE_APPROVAL',
+          correlationId: randomUUID(),
+          workOrderId,
+          status: 'RESERVING_STOCK',
+        },
+      });
+
+      const res = await request(httpServer)
+        .post(`/api/me/quotes/${quote.id}/decisions`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ action: 'approve' })
+        .expect(409);
+
+      expect(res.body.message).toBe(
+        'Ordem de serviço com aprovação de orçamento em andamento: aguarde a conclusão e tente novamente',
+      );
+      expect(stub.quotes.get(quote.id)).toEqual(quote);
+    });
+
+    it('should answer the Billing 409 on a concurrent decision', async () => {
+      const quote = {
+        ...readInternalQuoteFixture().data,
+        id: randomUUID(),
+        workOrderId,
+        status: 'SENT',
+      };
+
+      const message = 'Orçamento só pode ser decidido no status SENT. Status atual: "APPROVED"';
+
+      stub.quotes.set(quote.id, quote);
+      stub.nextResponses.set(`POST /internal/quotes/${quote.id}/decisions`, {
+        status: 409,
+        body: { statusCode: 409, error: 'Conflict', message },
+      });
+
+      const res = await request(httpServer)
         .post(`/api/me/quotes/${quote.id}/decisions`)
         .set('Authorization', `Bearer ${token}`)
         .send({ action: 'reject', reason: 'Preço muito alto' })
-        .expect(200);
+        .expect(409);
 
-      expect(rejectResponse.body.data.status).toBe('REJECTED');
-      expect(rejectResponse.body.data.services).toEqual([
-        expect.objectContaining({ name: 'Troca de óleo' }),
-      ]);
-      expect(rejectResponse.body.data.partsSupplies).toEqual([
-        expect.objectContaining({ name: 'Filtro de óleo' }),
-      ]);
+      expect(res.body.message).toBe(message);
+      expect(stub.quotes.get(quote.id)).toEqual(quote);
     });
   });
 

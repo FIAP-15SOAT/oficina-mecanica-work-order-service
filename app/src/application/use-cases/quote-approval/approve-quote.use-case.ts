@@ -75,7 +75,7 @@ export class ApproveQuoteUseCase implements IApproveQuoteUseCase {
     const previousQuoteStatus = quote.status;
     const previousStatus = workOrder.status;
 
-    workOrder.ensureCanApproveQuote();
+    workOrder.ensureAwaitingQuoteDecision();
     quote.approve(decidedBy);
 
     const replacedQuotes = this.rejectOpenQuotes(

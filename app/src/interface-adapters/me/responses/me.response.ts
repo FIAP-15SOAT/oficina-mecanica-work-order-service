@@ -1,6 +1,6 @@
 import { UserRole } from '@domain/enums/user-role.enum';
 import { CustomerType } from '@domain/enums/customer-type.enum';
-import { QuoteStatus } from '@domain/enums/quote-status.enum';
+import { BillingQuoteStatus } from '@application/ports/output/gateways/billing/billing-quotes-gateway.response';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { PaginationMeta } from '@domain/interfaces/common/pagination.interface';
 
@@ -58,24 +58,20 @@ export interface MyQuoteItemResponse {
   totalPrice: number;
 }
 
-/**
- * Summary — used in listings, where the items are not loaded
- * (`findByWorkOrderId` leaves out `services`/`partsSupplies` on purpose,
- * so a list row does not pull N items).
- */
+/** Summary — used in listings, where the Billing answers without items. */
 export interface MyQuoteSummaryResponse {
   id: string;
-  status: QuoteStatus;
+  status: BillingQuoteStatus;
   servicesAmount: number;
   partsAmount: number;
   totalAmount: number;
   notes: string | null;
-  sentAt: Date | null;
-  approvedAt: Date | null;
-  rejectedAt: Date | null;
+  sentAt: string | null;
+  approvedAt: string | null;
+  rejectedAt: string | null;
 }
 
-/** Detail — requires a Quote loaded with `findByIdWithDetails`. */
+/** Detail — the quote with the items the Billing resolved. */
 export interface MyQuoteResponse extends MyQuoteSummaryResponse {
   services: MyQuoteItemResponse[];
   partsSupplies: MyQuoteItemResponse[];

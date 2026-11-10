@@ -8,6 +8,7 @@ import { PrismaVehicleRepository } from './prisma-vehicle.repository';
 import { PrismaWorkOrderRepository } from './prisma-work-order.repository';
 import { PrismaQuoteRepository } from './prisma-quote.repository';
 import { PrismaStatusHistoryRepository } from './prisma-status-history.repository';
+import { PrismaSagaInstanceRepository } from './prisma-saga-instance.repository';
 import { PrismaUnitOfWork } from './prisma-unit-of-work';
 
 const REPOSITORY_PROVIDERS = [
@@ -19,6 +20,7 @@ const REPOSITORY_PROVIDERS = [
   { provide: 'IWorkOrderRepository', useClass: PrismaWorkOrderRepository },
   { provide: 'IQuoteRepository', useClass: PrismaQuoteRepository },
   { provide: 'IStatusHistoryRepository', useClass: PrismaStatusHistoryRepository },
+  { provide: 'ISagaInstanceRepository', useClass: PrismaSagaInstanceRepository },
   { provide: 'IUnitOfWork', useClass: PrismaUnitOfWork },
 ];
 

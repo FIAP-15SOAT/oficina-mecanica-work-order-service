@@ -381,21 +381,21 @@ describe('WorkOrder Entity', () => {
     });
   });
 
-  describe('ensureCanApproveQuote()', () => {
-    it('should allow quote approval in AWAITING_APPROVAL', () => {
+  describe('ensureAwaitingQuoteDecision()', () => {
+    it('should allow a quote decision in AWAITING_APPROVAL', () => {
       const workOrder = createMockWorkOrder({ status: WorkOrderStatus.AWAITING_APPROVAL });
 
-      expect(() => workOrder.ensureCanApproveQuote()).not.toThrow();
+      expect(() => workOrder.ensureAwaitingQuoteDecision()).not.toThrow();
     });
 
     it.each([WorkOrderStatus.IN_DIAGNOSIS, WorkOrderStatus.APPROVED, WorkOrderStatus.REJECTED])(
-      'should refuse quote approval outside AWAITING_APPROVAL (%s)',
+      'should refuse a quote decision outside AWAITING_APPROVAL (%s)',
       (status) => {
         const workOrder = createMockWorkOrder({ status });
 
-        expect(() => workOrder.ensureCanApproveQuote()).toThrow(
+        expect(() => workOrder.ensureAwaitingQuoteDecision()).toThrow(
           new BusinessRuleViolationException(
-            `Orçamento só pode ser aprovado com a Ordem de Serviço aguardando aprovação. Status atual: "${status}"`,
+            `Orçamento só pode ser decidido com a Ordem de Serviço aguardando aprovação. Status atual: "${status}"`,
           ),
         );
       },
