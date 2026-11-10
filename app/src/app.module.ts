@@ -29,6 +29,7 @@ import { MeModule } from './infrastructure/http/controllers/me/me.module';
 import { InternalModule } from './infrastructure/http/controllers/internal/internal.module';
 import { MessagingModule } from './infrastructure/messaging/messaging.module';
 import { QuoteApprovalMessagingModule } from './infrastructure/messaging/handlers/quote-approval/quote-approval-messaging.module';
+import { QuoteMessagingModule } from './infrastructure/messaging/handlers/quote/quote-messaging.module';
 import { CacheModule } from './infrastructure/cache/cache.module';
 import { ClientsModule } from './infrastructure/clients/clients.module';
 import { GatewaysModule } from './infrastructure/gateways/gateways.module';
@@ -70,6 +71,7 @@ import { GatewaysModule } from './infrastructure/gateways/gateways.module';
     WorkOrderModule,
     QuoteModule,
     QuoteApprovalMessagingModule,
+    QuoteMessagingModule,
     MeModule,
     InternalModule,
   ],

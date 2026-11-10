@@ -338,6 +338,10 @@ export class WorkOrder {
     [WorkOrderStatus.CANCELLED]: [],
   };
 
+  canChangeStatusTo(newStatus: WorkOrderStatus): boolean {
+    return (WorkOrder.STATUS_TRANSITION_MAP[this.status] ?? []).includes(newStatus);
+  }
+
   static isTerminalStatus(status: WorkOrderStatus): boolean {
     return (WorkOrder.STATUS_TRANSITION_MAP[status] ?? []).length === 0;
   }
@@ -349,9 +353,7 @@ export class WorkOrder {
       );
     }
 
-    const allowedTransitions = WorkOrder.STATUS_TRANSITION_MAP[this.status] || [];
-
-    if (!allowedTransitions.includes(newStatus)) {
+    if (!this.canChangeStatusTo(newStatus)) {
       throw new BusinessRuleViolationException(
         `Transição de status não permitida: de ${this.status} para ${newStatus}.`,
       );

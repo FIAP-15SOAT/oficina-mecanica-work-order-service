@@ -345,6 +345,19 @@ describe('WorkOrder Entity', () => {
     });
   });
 
+  describe('canChangeStatusTo()', () => {
+    it.each([
+      [WorkOrderStatus.IN_DIAGNOSIS, WorkOrderStatus.AWAITING_APPROVAL, true],
+      [WorkOrderStatus.AWAITING_APPROVAL, WorkOrderStatus.REJECTED, true],
+      [WorkOrderStatus.CANCELLED, WorkOrderStatus.AWAITING_APPROVAL, false],
+      [WorkOrderStatus.AWAITING_APPROVAL, WorkOrderStatus.AWAITING_APPROVAL, false],
+    ])('should tell whether a work order in %s can change to %s', (status, newStatus, expected) => {
+      const workOrder = createMockWorkOrder({ status });
+
+      expect(workOrder.canChangeStatusTo(newStatus)).toBe(expected);
+    });
+  });
+
   describe('isTerminalStatus()', () => {
     it('should report a status with outgoing transitions as not terminal', () => {
       expect(WorkOrder.isTerminalStatus(WorkOrderStatus.RECEIVED)).toBe(false);

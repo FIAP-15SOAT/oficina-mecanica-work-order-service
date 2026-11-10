@@ -100,6 +100,15 @@ export const BUSINESS_EVENTS = {
     message: 'stock reservation reply skipped because the saga is not reserving stock',
     level: 'info',
   }),
+  QUOTE_EVENT_SKIPPED: defineLogEvent<{
+    quoteId: string;
+    workOrderId: string;
+    currentWorkOrderStatus: string;
+  }>({
+    name: 'quote_event.skipped',
+    message: 'billing quote event skipped because the work order is not in an expected status',
+    level: 'info',
+  }),
   WORK_ORDER_STATUS_UPDATED: defineLogEvent<{
     workOrderId: string;
     workOrderNumber: string;
