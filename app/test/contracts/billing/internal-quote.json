@@ -1,0 +1,47 @@
+{
+  "$source": "oficina-mecanica-billing-service app/test/contracts/internal-quote.json",
+  "data": {
+    "id": "3e7a1c5d-2b4f-4a8e-9d6c-1f0b2a3c4d5e",
+    "workOrderId": "6f1c2b9e-4d3a-4e8b-9c7d-2a1b3c4d5e6f",
+    "status": "APPROVED",
+    "notes": null,
+    "decidedBy": "0b8e7d6c-5a4f-4e3d-8c2b-1a0f9e8d7c6b",
+    "rejectionReason": null,
+    "sentAt": "2026-10-25T11:00:00.000-03:00",
+    "approvedAt": "2026-10-25T12:00:00.000-03:00",
+    "rejectedAt": null,
+    "servicesAmount": 129.9,
+    "partsAmount": 90,
+    "totalAmount": 219.9,
+    "createdAt": "2026-10-25T10:00:00.000-03:00",
+    "updatedAt": "2026-10-25T12:00:00.000-03:00",
+    "services": [
+      {
+        "id": "5b1f7c2e-8a4d-4c63-9e1b-3d2a6f8c9b01",
+        "name": "Troca de Óleo Interna",
+        "description": "Troca completa com filtro",
+        "quantity": 1,
+        "unitPrice": 129.9,
+        "totalPrice": 129.9,
+        "createdAt": "2026-10-25T10:00:00.000-03:00",
+        "updatedAt": "2026-10-25T10:00:00.000-03:00"
+      }
+    ],
+    "partsSupplies": [
+      {
+        "id": "7c2d8e3f-9b5e-4d74-8f2c-4e3b7a9d0c12",
+        "name": "Filtro de Óleo Interno",
+        "description": "Filtro para motor 1.0",
+        "sku": "FO-INT-001",
+        "partNumber": "MANN-W712",
+        "category": "PART",
+        "unit": "UN",
+        "quantity": 2,
+        "unitPrice": 45,
+        "totalPrice": 90,
+        "createdAt": "2026-10-25T10:00:00.000-03:00",
+        "updatedAt": "2026-10-25T10:00:00.000-03:00"
+      }
+    ]
+  }
+}

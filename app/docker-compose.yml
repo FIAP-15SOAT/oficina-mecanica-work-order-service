@@ -71,6 +71,7 @@ services:
       CACHE_URL: redis://:valkey@valkey:6379
       CACHE_TTL_SECONDS: 43200
       INVENTORY_SERVICE_URL: http://host.docker.internal:3003
+      BILLING_SERVICE_URL: http://host.docker.internal:3002
       TZ: America/Sao_Paulo
     # The other services run in their own compose stacks, published on the host.
     extra_hosts:
