@@ -241,7 +241,7 @@ app/test/
 app/prisma.config.ts                 # Configuração do Prisma v7 (schema, migrations, seed e datasource)
 
 app/prisma/
-├── schema.prisma                    # Schema do banco (16 modelos, 8 enums)
+├── schema.prisma                    # Schema do banco (13 modelos, 7 enums)
 ├── migrations/                      # Migrations geradas pelo Prisma — inclui a sequence
 │                                    # `work_order_number_seq` (números de OS),
 │                                    # endurecimento de cascade deletes,
@@ -255,7 +255,7 @@ app/prisma/
 
 ## Modelos do banco de dados
 
-16 modelos, cobrindo identidade/acesso, veículos, Ordem de Serviço, o estado da Saga de aprovação e o outbox da mensageria, mais as três tabelas antigas de orçamento, sem uso até a migration que as remove. Diagrama entidade-relacionamento (com os tipos reais do Postgres), explicação tabela a tabela, enums e convenções de modelagem: ver [`docs/database.md`](database.md).
+13 modelos, cobrindo identidade/acesso, veículos, Ordem de Serviço, o estado da Saga de aprovação e o outbox da mensageria. Diagrama entidade-relacionamento (com os tipos reais do Postgres), explicação tabela a tabela, enums e convenções de modelagem: ver [`docs/database.md`](database.md).
 
 ## DDD — Aggregate Roots, Entidades e Value Objects
 
@@ -367,7 +367,7 @@ Os orçamentos são do **Billing**, o serviço da solução dono dos orçamentos
 - orquestra a aprovação, que reserva o estoque no Inventory e, se a reserva falhar, pede ao Billing que desfaça a aprovação ([Aprovação de orçamento com reserva de estoque](#aprovação-de-orçamento-com-reserva-de-estoque));
 - serve os orçamentos na área do Cliente da Oficina, lendo-os no Billing e repassando a decisão a ele ([Orçamentos na área do Cliente da Oficina](#orçamentos-na-área-do-cliente-da-oficina)).
 
-Do orçamento, a OS guarda só os itens aprovados (id, quantidade e preço), materializados quando ela vai a `APPROVED`. As tabelas antigas de orçamento continuam no banco, sem uso, até a migration que as remove (ver [Banco de Dados](database.md#tabelas-de-orçamento-sem-uso)).
+Do orçamento, a OS guarda só os itens aprovados (id, quantidade e preço), materializados quando ela vai a `APPROVED`.
 
 Os dois fluxos que gravam neste serviço e no Billing são **Sagas**: uma sequência de transações locais, cada uma num serviço, ligadas por chamadas ou mensagens, em que a falha de um passo dispara um passo de **compensação** que desfaz o que os anteriores gravaram.
 

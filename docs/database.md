@@ -4,7 +4,7 @@ Modelo relacional (PostgreSQL) da API, definido em [`prisma/schema.prisma`](../a
 
 ## Diagrama entidade-relacionamento
 
-<p align="center"><img src="diagrams/database-er.png" alt="Diagrama entidade-relacionamento dos 16 modelos do schema Prisma: User, Customer, Address, Vehicle, WorkOrderStatusInfo, WorkOrder e seus itens de linha (WorkOrderService, WorkOrderPartSupply), Quote (com decided_by e replaced_by_quote_id) e seus itens de linha (QuoteService, QuotePartSupply), StatusHistory, SagaInstance (tabela saga_instances), UserCustomer, PasswordResetCode e OutboxMessage (tabela outbox); com tipos reais do Postgres, chaves primárias, estrangeiras e únicas" width="100%"></p>
+<p align="center"><img src="diagrams/database-er.png" alt="Diagrama entidade-relacionamento dos 13 modelos do schema Prisma: User, Customer, Address, Vehicle, WorkOrderStatusInfo, WorkOrder e seus itens de linha (WorkOrderService, WorkOrderPartSupply), StatusHistory, SagaInstance (tabela saga_instances), UserCustomer, PasswordResetCode e OutboxMessage (tabela outbox); com tipos reais do Postgres, chaves primárias, estrangeiras e únicas" width="100%"></p>
 
 Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgres** (`VARCHAR(n)`, `TIMESTAMP(3)`, `DECIMAL(10,2)`, os enums nomeados, etc.), conferidos a partir das migrations — não os tipos abstratos do schema Prisma (`String`, `Int`, `DateTime`).
 
@@ -29,13 +29,9 @@ Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgr
 - **`work_order_services`** / **`work_order_part_supplies`** (`WorkOrderService` / `WorkOrderPartSupply`) — itens de linha da OS (serviços e peças/insumos aplicados), com chave primária composta `(work_order_id, service_id | part_supply_id)` em vez de surrogate key. Apagados em cascata com a OS. `service_id` e `part_supply_id` são referências simples, sem FK: o catálogo é do Inventory, e o item guarda só o id, a quantidade e o preço.
 - **`status_history`** (`StatusHistory`) — histórico de transições de status de uma OS, com o usuário que efetuou a mudança (`changed_by_id`, opcional). A confirmação da compensação da Saga de aprovação grava uma entrada que não muda o status (`AWAITING_APPROVAL → AWAITING_APPROVAL`, ou `CANCELLED → CANCELLED` quando a OS foi cancelada antes de a Saga começar), sem autor e com a nota do motivo.
 
-### Tabelas de orçamento sem uso
-
-Os orçamentos são do Billing, o serviço da solução dono dos orçamentos e dos pagamentos (ver [Orçamentos no Billing](architecture.md#orçamentos-no-billing)). As tabelas que este serviço usava para eles, **`quotes`** (`Quote`), **`quote_services`** (`QuoteService`) e **`quote_part_supplies`** (`QuotePartSupply`), e o enum `QuoteStatus` continuam no schema, mas nenhum código as lê ou grava. Elas saem numa migration posterior, aplicada no deploy seguinte ao que deixou de usá-las: assim, a versão anterior do serviço ainda encontra as tabelas se o deploy for desfeito. Nenhuma tabela em uso tem chave estrangeira para elas.
-
 ### Saga de aprovação
 
-- **`saga_instances`** (`SagaInstance`) — o estado de cada Saga que o serviço orquestra (ver [Aprovação de orçamento com reserva de estoque](architecture.md#aprovação-de-orçamento-com-reserva-de-estoque)). Hoje só existe o tipo `QUOTE_APPROVAL`, com `correlation_id` igual ao id do orçamento aprovado e `work_order_id` igual à OS dele. `status` vai de `RESERVING_STOCK` a `COMPLETED` (reserva confirmada) ou a `COMPENSATING` (aprovação desfeita sendo revertida no Billing) e, confirmada a reversão, a `COMPENSATED`. A aprovação sem peças cria a linha já `COMPLETED`. `failure_reason` diz por que a Saga foi compensada: `INSUFFICIENT_STOCK` (o Inventory recusou a reserva) ou `WORK_ORDER_NOT_AWAITING` (a OS já não aguardava aprovação quando a Saga começou). A migration `add_saga_compensation` acrescentou esses dois valores, `COMPENSATING` e `WORK_ORDER_NOT_AWAITING`, aos enums que já existiam.
+- **`saga_instances`** (`SagaInstance`) — o estado de cada Saga que o serviço orquestra (ver [Aprovação de orçamento com reserva de estoque](architecture.md#aprovação-de-orçamento-com-reserva-de-estoque)). Hoje só existe o tipo `QUOTE_APPROVAL`, com `correlation_id` igual ao id do orçamento aprovado, guardado no Billing, o serviço da solução dono dos orçamentos e dos pagamentos (ver [Orçamentos no Billing](architecture.md#orçamentos-no-billing)), e `work_order_id` igual à OS dele. `status` vai de `RESERVING_STOCK` a `COMPLETED` (reserva confirmada) ou a `COMPENSATING` (aprovação desfeita sendo revertida no Billing) e, confirmada a reversão, a `COMPENSATED`. A aprovação sem peças cria a linha já `COMPLETED`. `failure_reason` diz por que a Saga foi compensada: `INSUFFICIENT_STOCK` (o Inventory recusou a reserva) ou `WORK_ORDER_NOT_AWAITING` (a OS já não aguardava aprovação quando a Saga começou). A migration `add_saga_compensation` acrescentou esses dois valores, `COMPENSATING` e `WORK_ORDER_NOT_AWAITING`, aos enums que já existiam.
   - **Única por orçamento.** A chave única `(type, correlation_id)` impede duas Sagas para o mesmo orçamento; aprovar de novo um orçamento compensado por falta de estoque reabre a mesma linha.
   - **Sem `version`.** Toda escrita na Saga vai numa transação que também grava com versão a OS, e a fila FIFO entrega as mensagens do Billing e do Inventory em ordem por OS.
   - O índice em `work_order_id` atende a consulta que barra o cancelamento da OS e a decisão do cliente enquanto a OS tem uma Saga ativa (`RESERVING_STOCK` ou `COMPENSATING`). Apagada em cascata com a OS.
@@ -53,17 +49,17 @@ Os orçamentos são do Billing, o serviço da solução dono dos orçamentos e d
 
 ## Enums
 
-`UserRole`, `CustomerType`, `WorkOrderStatus`, `WorkOrderServiceStatus`, `QuoteStatus` (sem uso, ver [Tabelas de orçamento sem uso](#tabelas-de-orçamento-sem-uso)), `SagaType`, `SagaStatus` e `SagaFailureReason`. `UserRole` **não** ganhou um valor `CUSTOMER` — o acesso externo não é modelado como papel interno (ver [ADR 0004](adr/0004-autenticacao-de-clientes.md)).
+`UserRole`, `CustomerType`, `WorkOrderStatus`, `WorkOrderServiceStatus`, `SagaType`, `SagaStatus` e `SagaFailureReason`. `UserRole` **não** ganhou um valor `CUSTOMER` — o acesso externo não é modelado como papel interno (ver [ADR 0004](adr/0004-autenticacao-de-clientes.md)).
 
 ## Convenções de modelagem
 
 - **IDs**: `uuid` v4 (`@db.Uuid`) gerados pelo Prisma — exceto o número da OS, gerado por uma **sequence PostgreSQL** (`work_order_number_seq`, formatada com 6 dígitos zero-padded — `000001`, `000002`, …), e o `id` sequencial do `outbox` (ver [Mensageria](#mensageria)).
 - **Timestamps**: `created_at` / `updated_at` em todas as entidades não-imutáveis (`Address` e `StatusHistory` guardam apenas `created_at`).
-- **Concorrência otimista**: coluna `version Int @default(1)` em `WorkOrder` (e em `Quote`, sem uso).
-- **Cascade deletes** para itens dependentes (`WorkOrderService`, `WorkOrderPartSupply`, `QuoteService`, `QuotePartSupply`, `StatusHistory`, `SagaInstance`, `Address`).
+- **Concorrência otimista**: coluna `version Int @default(1)` em `WorkOrder`.
+- **Cascade deletes** para itens dependentes (`WorkOrderService`, `WorkOrderPartSupply`, `StatusHistory`, `SagaInstance`, `Address`).
 - **Referências a outro serviço sem FK**: o id de um serviço ou peça do Inventory nos itens e o id do orçamento do Billing em `saga_instances.correlation_id` ficam sem chave estrangeira, porque a linha está em outro banco.
 - **Unicidade**: `User.email`, `User.cpf`, `Customer.email`, `Customer.document`, `Vehicle.plate`, `WorkOrder.number`, `SagaInstance (type, correlation_id)`.
-- **Identidades compostas**: `WorkOrderService`, `WorkOrderPartSupply`, `QuoteService` e `QuotePartSupply` usam chave primária composta `(parentId, itemId)` em vez de surrogate key.
+- **Identidades compostas**: `WorkOrderService` e `WorkOrderPartSupply` usam chave primária composta `(parentId, itemId)` em vez de surrogate key.
 - **Índices secundários** por colunas usadas em filtros (`status`, `customer_id`, `vehicle_id`, `assigned_user_id`, `part_supply_id`, `work_order_id`, etc.) e índice composto `(status, created_at)` em `work_orders` para listagens ordenadas.
 
 ## Conexão em produção
