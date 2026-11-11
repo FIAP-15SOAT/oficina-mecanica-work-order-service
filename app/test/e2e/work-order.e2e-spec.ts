@@ -2,6 +2,7 @@ import type { Server } from 'http';
 import { randomUUID } from 'node:crypto';
 import Redis from 'ioredis';
 import request from 'supertest';
+import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { MessagePayloads, MessageType } from '@domain/messaging/message-catalog';
 import { MessageHandlerRegistry } from '@infrastructure/messaging/message-handler.registry';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
@@ -505,6 +506,40 @@ describe('WorkOrder (E2E)', () => {
       expect(res.status).toBe(409);
       expect(res.body.message).toBe(message);
       expect(await ctx.prisma.workOrder.count()).toBe(0);
+    });
+
+    describe('when the work order write fails', () => {
+      afterEach(() => {
+        jest.restoreAllMocks();
+      });
+
+      it('should delete the initial quote when the work order write fails', async () => {
+        const customer = await createCustomer();
+        const vehicle = await createVehicle(customer.id);
+        const quoteCount = stub.quotes.size;
+        // The stub's DELETE /internal/quotes/:id route is the only caller of quotes.delete.
+        const deleteQuote = jest.spyOn(stub.quotes, 'delete');
+
+        // After the customer and vehicle, so the only transaction it fails is the work order write.
+        jest
+          .spyOn(ctx.app.get<IUnitOfWork>('IUnitOfWork'), 'executeTransaction')
+          .mockRejectedValueOnce(new Error('work order write failed'));
+
+        const res = await request(httpServer)
+          .post('/api/work-orders')
+          .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+          .send({
+            customerId: customer.id,
+            vehicleId: vehicle.id,
+            services: [{ serviceId: randomUUID(), quantity: 1 }],
+          });
+
+        expect(res.status).toBe(500);
+        expect(deleteQuote).toHaveBeenCalledTimes(1);
+        expect(deleteQuote).toHaveReturnedWith(true);
+        expect(stub.quotes.size).toBe(quoteCount);
+        expect(await ctx.prisma.workOrder.count()).toBe(0);
+      });
     });
   });
 
