@@ -3724,17 +3724,118 @@
           "response": []
         },
         {
-          "name": "TC-WO-07 — Atualizar Status da OS (DELIVERED)",
+          "name": "TC-WO-30 — Enviar o orçamento inicial ao cliente (Billing)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// The opening created the initial quote in the Billing; its id comes from the work order quote list.",
+                  "pm.sendRequest({",
+                  "    url: pm.environment.get('baseUrl') + '/api/work-orders/' + pm.environment.get('workOrderId') + '/quotes',",
+                  "    method: 'GET',",
+                  "    header: { Authorization: 'Bearer ' + pm.environment.get('authToken') }",
+                  "}, (err, res) => {",
+                  "    if (!err && res.code === 200 && res.json().data.length > 0) {",
+                  "        pm.environment.set('quoteId', res.json().data[0].id);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Orçamento enviado', () => pm.expect(pm.response.json().data.status).to.equal('SENT'));",
+                  "",
+                  "// The work order only becomes AWAITING_APPROVAL after it consumes billing.quote.sent.",
+                  "const maxAttempts = 15;",
+                  "",
+                  "function waitForWorkOrderAwaitingApproval(attempt) {",
+                  "    pm.sendRequest({",
+                  "        url: pm.environment.get('baseUrl') + '/api/work-orders/' + pm.environment.get('workOrderId'),",
+                  "        method: 'GET',",
+                  "        header: { Authorization: 'Bearer ' + pm.environment.get('authToken') }",
+                  "    }, (err, res) => {",
+                  "        const status = !err && res.code === 200 ? res.json().data.status : null;",
+                  "",
+                  "        if (status === 'AWAITING_APPROVAL' || attempt >= maxAttempts) {",
+                  "            pm.test('OS aguardando aprovação depois do envio', () => pm.expect(status).to.equal('AWAITING_APPROVAL'));",
+                  "            return;",
+                  "        }",
+                  "",
+                  "        setTimeout(() => waitForWorkOrderAwaitingApproval(attempt + 1), 1000);",
+                  "    });",
+                  "}",
+                  "",
+                  "waitForWorkOrderAwaitingApproval(1);"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/submissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "quotes",
+                "{{quoteId}}",
+                "submissions"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-WO-31 — Aprovar o orçamento (Billing)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));"
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Orçamento aprovado com sucesso', () => {",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.data.status).to.equal('APPROVED');",
+                  "    pm.expect(res.data.approvedAt).to.be.a('string').and.not.empty;",
+                  "});",
+                  "",
+                  "// With parts, the work order only becomes APPROVED after the Inventory confirms the stock reservation.",
+                  "const maxAttempts = 15;",
+                  "",
+                  "function waitForWorkOrderApproval(attempt) {",
+                  "    pm.sendRequest({",
+                  "        url: pm.environment.get('baseUrl') + '/api/work-orders/' + pm.environment.get('workOrderId'),",
+                  "        method: 'GET',",
+                  "        header: { Authorization: 'Bearer ' + pm.environment.get('authToken') }",
+                  "    }, (err, res) => {",
+                  "        const status = !err && res.code === 200 ? res.json().data.status : null;",
+                  "",
+                  "        if (status === 'APPROVED' || attempt >= maxAttempts) {",
+                  "            pm.test('OS aprovada depois da reserva de estoque', () => pm.expect(status).to.equal('APPROVED'));",
+                  "            return;",
+                  "        }",
+                  "",
+                  "        setTimeout(() => waitForWorkOrderApproval(attempt + 1), 1000);",
+                  "    });",
+                  "}",
+                  "",
+                  "waitForWorkOrderApproval(1);"
                 ],
-                "type": "text/javascript",
-                "packages": {},
-                "requests": {}
+                "type": "text/javascript"
               }
             }
           ],
@@ -3748,7 +3849,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n    \"status\": \"DELIVERED\",\r\n    \"notes\": \"Veículo entregue para o cliente\"\r\n}",
+              "raw": "{\"status\": \"APPROVED\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3756,14 +3857,14 @@
               }
             },
             "url": {
-              "raw": "{{baseUrl}}/api/work-orders/{{workOrderId}}",
+              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "work-orders",
-                "{{workOrderId}}"
+                "quotes",
+                "{{quoteId}}"
               ]
             }
           },
@@ -3866,6 +3967,52 @@
           "response": []
         },
         {
+          "name": "TC-WO-07 — Atualizar Status da OS (DELIVERED)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"status\": \"DELIVERED\",\r\n    \"notes\": \"Veículo entregue para o cliente\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/work-orders/{{workOrderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "work-orders",
+                "{{workOrderId}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
           "name": "TC-WO-10 — Histórico de Status da OS",
           "event": [
             {
@@ -3891,41 +4038,6 @@
                 "work-orders",
                 "{{workOrderId}}",
                 "status-history"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-WO-11 — Listar Orçamentos de uma OS (sucesso)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Retorna lista de orçamentos da OS', () => {",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.data).to.be.an('array');",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/work-orders/{{workOrderId}}/quotes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "work-orders",
-                "{{workOrderId}}",
-                "quotes"
               ]
             }
           },
@@ -4441,37 +4553,6 @@
           "response": []
         },
         {
-          "name": "TC-WO-24 — Listar orçamentos de OS inexistente (404)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 404 Not Found', () => pm.response.to.have.status(404));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/work-orders/00000000-0000-0000-0000-000000000000/quotes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "work-orders",
-                "00000000-0000-0000-0000-000000000000",
-                "quotes"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
           "name": "TC-WO-25 — Filtrar OSs por vehicleId (200)",
           "event": [
             {
@@ -4722,1566 +4803,6 @@
                 "api",
                 "work-orders",
                 "{{tempWorkOrderId}}"
-              ]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "Gestão de Orçamentos",
-      "item": [
-        {
-          "name": "TC-QT-01 — Criar Orçamento para OS",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
-                  "pm.test('Retorna ID do Orçamento', () => {",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.data).to.have.property('id');",
-                  "    pm.environment.set('quoteId', res.data.id);",
-                  "});"
-                ],
-                "type": "text/javascript",
-                "packages": {},
-                "requests": {}
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\r\n    \"workOrderId\": \"{{workOrderId}}\",\r\n    \"notes\": \"Orçamento inicial\"\r\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-02 — Submeter orçamento sem itens (409)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 409 Conflict', () => pm.response.to.have.status(409));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/submissions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "submissions"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-03 — Criar Orçamento com serviços e peças/insumos",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
-                  "pm.test('Retorna orçamento criado com itens', () => {",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.data).to.have.property('id');",
-                  "    pm.expect(res.data).to.have.property('status');",
-                  "    pm.environment.set('quoteId', res.data.id);",
-                  "});"
-                ],
-                "type": "text/javascript",
-                "packages": {},
-                "requests": {}
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"workOrderId\": \"{{workOrderId}}\",\n  \"notes\": \"Orçamento inicial com serviços e peças\",\n  \"services\": [\n    { \"serviceId\": \"{{serviceId}}\", \"quantity\": 1 }\n  ],\n  \"partsSupplies\": [\n    { \"partSupplyId\": \"{{partSupplyId}}\", \"quantity\": 2 }\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-04 — Adicionar Serviço ao Orçamento",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Retorna orçamento com serviço adicionado', () => {",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.data).to.have.property('id');",
-                  "    pm.expect(res.data).to.have.property('status');",
-                  "});"
-                ],
-                "type": "text/javascript",
-                "packages": {},
-                "requests": {}
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"serviceId\": \"{{serviceId}}\",\n  \"quantity\": 1\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/services",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "services"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-05 — Adicionar serviço duplicado ao orçamento (409)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 409 Conflict', () => pm.response.to.have.status(409));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"serviceId\": \"{{serviceId}}\",\n  \"quantity\": 1\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/services",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "services"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-06 — Atualizar Quantidade de Serviço",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));"
-                ],
-                "type": "text/javascript",
-                "packages": {},
-                "requests": {}
-              }
-            }
-          ],
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\r\n    \"quantity\": 2\r\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/services/{{serviceId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "services",
-                "{{serviceId}}"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-07 — Remover serviço do orçamento pendente (204)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 204 No Content', () => pm.response.to.have.status(204));",
-                  "pm.test('Body vazio', () => pm.expect(pm.response.text()).to.be.empty);"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/services/{{serviceId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "services",
-                "{{serviceId}}"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-08 — Re-adicionar serviço ao orçamento após remoção (200)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Serviço re-adicionado com sucesso', () => {",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.data).to.have.property('id');",
-                  "    pm.expect(res.data.status).to.equal('PENDING');",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"serviceId\": \"{{serviceId}}\",\n  \"quantity\": 1\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/services",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "services"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-09 — Tentar atualizar qty de serviço em orçamento aprovado (409)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 409 Conflict', () => pm.response.to.have.status(409));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"quantity\": 3}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/services/{{serviceId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "services",
-                "{{serviceId}}"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-10 — Adicionar Peça ao Orçamento",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Retorna orçamento com peça adicionada', () => {",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.data).to.have.property('id');",
-                  "    pm.expect(res.data).to.have.property('status');",
-                  "});"
-                ],
-                "type": "text/javascript",
-                "packages": {},
-                "requests": {}
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"partSupplyId\": \"{{partSupplyId}}\",\n  \"quantity\": 1\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/parts-supplies",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "parts-supplies"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-11 — Remover peça do orçamento pendente (204)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 204 No Content', () => pm.response.to.have.status(204));",
-                  "pm.test('Body vazio', () => pm.expect(pm.response.text()).to.be.empty);"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/parts-supplies/{{partSupplyId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "parts-supplies",
-                "{{partSupplyId}}"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-12 — Re-adicionar peça ao orçamento após remoção (200)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Peça re-adicionada com sucesso', () => {",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.data).to.have.property('id');",
-                  "    pm.expect(res.data.status).to.equal('PENDING');",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"partSupplyId\": \"{{partSupplyId}}\",\n  \"quantity\": 1\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/parts-supplies",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "parts-supplies"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-13 — Adicionar peça duplicada ao orçamento (409)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 409 Conflict', () => pm.response.to.have.status(409));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"partSupplyId\": \"{{partSupplyId}}\",\n  \"quantity\": 1\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/parts-supplies",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "parts-supplies"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-14 — Atualizar Quantidade de Peça",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Retorna orçamento com peça adicionada', () => {",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.data).to.have.property('id');",
-                  "    pm.expect(res.data).to.have.property('status');",
-                  "});"
-                ],
-                "type": "text/javascript",
-                "packages": {},
-                "requests": {}
-              }
-            }
-          ],
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\r\n    \"quantity\": 2\r\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/parts-supplies/{{partSupplyId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "parts-supplies",
-                "{{partSupplyId}}"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-15 — Submeter Orçamento para Aprovação",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/submissions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "submissions"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-16 — Rejeitar orçamento SENT sem justificativa (409)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 409 Conflict', () => pm.response.to.have.status(409));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"status\": \"REJECTED\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-17 — Listar todos os Orçamentos paginado",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Estrutura de paginação correta', () => {",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res).to.have.property('data');",
-                  "    pm.expect(res).to.have.property('pagination');",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes?page=1&limit=10",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes"
-              ],
-              "query": [
-                {
-                  "key": "page",
-                  "value": "1"
-                },
-                {
-                  "key": "limit",
-                  "value": "10"
-                }
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-18 — Buscar Orçamento por ID",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-19 — Aprovar Orçamento manualmente (sucesso)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Orçamento aprovado com sucesso', () => {",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.data.status).to.equal('APPROVED');",
-                  "    pm.expect(res.data.approvedAt).to.be.a('string').and.not.empty;",
-                  "});",
-                  "",
-                  "// With parts, the work order only becomes APPROVED after the Inventory confirms the stock reservation.",
-                  "const maxAttempts = 15;",
-                  "",
-                  "function waitForWorkOrderApproval(attempt) {",
-                  "    pm.sendRequest({",
-                  "        url: pm.environment.get('baseUrl') + '/api/work-orders/' + pm.environment.get('workOrderId'),",
-                  "        method: 'GET',",
-                  "        header: { Authorization: 'Bearer ' + pm.environment.get('authToken') }",
-                  "    }, (err, res) => {",
-                  "        const status = !err && res.code === 200 ? res.json().data.status : null;",
-                  "",
-                  "        if (status === 'APPROVED' || attempt >= maxAttempts) {",
-                  "            pm.test('OS aprovada depois da reserva de estoque', () => pm.expect(status).to.equal('APPROVED'));",
-                  "            return;",
-                  "        }",
-                  "",
-                  "        setTimeout(() => waitForWorkOrderApproval(attempt + 1), 1000);",
-                  "    });",
-                  "}",
-                  "",
-                  "waitForWorkOrderApproval(1);"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"status\": \"APPROVED\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-20 — Tentar remover serviço de orçamento aprovado (409)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 409 Conflict', () => pm.response.to.have.status(409));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/services/{{serviceId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "services",
-                "{{serviceId}}"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-21 — Tentar remover peça de orçamento aprovado (409)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 409 Conflict', () => pm.response.to.have.status(409));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "DELETE",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/parts-supplies/{{partSupplyId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "parts-supplies",
-                "{{partSupplyId}}"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-22 — Tentar atualizar qty de peça em orçamento aprovado (409)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 409 Conflict', () => pm.response.to.have.status(409));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"quantity\": 3}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/parts-supplies/{{partSupplyId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "parts-supplies",
-                "{{partSupplyId}}"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-23 — Buscar Orçamento inexistente (404)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 404 Not Found', () => pm.response.to.have.status(404));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/00000000-0000-0000-0000-000000000000",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "00000000-0000-0000-0000-000000000000"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-24 — Filtrar orçamentos por OS (sucesso)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Retorna orçamentos da OS correta', () => {",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.data).to.be.an('array');",
-                  "    pm.expect(res.data.length).to.be.at.least(1);",
-                  "    res.data.forEach(q => pm.expect(q.workOrderId).to.equal(pm.environment.get('workOrderId')));",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes?workOrderId={{workOrderId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes"
-              ],
-              "query": [
-                {
-                  "key": "workOrderId",
-                  "value": "{{workOrderId}}"
-                }
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-25 — Criar Orçamento sem autenticação (401)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 401 Unauthorized', () => pm.response.to.have.status(401));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "auth": {
-              "type": "noauth"
-            },
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"workOrderId\": \"{{workOrderId}}\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-26 — Criar orçamento para OS inexistente (404)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 404 Not Found', () => pm.response.to.have.status(404));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"workOrderId\": \"00000000-0000-0000-0000-000000000000\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-27 — Adicionar serviço a orçamento inexistente (404)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 404 Not Found', () => pm.response.to.have.status(404));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"serviceId\": \"{{serviceId}}\",\n  \"quantity\": 1\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/00000000-0000-0000-0000-000000000000/services",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "00000000-0000-0000-0000-000000000000",
-                "services"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-28 — Adicionar peça a orçamento inexistente (404)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 404 Not Found', () => pm.response.to.have.status(404));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"partSupplyId\": \"{{partSupplyId}}\",\n  \"quantity\": 1\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/00000000-0000-0000-0000-000000000000/parts-supplies",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "00000000-0000-0000-0000-000000000000",
-                "parts-supplies"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-29 — Filtrar orçamentos por status APPROVED (200)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Retorna orçamentos aprovados', () => {",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.data).to.be.an('array');",
-                  "    pm.expect(res.pagination.totalRecords).to.be.at.least(1);",
-                  "    res.data.forEach(q => pm.expect(q.status).to.equal('APPROVED'));",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes?status=APPROVED",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes"
-              ],
-              "query": [
-                {
-                  "key": "status",
-                  "value": "APPROVED"
-                }
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-30 — Submeter orçamento inexistente (404)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 404 Not Found', () => pm.response.to.have.status(404));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/00000000-0000-0000-0000-000000000000/submissions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "00000000-0000-0000-0000-000000000000",
-                "submissions"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-31 — Criar orçamento sem campo workOrderId (400)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 400 Bad Request', () => pm.response.to.have.status(400));",
-                  "pm.test('Retorna erros de validação', () => {",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.message).to.be.an('array').and.not.empty;",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-32 — Rejeitar orçamento com justificativa (200)",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "const authToken = pm.environment.get('authToken');",
-                  "const baseUrl = pm.environment.get('baseUrl');",
-                  "const customerId = pm.environment.get('customerId');",
-                  "const vehicleId = pm.environment.get('vehicleId');",
-                  "const serviceId = pm.environment.get('serviceId');",
-                  "",
-                  "pm.sendRequest({",
-                  "    url: baseUrl + '/api/work-orders',",
-                  "    method: 'POST',",
-                  "    header: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },",
-                  "    body: { mode: 'raw', raw: JSON.stringify({ customerId: customerId, vehicleId: vehicleId }) }",
-                  "}, function(err1, resp1) {",
-                  "    const woId = resp1.json().data.id;",
-                  "    pm.sendRequest({",
-                  "        url: baseUrl + '/api/work-orders/' + woId,",
-                  "        method: 'PATCH',",
-                  "        header: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },",
-                  "        body: { mode: 'raw', raw: JSON.stringify({ status: 'IN_DIAGNOSIS' }) }",
-                  "    }, function(err2, resp2) {",
-                  "        pm.sendRequest({",
-                  "            url: baseUrl + '/api/quotes',",
-                  "            method: 'POST',",
-                  "            header: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },",
-                  "            body: { mode: 'raw', raw: JSON.stringify({ workOrderId: woId }) }",
-                  "        }, function(err3, resp3) {",
-                  "            const qId = resp3.json().data.id;",
-                  "            pm.sendRequest({",
-                  "                url: baseUrl + '/api/quotes/' + qId + '/services',",
-                  "                method: 'POST',",
-                  "                header: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },",
-                  "                body: { mode: 'raw', raw: JSON.stringify({ serviceId, quantity: 1 }) }",
-                  "            }, function(err4, resp4) {",
-                  "                pm.sendRequest({",
-                  "                    url: baseUrl + '/api/quotes/' + qId + '/submissions',",
-                  "                    method: 'POST',",
-                  "                    header: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },",
-                  "                    body: { mode: 'raw', raw: '{}' }",
-                  "                }, function(err5, resp5) {",
-                  "                    pm.environment.set('quoteIdForReject', qId);",
-                  "                });",
-                  "            });",
-                  "        });",
-                  "    });",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Orçamento rejeitado com sucesso', () => {",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.data.status).to.equal('REJECTED');",
-                  "    pm.expect(res.data.rejectedAt).to.be.a('string').and.not.empty;",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"status\": \"REJECTED\", \"reason\": \"Cliente recusou o orçamento por ser acima do esperado\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteIdForReject}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteIdForReject}}"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-33 — Submeter orçamento já SENT (409)",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "const authToken = pm.environment.get('authToken');",
-                  "const baseUrl = pm.environment.get('baseUrl');",
-                  "const customerId = pm.environment.get('customerId');",
-                  "const vehicleId = pm.environment.get('vehicleId');",
-                  "const serviceId = pm.environment.get('serviceId');",
-                  "const hdr = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken };",
-                  "pm.sendRequest({",
-                  "    url: baseUrl + '/api/work-orders', method: 'POST', header: hdr,",
-                  "    body: { mode: 'raw', raw: JSON.stringify({ customerId, vehicleId, problemDescription: 'Dupla submissão' }) }",
-                  "}, function (e1, r1) {",
-                  "    const woId = r1.json().data.id;",
-                  "    pm.sendRequest({",
-                  "        url: baseUrl + '/api/work-orders/' + woId, method: 'PATCH', header: hdr,",
-                  "        body: { mode: 'raw', raw: JSON.stringify({ status: 'IN_DIAGNOSIS' }) }",
-                  "    }, function () {",
-                  "        pm.sendRequest({",
-                  "            url: baseUrl + '/api/quotes', method: 'POST', header: hdr,",
-                  "            body: { mode: 'raw', raw: JSON.stringify({ workOrderId: woId }) }",
-                  "        }, function (e3, r3) {",
-                  "            const qId = r3.json().data.id;",
-                  "            pm.sendRequest({",
-                  "                url: baseUrl + '/api/quotes/' + qId + '/services', method: 'POST', header: hdr,",
-                  "                body: { mode: 'raw', raw: JSON.stringify({ serviceId, quantity: 1 }) }",
-                  "            }, function () {",
-                  "                pm.sendRequest({",
-                  "                    url: baseUrl + '/api/quotes/' + qId + '/submissions', method: 'POST', header: hdr",
-                  "                }, function () {",
-                  "                    pm.environment.set('tempSentQuoteId', qId);",
-                  "                });",
-                  "            });",
-                  "        });",
-                  "    });",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 409 Conflict', () => pm.response.to.have.status(409));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{tempSentQuoteId}}/submissions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{tempSentQuoteId}}",
-                "submissions"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-QT-34 — Aprovar orçamento já APPROVED (409)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 409 Conflict', () => pm.response.to.have.status(409));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"status\": \"APPROVED\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}"
               ]
             }
           },

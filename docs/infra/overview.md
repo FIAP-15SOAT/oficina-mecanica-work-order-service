@@ -185,7 +185,7 @@ Node (subnet privada) ──pull da imagem :sha──▶ Amazon ECR (via NAT)
 - **API → PostgreSQL**: via `DATABASE_URL` (`database-credentials`) apontando para o endpoint do **Amazon RDS**, fora do cluster, alcançado pela rede a partir das subnets privadas. Quem reporta se esse caminho está de pé é a `readinessProbe` da API em `/api/health/ready` — não existe pod de banco para inspecionar.
 - **API → Valkey**: via `CACHE_URL` (`cache-credentials`), `rediss://` com o auth token, apontando para o endpoint primário do **ElastiCache**, fora do cluster.
 - **API → SNS/SQS**: publica no tópico `oficina-events.fifo` e consome a fila `work-order.fifo` com o papel do nó, sem credencial AWS em Secret.
-- **API → MailHog**: SMTP em `mailhog.platform.svc.cluster.local:1025` (do `work-order-config`), para os e-mails de aprovação/rejeição de orçamento.
+- **API → MailHog**: SMTP em `mailhog.platform.svc.cluster.local:1025` (do `work-order-config`), para os e-mails de orçamento enviado e de aprovação desfeita por falta de estoque, entre outros.
 - **Egresso**: pods e nodes nas subnets privadas saem para a internet **pelo NAT Gateway** (inclusive o `pull` das imagens do ECR — não há VPC endpoints).
 
 ## Fluxo de provisionamento e deploy

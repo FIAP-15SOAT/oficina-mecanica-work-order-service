@@ -20,9 +20,7 @@
     { "key": "vehicleId2", "value": "", "type": "default", "enabled": true },
     { "key": "workOrderId", "value": "", "type": "default", "enabled": true },
     { "key": "tempWorkOrderId", "value": "", "type": "default", "enabled": true },
-    { "key": "quoteId", "value": "", "type": "default", "enabled": true },
-    { "key": "quoteIdForReject", "value": "", "type": "default", "enabled": true },
-    { "key": "tempSentQuoteId", "value": "", "type": "default", "enabled": true }
+    { "key": "quoteId", "value": "", "type": "default", "enabled": true }
   ],
   "_postman_variable_scope": "environment"
 }

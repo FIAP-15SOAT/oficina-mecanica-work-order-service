@@ -7,7 +7,7 @@
 - [Autenticação externa nos testes (customer-jwt)](#autenticação-externa-nos-testes-customer-jwt)
 - [Telemetria: o que o Jest não instrumenta](#telemetria-o-que-o-jest-não-instrumenta)
 - [Mensageria e cache no E2E](#mensageria-e-cache-no-e2e)
-- [Inventory no E2E](#inventory-no-e2e)
+- [Inventory e Billing no E2E](#inventory-e-billing-no-e2e)
 - [Contrato das rotas `/internal`](#contrato-das-rotas-internal)
 - [Mensagem de teste no ambiente](#mensagem-de-teste-no-ambiente)
 - [Postman / Newman](#postman--newman)
@@ -38,7 +38,7 @@ npm run test:e2e      # executa os testes
 npm run test:e2e:cov  # com cobertura
 ```
 
-16 suites cobrindo todos os domínios (auth, user, customer, customer-access, vehicle, service — as métricas por serviço —, work-order, quote) mais `me` (rotas do Cliente da Oficina autenticado), uma suite dedicada ao `AllExceptionsFilter`, outra ao logging estruturado, outra aos endpoints de saúde, outra à telemetria (correlação log-trace e métricas de negócio), outra às rotas `/internal`, outra à mensageria e outra à Saga de aprovação de orçamento. Os testes E2E sobem um PostgreSQL 18 real (`postgres:18-alpine`), um Valkey 9.1 real e um MailHog via **Testcontainers 12** (sem necessidade de banco externo), mais o LocalStack nas suítes de mensageria e da Saga (ver [Mensageria e cache no E2E](#mensageria-e-cache-no-e2e)), e respondem pelo Inventory com um stub HTTP (ver [Inventory no E2E](#inventory-no-e2e)) e usam helpers compartilhados em `test/helpers/` (`test-app.helper.ts`, `auth.helper.ts`, `db-cleanup.helper.ts`) para subir o `INestApplication`, autenticar e limpar o banco entre testes. Configuração em `test/jest-e2e.json` (timeout de 10 minutos para acomodar a inicialização dos containers).
+15 suites cobrindo todos os domínios (auth, user, customer, customer-access, vehicle, service — as métricas por serviço —, work-order) mais `me` (rotas do Cliente da Oficina autenticado), uma suite dedicada ao `AllExceptionsFilter`, outra ao logging estruturado, outra aos endpoints de saúde, outra à telemetria (correlação log-trace e métricas de negócio), outra às rotas `/internal`, outra à mensageria e outra à Saga de aprovação e às mensagens de orçamento do Billing. Os testes E2E sobem um PostgreSQL 18 real (`postgres:18-alpine`), um Valkey 9.1 real e um MailHog via **Testcontainers 12** (sem necessidade de banco externo), mais o LocalStack nas suítes de mensageria e da Saga (ver [Mensageria e cache no E2E](#mensageria-e-cache-no-e2e)), e respondem pelo Inventory e pelo Billing com um stub HTTP (ver [Inventory e Billing no E2E](#inventory-e-billing-no-e2e)) e usam helpers compartilhados em `test/helpers/` (`test-app.helper.ts`, `auth.helper.ts`, `db-cleanup.helper.ts`) para subir o `INestApplication`, autenticar e limpar o banco entre testes. Configuração em `test/jest-e2e.json` (timeout de 10 minutos para acomodar a inicialização dos containers).
 
 O motivo de testar contra um Postgres real (em vez de mocks Prisma) é validar comportamentos que dependem do banco — constraints de unicidade, cascade deletes, sequences, conversões de tipos, índices e a corrida implícita de updates condicionados (`WHERE version = ?`) — e detectar regressões em migrations.
 
@@ -87,7 +87,7 @@ await request(ctx.httpServer)
   .expect(200);
 ```
 
-`test/e2e/me.e2e-spec.ts` é a suite que exercita esse caminho — identidade externa (`GET /api/me`), troca da própria senha via `AnyAuthGuard` (`PATCH /api/me/password`, provando que a rota aceita tanto o token interno quanto o externo, com a nova senha realmente persistida), listagem/consulta de OS e orçamentos vinculados por `CustomerAccessPolicy`, e decisão de orçamento (aprovação/rejeição) — incluindo o caso de um `sub` sem nenhum vínculo ativo (token assinado para um `userId` aleatório) para confirmar a rejeição em `CustomerJwtStrategy.validate()`.
+`test/e2e/me.e2e-spec.ts` é a suite que exercita esse caminho — identidade externa (`GET /api/me`), troca da própria senha via `AnyAuthGuard` (`PATCH /api/me/password`, provando que a rota aceita tanto o token interno quanto o externo, com a nova senha realmente persistida), listagem/consulta de OS e orçamentos vinculados por `CustomerAccessPolicy`, com os orçamentos lidos no stub do Billing, e decisão de orçamento (repasse ao Billing, 404 sem vínculo sem repassar, 409 com aprovação em andamento e o 409 do Billing numa decisão concorrente) — incluindo o caso de um `sub` sem nenhum vínculo ativo (token assinado para um `userId` aleatório) para confirmar a rejeição em `CustomerJwtStrategy.validate()`.
 
 **O DAST cobre `/api/me/*` com uma segunda passagem autenticada como Cliente da Oficina.** O workflow `dast.yml` gera um par de chaves RS256 efêmero **no próprio job de CI**, injeta a chave pública no serviço `api` (substituindo a que a stack usa para o primeiro passe, autenticado como usuário interno) e roda um **segundo** `zap-api-scan.py` com um Bearer `customer-jwt` assinado pela chave privada correspondente, para um usuário externo já semeado — exatamente o mesmo mecanismo de `test/helpers/customer-jwt.helper.ts` descrito acima, só que rodando no job em vez de dentro da suite E2E. Isso não depende da função serverless externa (fora de escopo, ver acima): o próprio job assina, isolado, o token que ela emitiria. Ver [Infra · CI/CD](infra/ci-cd.md#4-workflow-de-dast-dastyml) para o passo a passo do workflow.
 
@@ -108,28 +108,45 @@ Toda suíte E2E sobe, além do PostgreSQL, um **Valkey real** (`valkey/valkey:9.
 
 O cache tem e2e próprio em `work-order.e2e-spec.ts` (`GET /api/work-orders/:id — cache`): a segunda leitura sai do cache com o mesmo corpo, a mudança de status e a troca de placa do veículo aparecem na leitura seguinte (a invalidação depois do commit funciona), o nome novo de um serviço renomeado no Inventory aparece mesmo com a OS em cache (os dados de exibição não vão ao cache) e, com o Valkey pausado, a rota responde pelo PostgreSQL e registra `cache.unavailable`.
 
-## Inventory no E2E
+## Inventory e Billing no E2E
 
-O work-order lê o catálogo no Inventory por HTTP, então todo e2e que cria item de OS ou de orçamento precisa de um Inventory que responda. Em vez de subir o serviço de verdade, a suíte sobe um stub HTTP (`startInternalServicesStub()`, em `test/helpers/internal-services-stub.ts`) e passa a URL dele a `setupTestApp({ internalServicesUrl })`, que a grava em `INVENTORY_SERVICE_URL`. Sem a opção, a URL aponta para uma porta que recusa conexão (`http://127.0.0.1:9`), e uma rota que consulta o catálogo responde 503.
+O work-order lê o catálogo no Inventory e os orçamentos no Billing por HTTP, então todo e2e que abre OS com itens, mostra os itens da OS, passa pela área do cliente ou trata uma mensagem de orçamento precisa dos dois. Em vez de subir os serviços de verdade, a suíte sobe um stub HTTP (`startInternalServicesStub()`, em `test/helpers/internal-services-stub.ts`) e passa a URL dele a `setupTestApp({ internalServicesUrl })`, que a grava em `INVENTORY_SERVICE_URL` e em `BILLING_SERVICE_URL`. Sem a opção, as duas apontam para uma porta que recusa conexão (`http://127.0.0.1:9`), e uma rota que chama um deles responde 503.
 
-O stub responde `GET /internal/services/:id` e `GET /internal/parts-supplies/:id` a partir de dois mapas em memória, com o corpo das fixtures copiadas do Inventory; um id fora dos mapas responde 404, e um id em `failingIds` responde 500, o caminho do 503. Item que só precisa existir no Inventory nasce no stub, com `stubService(stub)` e `stubPartSupply(stub)`, escritos em cada teste.
+O stub declara as rotas numa tabela de `'MÉTODO /caminho/:param'` para o handler, casada pelo `URLPattern` do Node, e guarda os dados em mapas em memória:
 
-A suíte `quote-approval-saga.e2e-spec.ts` cobre a Saga de aprovação pelo LocalStack e pelo MailHog do harness:
+| Dono | Rotas | Comportamento |
+|---|---|---|
+| Inventory | `GET /internal/services/:id`, `GET /internal/parts-supplies/:id` | Corpo das fixtures copiadas do Inventory; id fora dos mapas responde 404 |
+| Billing | `POST /internal/quotes` | Cria o orçamento com o corpo da fixture resumo do Billing e o guarda em `stub.quotes`, sem itens |
+| Billing | `GET /internal/quotes/:id`, `DELETE /internal/quotes/:id` | Lê ou apaga o orçamento guardado (`204`); id ausente responde 404 |
+| Billing | `POST /internal/quotes/:id/decisions` | Grava no orçamento guardado o status decidido e o autor |
+| Billing | `GET /internal/work-orders/:workOrderId/quotes` | Resumo dos orçamentos guardados daquela OS |
 
-| Teste | O que prova |
-|---|---|
-| Compensação | Com a reserva recusada, o orçamento volta a `SENT`, o orçamento rejeitado pela aprovação volta ao status anterior, a OS fica `AWAITING_APPROVAL` com a entrada da compensação no histórico, a Saga fica `COMPENSATED` e o cliente recebe o e-mail |
-| Nova aprovação | Aprovar de novo o orçamento compensado reabre a mesma Saga e envia um novo `inventory.stock.reserve` |
-| Conclusão | Com a reserva confirmada, a OS vai a `APPROVED` com os itens e o histórico com o autor, e a Saga fica `COMPLETED` |
-| Aprovações simultâneas | Duas aprovações de orçamentos `SENT` da mesma OS: uma `200`, outra `409`, uma Saga e um comando de reserva só |
+Um id em `failingIds` responde 500, o caminho do 503, e `nextResponses` guarda uma resposta de uso único por `'MÉTODO caminho'`, consultada antes das rotas (é assim que um teste faz o Billing responder 409). Item ou orçamento que só precisa existir nasce no stub, com `stubService(stub)`, `stubPartSupply(stub)` ou direto em `stub.quotes`, escrito em cada teste.
 
-O comando de reserva é lido da fila `inventory.fifo` do LocalStack, como o Inventory o leria. As respostas do Inventory (`inventory.stock.reserved` e `inventory.stock.reservation_failed`) entram pelo outbox do próprio work-order, que as publica no tópico e as recebe de volta na fila `work-order.fifo`: o caminho até o handler é o mesmo de uma mensagem do Inventory.
+A suíte `quote-approval-saga.e2e-spec.ts` cobre as Sagas e as mensagens de orçamento pelo LocalStack e pelo MailHog do harness. As mensagens do Billing (`billing.quote.*`) e do Inventory (`inventory.stock.*`) entram pelo outbox do próprio work-order, que as publica no tópico e as recebe de volta na fila `work-order.fifo`: o caminho até o handler é o mesmo de uma mensagem do outro serviço. Os comandos que o work-order manda (`inventory.stock.reserve` e `billing.quote.revert_approval`) são lidos das filas `inventory.fifo` e `billing.fifo` do LocalStack, como o dono os leria. Os cenários de falha, numerados como na arquitetura da solução (F1 a F5), ficam nesta suíte e nas de `me` e `work-order`:
+
+| Cenário | Suíte | O que prova |
+|---|---|---|
+| Reserva confirmada | `quote-approval-saga` | Com a reserva confirmada, a OS vai a `APPROVED` com os itens do orçamento lido no Billing e o histórico com o autor, e a Saga fica `COMPLETED` |
+| Aprovação sem peças | `quote-approval-saga` | A OS vai a `APPROVED` sem reserva e a Saga nasce `COMPLETED` |
+| F1 — decisão concorrente | `me` | O 409 do Billing numa decisão do cliente volta como está |
+| F2 — falta de estoque e reaprovação | `quote-approval-saga` | Com a reserva recusada, a Saga vai a `COMPENSATING` e manda `billing.quote.revert_approval` (`SENT`); com `billing.quote.approval_reverted`, fica `COMPENSATED`, o histórico ganha a nota e o cliente recebe o e-mail no MailHog. Aprovar de novo o mesmo orçamento reabre a Saga e manda um novo `inventory.stock.reserve` |
+| F3 — OS cancelada antes da aprovação | `quote-approval-saga` | A Saga nasce `COMPENSATING` e manda `billing.quote.revert_approval` (`REJECTED`) |
+| F4 — Billing fora na abertura | `work-order` | `POST /api/work-orders` com itens responde 503 sem consumir número de OS |
+| F5 — falha da gravação da OS | `work-order` | Com a transação da abertura falhando, o orçamento é apagado no stub do Billing e nenhuma OS fica gravada |
+| Envio e rejeição | `quote-approval-saga` | `billing.quote.sent` leva a OS a `AWAITING_APPROVAL` e manda o e-mail; `billing.quote.rejected` sem outro orçamento enviado leva a OS a `REJECTED` |
 
 ## Contrato das rotas `/internal`
 
-O dono de uma rota `/internal` versiona a fixture da resposta em `app/test/contracts/` (`internal-work-order.json`, o detalhe completo de uma OS, e `internal-quote-usage.json`, a resposta das duas rotas de uso de item em orçamento). O e2e do dono (`internal.e2e-spec.ts`) compara a **forma** da resposta real com a da fixture pelo `jsonShape`: as chaves e o tipo JSON de cada valor, não os valores. Arrays são comparados elemento a elemento, então o tamanho conta, e `null` é um tipo próprio.
+O dono de uma rota `/internal` versiona a fixture da resposta em `app/test/contracts/` (aqui, `internal-work-order.json`, o detalhe completo de uma OS). O e2e do dono (`internal.e2e-spec.ts`) compara a **forma** da resposta real com a da fixture pelo `jsonShape`: as chaves e o tipo JSON de cada valor, não os valores. Arrays são comparados elemento a elemento, então o tamanho conta, e `null` é um tipo próprio.
 
-Quem consome a rota copia a fixture para `app/test/contracts/<dono>/`, mantém o campo `$source` com a origem e testa o próprio adaptador contra ela. Este serviço consome as rotas de catálogo do Inventory: `app/test/contracts/inventory/internal-service.json` e `internal-part-supply.json` alimentam o spec do `HttpInventoryCatalogGateway` e o stub do e2e. Mudou a resposta do dono, a fixture muda no mesmo PR; as cópias dos consumidores mudam no PR de cada um, conferidas por diff contra a origem.
+Quem consome a rota copia a fixture para `app/test/contracts/<dono>/`, mantém o campo `$source` com a origem e testa o próprio adaptador contra ela. Este serviço consome as rotas de catálogo do Inventory e as de orçamento do Billing:
+
+- `app/test/contracts/inventory/internal-service.json` e `internal-part-supply.json` alimentam o spec do `HttpInventoryCatalogGateway` e o stub do e2e;
+- `app/test/contracts/billing/internal-quote-summary.json` (resposta de `POST /internal/quotes`), `internal-quote.json` (`GET /internal/quotes/:id` e `POST /internal/quotes/:id/decisions`, com itens) e `internal-work-order-quotes.json` (`GET /internal/work-orders/:workOrderId/quotes`) alimentam o spec do `HttpBillingQuotesGateway` e o stub do e2e.
+
+Os payloads das mensagens `billing.quote.*` são conferidos pelo catálogo tipado de `domain/messaging/`, cópia do catálogo do Billing. Mudou a resposta do dono, a fixture muda no mesmo PR; as cópias dos consumidores mudam no PR de cada um, conferidas por diff contra a origem.
 
 ## Mensagem de teste no ambiente
 
@@ -151,9 +168,17 @@ A coleção e o environment estão em `collections/`. Importe `collections/ofici
 
 O environment já vem com `adminEmail`/`adminPassword` e `customerCpf`/`customerPassword` correspondentes ao seed. As senhas e os três tokens (`authToken`, `refreshToken` e `customerJwtToken`) permanecem com tipo `secret`; os identificadores produzidos pelos scripts também estão declarados para que a importação resolva todas as variáveis da collection.
 
-A collection mantém as pastas de domínio sem numeração ou agrupadores adicionais. Execute-as de cima para baixo: **Health → Autenticação → Gestão de Usuários → Gestão de Clientes → Validação → Acesso Externo de Clientes → Gestão de Veículos → Gestão de Ordens de Serviço → Gestão de Orçamentos → Minha Conta → Relatórios e Métricas**. Essa ordem mantém as requests produtoras antes das consumidoras, inclusive `Minha Conta` fica depois de ordens e orçamentos porque seus cenários consomem `workOrderId` e `quoteId` produzidos anteriormente.
+A collection mantém as pastas de domínio sem numeração ou agrupadores adicionais. Execute-as de cima para baixo: **Health → Autenticação → Gestão de Usuários → Gestão de Clientes → Validação → Acesso Externo de Clientes → Gestão de Veículos → Gestão de Ordens de Serviço → Minha Conta → Relatórios e Métricas**. Essa ordem mantém as requests produtoras antes das consumidoras, inclusive `Minha Conta` fica depois das ordens porque seus cenários consomem `workOrderId` e `quoteId` produzidos anteriormente.
 
-O cadastro de serviços, peças e estoque não está nesta collection: é do Inventory, que tem a collection própria. As OS e os orçamentos usam um serviço e uma peça do seed do Inventory, com os ids canônicos de [Ids canônicos do seed](seed-ids.md) já gravados no environment (`serviceId` = `Troca de óleo`, `partSupplyId` = `FILT-OL-001`). A aprovação do orçamento com peça (`TC-QT-19`) responde 200 com o orçamento `APPROVED`, e o script de teste consulta a OS a cada segundo, até 15 vezes, até vê-la `APPROVED`: a OS só muda depois que o Inventory confirma a reserva do estoque.
+O cadastro de serviços, peças e estoque não está nesta collection: é do Inventory, que tem a collection própria. Os orçamentos também não: são do Billing, cuja collection cobre as rotas de orçamento. As OS usam um serviço e uma peça do seed do Inventory, com os ids canônicos de [Ids canônicos do seed](seed-ids.md) já gravados no environment (`serviceId` = `Troca de óleo`, `partSupplyId` = `FILT-OL-001`).
+
+O fluxo da OS passa pelo Billing, então a pasta **Gestão de Ordens de Serviço** só roda inteira pelo API Gateway, que encaminha as rotas de orçamento ao Billing. `TC-WO-02` abre a OS com itens (o orçamento inicial nasce no Billing); `TC-WO-30` descobre o id desse orçamento pela lista de orçamentos da OS, envia-o ao cliente e consulta a OS a cada segundo, até 15 vezes, até vê-la `AWAITING_APPROVAL`; e `TC-WO-31` aprova o orçamento e consulta a OS até vê-la `APPROVED`, porque a OS só muda depois que o Inventory confirma a reserva do estoque. Com só este serviço no ar, rode as pastas que não dependem do Billing, por exemplo:
+
+```bash
+npx newman run collections/oficina-collection.json -e collections/oficina-environment.json \
+  --folder "Health" --folder "Autenticação" --folder "Gestão de Usuários" \
+  --folder "Gestão de Clientes" --folder "Gestão de Veículos"
+```
 
 O grupo **Autenticação** mantém os dois fluxos separados: o login interno grava `authToken` e `refreshToken`, e `POST /customer-auth/login` é `noauth` e grava somente `customerJwtToken`. O grupo **Minha Conta** exercita `/api/me/*` com `Bearer {{customerJwtToken}}`, sobrescrevendo o bearer interno herdado da collection.
 
@@ -256,16 +281,14 @@ As categorias, e por que cada uma não é alcançável:
 | Localização | Branch não coberto | Motivo |
 |---|---|---|
 | `interface-adapters/me/me.presenter.ts` — `workOrder.vehicle ? … : null` | Ramo `null` | `work_orders.vehicle_id` é `NOT NULL` e o `include` do detalhe externo sempre traz o veículo. |
-| `interface-adapters/work-order/work-order.presenter.ts` — `entry.changedBy ? … : null` | Ramo `null` | Toda transição feita por requisição carrega o usuário autenticado. `changed_by_id` só fica `null` na entrada que a compensação da Saga de aprovação grava ao tratar a mensagem `inventory.stock.reservation_failed`, e o e2e da compensação confere essa entrada no banco, sem passar por `GET /api/work-orders/:id/status-history`. |
+| `interface-adapters/work-order/work-order.presenter.ts` — `entry.changedBy ? … : null` | Ramo `null` | Toda transição feita por requisição carrega o usuário autenticado. `changed_by_id` só fica `null` na entrada que a compensação da Saga de aprovação grava ao tratar a mensagem `billing.quote.approval_reverted`, e o e2e da compensação confere essa entrada no banco, sem passar por `GET /api/work-orders/:id/status-history`. |
 
 ### Branches de aplicação sem caminho HTTP
 
 | Localização | Branch não coberto | Motivo |
 |---|---|---|
 | `use-cases/work-order/update-work-order-status.use-case.ts` — `PATCH_STATUS_ALLOWED.has(...)` | Ramo de recusa | O `@IsEnum` do `UpdateWorkOrderStatusRequestDto` declara **o mesmo** conjunto: um status fora dele vira `400` na validação, antes do use-case. A guarda protege o uso programático. |
-| `use-cases/quote/reject-quote.use-case.ts` — `notes ?? \`Orçamento … rejeitado\`` | Ramo direito | `UpdateQuoteStatusUseCase` exige justificativa para rejeitar (`400` sem ela), então `notes` nunca chega vazio por HTTP. |
-| `use-cases/quote-approval/approve-quote.use-case.ts` e `use-cases/quote/reject-quote.use-case.ts` — `userId ?? null` | Ramo direito | As rotas são autenticadas; `userId` nunca é nulo vindo da borda. |
-| `use-cases/me/{find-my-quote-by-id,decide-my-quote}.use-case.ts` — `if (!workOrder)` | Ramo verdadeiro | `quotes.work_order_id` é `NOT NULL` com `ON DELETE CASCADE`: um orçamento sem ordem não existe no banco. |
+| `use-cases/me/{find-my-quote-by-id,decide-my-quote}.use-case.ts` — `if (!workOrder)` | Ramo verdadeiro | O Billing só cria orçamento para uma OS que este serviço conhece, e uma OS não é apagada; o stub do e2e só guarda orçamentos de OS criadas no teste. O unitário cobre o ramo. |
 | `metrics/work-order-duration.ts` — guardas de histórico | Ramos defensivos | A função é pura e recebe o histórico como está no banco. Transição ausente, status terminal, entrada de chegada truncada e carimbo inválido/negativo não são produzíveis por requisição — o unitário monta esses históricos diretamente. |
 | `use-cases/me/change-own-password.use-case.ts` — `if (!user)` | Ramo verdadeiro | O guard resolve o principal a partir de um usuário existente; um `sub` desconhecido é recusado em `CustomerJwtStrategy.validate()` antes do use-case. |
 

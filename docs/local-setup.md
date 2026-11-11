@@ -14,7 +14,7 @@ Neste modo a API roda diretamente na sua máquina com `npm run start:dev`, enqua
 
 ### MailHog
 
-O MailHog é um servidor SMTP de desenvolvimento que captura todos os e-mails enviados pela aplicação (ex.: links de aprovação de orçamentos) sem entregá-los de verdade. Acesse a caixa de entrada em `http://localhost:8025` após subir os serviços de infraestrutura.
+O MailHog é um servidor SMTP de desenvolvimento que captura todos os e-mails enviados pela aplicação (ex.: o aviso de orçamento enviado ao cliente) sem entregá-los de verdade. Acesse a caixa de entrada em `http://localhost:8025` após subir os serviços de infraestrutura.
 
 As variáveis de ambiente necessárias para integração com o MailHog já estão pré-configuradas no `.env.example`:
 
@@ -127,6 +127,9 @@ CACHE_TTL_SECONDS=43200
 # Rotas internas do Inventory (porta publicada pela stack local dele)
 INVENTORY_SERVICE_URL=http://localhost:3003
 
+# Rotas internas do Billing (porta publicada pela stack local dele)
+BILLING_SERVICE_URL=http://localhost:3002
+
 # Observabilidade — todas opcionais; nenhuma variável ausente ou inválida impede o boot
 # Níveis aceitos: fatal | error | warn | info | debug | trace | silent (default: info)
 LOG_LEVEL=info
@@ -146,16 +149,25 @@ OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta
 
 `SERVICE_VERSION` **não** é configurada por env em desenvolvimento: ela é assada na imagem (`ARG SERVICE_VERSION` no `Dockerfile`, alimentado pelo `github.sha` no `cd.yml`) e cai para `dev` fora do contêiner. `deployment.environment.name` reaproveita o `NODE_ENV` já existente — não há variável nova para ambiente.
 
-`WORK_ORDER_QUEUE_NAME`, `MESSAGING_TOPIC_ARN`, `CACHE_URL` e `INVENTORY_SERVICE_URL` são obrigatórias: sem elas a API não sobe. `CACHE_TTL_SECONDS` é opcional, mas um valor que não seja inteiro maior que zero também impede o boot, porque faria toda gravação no cache falhar. No cluster, o CD monta o ARN do tópico com a conta da AWS e o `CACHE_URL` usa `rediss://` com a senha do ElastiCache.
+`WORK_ORDER_QUEUE_NAME`, `MESSAGING_TOPIC_ARN`, `CACHE_URL`, `INVENTORY_SERVICE_URL` e `BILLING_SERVICE_URL` são obrigatórias: sem elas a API não sobe. `CACHE_TTL_SECONDS` é opcional, mas um valor que não seja inteiro maior que zero também impede o boot, porque faria toda gravação no cache falhar. No cluster, o CD monta o ARN do tópico com a conta da AWS e o `CACHE_URL` usa `rediss://` com a senha do ElastiCache.
 
 ### Inventory local
 
-`INVENTORY_SERVICE_URL` é o endereço das rotas `/internal` do Inventory, o serviço da solução dono do catálogo de serviços e peças e do estoque ([`oficina-mecanica-inventory-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service)). A API o chama para validar e precificar os itens de OS e de orçamento, mostrar nome e descrição dos itens e montar as métricas por serviço. Localmente, suba a stack do Inventory pelo `docker compose` do repositório dele, que publica a API na porta `3003` do host.
+`INVENTORY_SERVICE_URL` é o endereço das rotas `/internal` do Inventory, o serviço da solução dono do catálogo de serviços e peças e do estoque ([`oficina-mecanica-inventory-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service)). A API o chama para mostrar nome e descrição dos itens da OS e montar as métricas por serviço. Localmente, suba a stack do Inventory pelo `docker compose` do repositório dele, que publica a API na porta `3003` do host.
 
 - **API na máquina** (`npm run start:dev`): `http://localhost:3003`, o valor do `.env.example`.
 - **API no compose** (Quick Start): o `docker-compose.yml` sobrescreve o valor com `http://host.docker.internal:3003`. O nome `host.docker.internal` aponta, de dentro do container, para a máquina que roda o Docker; o `extra_hosts` (`host.docker.internal:host-gateway`) o declara também no Linux, onde o Docker não o cria sozinho.
 
 Sem o Inventory de pé, a API sobe normalmente, mas as rotas que mostram ou gravam itens respondem 503. No cluster, o ConfigMap usa o endereço interno do Inventory, `http://inventory-service.inventory.svc.cluster.local:3000`.
+
+### Billing local
+
+`BILLING_SERVICE_URL` é o endereço das rotas `/internal` do Billing, o serviço da solução dono dos orçamentos e dos pagamentos ([`oficina-mecanica-billing-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service)). A API o chama para criar o orçamento inicial na abertura de uma OS com itens (e apagá-lo se a gravação da OS falhar), para ler e decidir os orçamentos na área do Cliente da Oficina e para ler o orçamento aprovado quando o Inventory confirma a reserva do estoque. Localmente, suba a stack do Billing pelo `docker compose` do repositório dele, que publica a API na porta `3002` do host.
+
+- **API na máquina** (`npm run start:dev`): `http://localhost:3002`, o valor do `.env.example`.
+- **API no compose** (Quick Start): o `docker-compose.yml` sobrescreve o valor com `http://host.docker.internal:3002`, pelo mesmo `host.docker.internal` do Inventory.
+
+Sem o Billing de pé, a API sobe normalmente, mas a abertura de OS com itens e as rotas de orçamento de `/api/me` respondem 503, e uma mensagem `inventory.stock.reserved` volta à fila até o Billing responder. No cluster, o ConfigMap usa o endereço interno do Billing, `http://billing-service.billing.svc.cluster.local:3000`.
 
 ### Chaves do token de funcionário
 

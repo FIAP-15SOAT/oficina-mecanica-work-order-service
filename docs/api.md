@@ -64,7 +64,7 @@ Toda rota exige o header `Authorization: Bearer <token>` (access token), salvo a
 
 > As métricas contam os itens de OS concluídos, com início e fim registrados (`work_order_services` com status `COMPLETED`), e o nome do serviço (`serviceName`) é lido no Inventory a cada requisição. A lista traz só os serviços já executados; um serviço que o Inventory não acha mais aparece com `serviceName` nulo, no fim da lista. Na rota de um serviço, `averageTimeMinutes` sai `0`, não nulo, quando ele ainda não tem execução concluída. Com o Inventory fora do ar, as duas rotas respondem **503**.
 
-> **Catálogo e estoque ficam no Inventory.** O cadastro de serviços (`/api/services`), de peças e insumos (`/api/parts-supplies`) e as consultas de estoque (`/api/stock-movements`, `/api/stock-reservations`) são do Inventory, o serviço da solução dono do catálogo e do estoque ([`oficina-mecanica-inventory-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service)). Pelo API Gateway, essas rotas chegam ao Inventory; só as duas rotas de métricas acima chegam a este serviço. As OS e os orçamentos guardam de cada item só o id, a quantidade e o preço, e leem os dados de exibição no Inventory a cada leitura (ver [Dados de exibição dos itens](#dados-de-exibição-dos-itens)).
+> **Catálogo e estoque ficam no Inventory.** O cadastro de serviços (`/api/services`), de peças e insumos (`/api/parts-supplies`) e as consultas de estoque (`/api/stock-movements`, `/api/stock-reservations`) são do Inventory, o serviço da solução dono do catálogo e do estoque ([`oficina-mecanica-inventory-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service)). Pelo API Gateway, essas rotas chegam ao Inventory; só as duas rotas de métricas acima chegam a este serviço. As OS guardam de cada item só o id, a quantidade e o preço, e leem os dados de exibição no Inventory a cada leitura (ver [Dados de exibição dos itens](#dados-de-exibição-dos-itens)).
 
 ---
 
@@ -111,42 +111,48 @@ Toda rota exige o header `Authorization: Bearer <token>` (access token), salvo a
 
 | Método | Rota | Descrição | Perfis |
 |---|---|---|---|
-| POST | `/` | Criar nova OS (`userId` extraído do JWT, número gerado por sequence). Aceita opcionalmente `services` e `partsSupplies` — se ao menos um serviço for fornecido, cria um orçamento `PENDING` atomicamente na mesma transação (sem passar pelo gate `ensureCanCreateQuote`). Os itens são validados e precificados no Inventory antes de gravar: peças sem serviço → 409, id que o Inventory não conhece → 404, Inventory fora do ar → 503. | ADMIN, ATTENDANT |
+| POST | `/` | Criar nova OS (`userId` extraído do JWT, número gerado por sequence). Aceita opcionalmente `services` e `partsSupplies`: com algum item, o orçamento inicial `PENDING` é criado no Billing antes de gravar a OS (ver [Abertura da OS com orçamento inicial](#abertura-da-os-com-orçamento-inicial)) | ADMIN, ATTENDANT |
 | GET | `/` | Listar (paginado; filtros: `number`, `status`, `customerId`, `vehicleId`, `assignedUserId`; ordenação: `sort`). **Por padrão, ordens em `COMPLETED`, `DELIVERED` e `CANCELLED` são omitidas**; use `?status=X` para recuperá-las. | ADMIN, MECHANIC, ATTENDANT |
 | GET | `/:id` | Buscar por ID (retorna serviços e peças/insumos da OS, com os dados de exibição lidos no Inventory) | ADMIN, MECHANIC, ATTENDANT |
 | PUT | `/:id` | Atualizar OS (apenas em `RECEIVED` / `IN_DIAGNOSIS`; `userId` extraído do JWT) | ADMIN, MECHANIC, ATTENDANT |
-| PATCH | `/:id` | Atualizar status da OS (apenas `IN_DIAGNOSIS`, `CANCELLED`, `DELIVERED`). O cancelamento responde **409** enquanto a reserva de estoque de um orçamento aprovado está em andamento | ADMIN, MECHANIC, ATTENDANT |
+| PATCH | `/:id` | Atualizar status da OS (apenas `IN_DIAGNOSIS`, `CANCELLED`, `DELIVERED`). O cancelamento responde **409** enquanto a aprovação de um orçamento está em andamento (ver [Como o orçamento muda a OS](#como-o-orçamento-muda-a-os)) | ADMIN, MECHANIC, ATTENDANT |
 | PATCH | `/:workOrderId/services/:serviceId` | Atualizar status de um serviço da OS (`IN_PROGRESS` / `COMPLETED`). O primeiro serviço iniciado leva a OS a `IN_PROGRESS` e, se ela tem peças, pede ao Inventory a baixa do estoque reservado | ADMIN, MECHANIC, ATTENDANT |
 | GET | `/:id/status-history` | Histórico de mudanças de status | ADMIN, MECHANIC, ATTENDANT |
-| GET | `/:id/quotes` | Listar orçamentos da OS (sem itens) | ADMIN, MECHANIC, ATTENDANT |
 
-> Demais transições (`AWAITING_APPROVAL`, `APPROVED`, `REJECTED`, `IN_PROGRESS`, `COMPLETED`) são derivadas automaticamente dos fluxos de orçamento e dos status de serviço — veja [Ciclo de vida da Ordem de Serviço](./architecture.md#ciclo-de-vida-da-ordem-de-serviço).
+> Demais transições (`AWAITING_APPROVAL`, `APPROVED`, `REJECTED`, `IN_PROGRESS`, `COMPLETED`) são derivadas automaticamente das mensagens de orçamento publicadas pelo Billing e dos status de serviço — veja [Ciclo de vida da Ordem de Serviço](./architecture.md#ciclo-de-vida-da-ordem-de-serviço).
 
 > **Ordenação (`sort`)**: critérios no formato `campo:direção` separados por vírgula (ex.: `?sort=status:desc,createdAt:asc`). Campos permitidos: `status` e `createdAt`; direção `asc` ou `desc`. Padrão: `status:desc,createdAt:asc`. Ao ordenar por `status`, usa-se a **prioridade de negócio** da tabela `WorkOrderStatusInfo` (`RECEIVED` → … → `CANCELLED`), não a ordem alfabética.
 
 ---
 
-**Orçamentos** (`/api/quotes`)
+**Orçamentos** — no Billing
 
-| Método | Rota | Descrição | Perfis |
-|---|---|---|---|
-| GET | `/` | Listar (paginado; filtros: `workOrderId`, `status`) | ADMIN, MECHANIC, ATTENDANT |
-| POST | `/` | Criar orçamento para uma OS (OS deve estar em `IN_DIAGNOSIS` / `AWAITING_APPROVAL` / `REJECTED`). Aceita opcionalmente `services` e `partsSupplies` inline — sem itens cria orçamento vazio (comportamento original); com itens aplica a regra "ao menos um serviço obrigatório" (peças sem serviço → 409, id que o Inventory não conhece → 404, Inventory fora do ar → 503). Responde **409** enquanto a reserva de estoque de um orçamento aprovado da OS está em andamento. | ADMIN, MECHANIC, ATTENDANT |
-| GET | `/:id` | Buscar por ID com itens (serviços e peças/insumos) | ADMIN, MECHANIC, ATTENDANT |
-| POST | `/:id/services` | Adicionar serviço ao orçamento — body `{ serviceId, quantity }`; o preço vem do Inventory | ADMIN, MECHANIC, ATTENDANT |
-| PATCH | `/:id/services/:serviceId` | Atualizar quantidade de serviço | ADMIN, MECHANIC, ATTENDANT |
-| DELETE | `/:id/services/:serviceId` | Remover serviço do orçamento | ADMIN, MECHANIC, ATTENDANT |
-| POST | `/:id/parts-supplies` | Adicionar peça/insumo ao orçamento — body `{ partSupplyId, quantity }`; o preço vem do Inventory | ADMIN, MECHANIC, ATTENDANT |
-| PATCH | `/:id/parts-supplies/:partSupplyId` | Atualizar quantidade de peça/insumo | ADMIN, MECHANIC, ATTENDANT |
-| DELETE | `/:id/parts-supplies/:partSupplyId` | Remover peça/insumo do orçamento | ADMIN, MECHANIC, ATTENDANT |
-| POST | `/:id/submissions` | Enviar orçamento para aprovação do cliente (envia e-mail notificando o cliente, sem link de decisão — a decisão exige autenticação, ver **Minha Conta** abaixo). Exige a OS já diagnosticada (nunca `RECEIVED` → 409); permite orçamentos concorrentes (vários `SENT` na mesma OS). Responde **409** enquanto a reserva de estoque de um orçamento aprovado da OS está em andamento. | ADMIN, MECHANIC, ATTENDANT |
-| PATCH | `/:id` | Aprovar (`status=APPROVED`) ou rejeitar (`status=REJECTED` + `reason`) manualmente | ADMIN, ATTENDANT |
+Os orçamentos são do **Billing**, o serviço da solução dono dos orçamentos e dos pagamentos ([`oficina-mecanica-billing-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service)). Este serviço não guarda orçamento: pelo API Gateway, `/api/quotes` (criação, itens, envio, aprovação e rejeição pelo funcionário) e `GET /api/work-orders/:id/quotes` (orçamentos de uma OS) chegam ao Billing, e a referência dessas rotas está na [API do Billing](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/blob/main/docs/api.md). Este serviço abre a OS com o orçamento inicial, serve a área do cliente (ver **Minha Conta** abaixo) e reage às mensagens que o Billing publica quando um orçamento muda de status.
 
-> A rota pública `GET /quotes/:id/decisions?token=...` (decisão via link assinado por e-mail) foi **removida**. A decisão do Cliente da Oficina agora exige autenticação — ver **Minha Conta** abaixo.
+#### Abertura da OS com orçamento inicial
 
-> Itens só podem ser modificados enquanto o orçamento estiver `PENDING`. A rejeição só leva a OS a `REJECTED` quando não há outro orçamento `SENT`; havendo, a OS permanece `AWAITING_APPROVAL`. As listagens (`GET /quotes` e `GET /work-orders/:id/quotes`) intencionalmente omitem os itens — apenas `GET /quotes/:id` retorna o orçamento com seus itens.
+Com algum item em `services` ou `partsSupplies`, `POST /api/work-orders` valida cliente, veículo e mecânico, cria o orçamento inicial no Billing (`POST /internal/quotes`) e só então grava a OS. O Billing valida e precifica os itens no Inventory, e a recusa dele volta como está, sem nada gravado aqui e sem consumir número de OS:
 
-> **Aprovação e reserva de estoque.** A aprovação (por `PATCH /quotes/:id` ou pela decisão do cliente em `POST /me/quotes/:quoteId/decisions`) responde **200** com o orçamento `APPROVED` e rejeita os demais orçamentos `PENDING` e `SENT` da OS. Sem peças, a OS vai a `APPROVED` na mesma requisição. Com peças, a OS continua `AWAITING_APPROVAL` até o Inventory confirmar a reserva do estoque, o que leva alguns segundos; confirmada a reserva, a OS vai a `APPROVED` com os itens do orçamento. Se falta estoque, a aprovação é desfeita: o orçamento volta a `SENT`, os orçamentos rejeitados por ela voltam ao status anterior (`SENT` ou `PENDING`), o histórico da OS registra `Aprovação do orçamento <id> desfeita por falta de estoque` e o cliente recebe um e-mail avisando que o orçamento voltou a aguardar aprovação e pode ser aprovado de novo quando o estoque for reposto. Não há mais 409 "Estoque insuficiente" na aprovação: a falta de estoque chega depois, pelo Inventory. Durante a reserva, criar ou enviar orçamento e cancelar a OS respondem **409** `Ordem de serviço com aprovação de orçamento em andamento: aguarde a confirmação do estoque`; aprovar outro orçamento responde **409** porque todos os outros estão `REJECTED`. O fluxo completo está em [Aprovação de orçamento com reserva de estoque](architecture.md#aprovação-de-orçamento-com-reserva-de-estoque).
+| Situação | Resposta |
+|---|---|
+| Peças sem nenhum serviço, ou item repetido | **409** do Billing |
+| Id de serviço ou peça que o Inventory não conhece | **404** do Billing |
+| Billing ou Inventory fora do ar, ou sem resposta em 5 s | **503** |
+| Falha ao gravar a OS depois de o orçamento ser criado | O orçamento é apagado no Billing (`DELETE /internal/quotes/:id`) e o erro da gravação volta ao chamador; se a exclusão também falhar, o orçamento sem OS fica só registrado no log (`work_order.opening.compensation_failed`) |
+
+Sem itens, a OS é aberta sem orçamento e sem chamar o Billing.
+
+#### Como o orçamento muda a OS
+
+| O que acontece no Billing | Efeito na OS |
+|---|---|
+| Orçamento enviado ao cliente | A OS vai de `IN_DIAGNOSIS` ou `REJECTED` a `AWAITING_APPROVAL` (se já aguarda, fica) e o cliente recebe o e-mail com os itens e o total. A rota de envio no Billing não espera o e-mail: uma falha no envio do e-mail não desfaz o envio do orçamento nem responde 503. Uma OS cancelada antes de a mensagem chegar não muda, e nenhum e-mail sai |
+| Orçamento rejeitado | A OS vai a `REJECTED` só quando nenhum outro orçamento dela continua enviado; havendo, ela segue em `AWAITING_APPROVAL` |
+| Orçamento aprovado | Começa a aprovação descrita abaixo |
+
+**Aprovação e reserva de estoque.** A aprovação (pelo funcionário, no Billing, ou pela decisão do cliente em `POST /me/quotes/:quoteId/decisions`) responde **200** com o orçamento `APPROVED`, e a OS muda segundos depois, quando chega a mensagem do Billing. Sem peças, a OS vai a `APPROVED` com os itens do orçamento. Com peças, a OS continua `AWAITING_APPROVAL` até o Inventory confirmar a reserva do estoque; confirmada a reserva, a OS vai a `APPROVED` com os itens e o total do orçamento. Se falta estoque, a aprovação é desfeita no Billing: o orçamento volta a `SENT`, os orçamentos rejeitados por ela voltam ao status anterior, o histórico da OS registra `Aprovação do orçamento <id> desfeita por falta de estoque` e o cliente recebe um e-mail avisando que o orçamento voltou a aguardar aprovação e pode ser aprovado de novo quando o estoque for reposto. Se a OS foi cancelada entre a aprovação e a chegada da mensagem, o orçamento vai a `REJECTED` e o histórico registra `Aprovação do orçamento <id> desfeita: a Ordem de Serviço não aguardava aprovação`, sem e-mail.
+
+Enquanto a aprovação está em andamento (reserva do estoque ou reversão no Billing), cancelar a OS e decidir um orçamento pela área do cliente respondem **409** `Ordem de serviço com aprovação de orçamento em andamento: aguarde a conclusão e tente novamente`. Criar, enviar ou aprovar outro orçamento da mesma OS é recusado pelo Billing (**409**), porque a OS já tem um orçamento aprovado. O fluxo completo está em [Fluxo do orçamento, do envio à aprovação](architecture.md#fluxo-do-orçamento-do-envio-à-aprovação).
 
 ---
 
@@ -175,11 +181,20 @@ Toda rota exige o header `Authorization: Bearer <token>` (access token), salvo a
 | PATCH | `/password` | Trocar a própria senha (`currentPassword`, `newPassword`) — funciona com token interno **ou** externo | JWT interno OU `customer-jwt` |
 | GET | `/work-orders` | Listar ordens de serviço dos clientes vinculados ao usuário autenticado (paginado; filtro opcional `customerId`). Cada item traz `customer: { id, name, type }` — necessário para quem representa mais de uma empresa distinguir a qual cliente cada ordem pertence | `customer-jwt` |
 | GET | `/work-orders/:workOrderId` | Detalhe de uma ordem de serviço vinculada, incluindo `customer: { id, name, type }` | `customer-jwt` |
-| GET | `/work-orders/:workOrderId/quotes` | Orçamentos de uma ordem de serviço vinculada | `customer-jwt` |
-| GET | `/quotes/:quoteId` | Orçamento e itens de uma ordem vinculada | `customer-jwt` |
-| POST | `/quotes/:quoteId/decisions` | Aprovar (`{ "action": "approve" }`) ou rejeitar (`{ "action": "reject", "reason": "..." }`) um orçamento vinculado | `customer-jwt` |
+| GET | `/work-orders/:workOrderId/quotes` | Orçamentos de uma ordem de serviço vinculada, sem itens, lidos no Billing | `customer-jwt` |
+| GET | `/quotes/:quoteId` | Orçamento e itens de uma ordem vinculada, lidos no Billing | `customer-jwt` |
+| POST | `/quotes/:quoteId/decisions` | Aprovar (`{ "action": "approve" }`) ou rejeitar (`{ "action": "reject", "reason": "..." }`) um orçamento vinculado; a decisão é repassada ao Billing | `customer-jwt` |
 
 > O token `customer-jwt` (RS256) é emitido por uma **função serverless externa** a esta aplicação, após autenticar o Cliente da Oficina por CPF + senha — a API só verifica a assinatura com `CUSTOMER_JWT_PUBLIC_KEY`. Toda rota `/api/me/*` que aponta a um recurso específico (`workOrderId`/`quoteId`) resolve a autorização **por vínculo** a cada requisição, consultando `UserCustomer` no banco — o token nunca carrega `customerId`. Um recurso inexistente e um recurso de um cliente não vinculado respondem igualmente **404** (nunca 403), para não virar oráculo de enumeração. Ver [Identidade externa, autenticação e autorização por vínculo](architecture.md#identidade-externa-autenticação-e-autorização-por-vínculo).
+
+> **Orçamentos na área do cliente.** Os orçamentos vêm do Billing, e o corpo é o que ele devolve, no envelope `{ data }`. A listagem confere o vínculo com a OS antes de ler o Billing. O detalhe e a decisão partem do `quoteId`, e só o Billing sabe a qual OS o orçamento pertence, então o orçamento é lido no Billing antes; sem vínculo com a OS dele, a resposta é **404** e nada do orçamento é devolvido nem repassado. Antes de repassar a decisão ao Billing, a rota confere ainda:
+>
+> | Situação | Resposta |
+> |---|---|
+> | OS fora de `AWAITING_APPROVAL` | **409** `Orçamento só pode ser decidido com a Ordem de Serviço aguardando aprovação. Status atual: "<status>"` |
+> | Aprovação de outro orçamento da OS em andamento | **409** `Ordem de serviço com aprovação de orçamento em andamento: aguarde a conclusão e tente novamente` |
+> | Orçamento que deixou de estar `SENT` (decisão concorrente, por exemplo) | **409** do Billing, com a mensagem dele |
+> | Billing ou Inventory fora do ar, ou sem resposta (5 s no detalhe e na decisão, 2 s na listagem) | **503**; numa decisão, nada é gravado |
 
 ---
 
@@ -190,19 +205,17 @@ Rotas para os outros serviços da oficina, pela rede do cluster. Ficam **fora do
 | Método | Rota | Descrição | Acesso |
 |---|---|---|---|
 | GET | `/internal/work-orders/:id` | Detalhe da OS, com o mesmo corpo de `GET /api/work-orders/:id`. `400` para id que não é UUID e `404` para OS inexistente | Rede do cluster |
-| GET | `/internal/services/:serviceId/quote-usage` | Diz ao Inventory se algum orçamento usa o serviço: `200 { data: { inUse } }`. `400` para id que não é UUID | Rede do cluster |
-| GET | `/internal/parts-supplies/:partSupplyId/quote-usage` | Diz ao Inventory se algum orçamento usa a peça ou insumo: `200 { data: { inUse } }`. `400` para id que não é UUID | Rede do cluster |
 
-O Inventory chama as duas rotas de uso antes de apagar um serviço ou uma peça do catálogo, para recusar a exclusão de item que algum orçamento usa. O corpo segue o mesmo envelope das rotas públicas. Os contratos ficam em fixtures versionadas em `app/test/contracts/` (`internal-work-order.json` e `internal-quote-usage.json`), conferidas pelo e2e (ver [Contrato das rotas `/internal`](testing.md#contrato-das-rotas-internal)); detalhes do cliente que chama essas rotas em [Chamadas internas](architecture.md#chamadas-internas).
+O Billing chama essa rota para conferir a OS antes de criar, enviar e aprovar um orçamento. O corpo segue o mesmo envelope das rotas públicas. O contrato fica numa fixture versionada, `app/test/contracts/internal-work-order.json`, conferida pelo e2e (ver [Contrato das rotas `/internal`](testing.md#contrato-das-rotas-internal)); detalhes do cliente HTTP das chamadas entre serviços em [Chamadas internas](architecture.md#chamadas-internas).
 
 ---
 
 ## Dados de exibição dos itens
 
-Os itens de OS e de orçamento guardam o id do serviço ou da peça, a quantidade e o preço. Os dados de exibição (nome e descrição do serviço; nome, descrição, SKU, número de peça, categoria e unidade da peça) são lidos no Inventory a cada resposta que mostra itens: o detalhe da OS (e as rotas que o devolvem: criação, edição, mudança de status e `GET /internal/work-orders/:id`), o item da rota de execução de serviço, o detalhe do orçamento e o detalhe e a decisão do orçamento em `/api/me`. As listas de OS e de orçamentos mostram só o resumo e não consultam o Inventory.
+Os itens da OS guardam o id do serviço ou da peça, a quantidade e o preço. Os dados de exibição (nome e descrição do serviço; nome, descrição, SKU, número de peça, categoria e unidade da peça) são lidos no Inventory a cada resposta que mostra itens: o detalhe da OS (e as rotas que o devolvem: criação, edição, mudança de status e `GET /internal/work-orders/:id`) e o item da rota de execução de serviço. A lista de OS mostra só o resumo e não consulta o Inventory. Os itens dos orçamentos em `/api/me` chegam do Billing já com os dados de exibição, que ele lê no Inventory.
 
 - Um item que o Inventory não acha mais aparece com id, quantidade e preço e os campos de exibição nulos.
-- Com o Inventory fora do ar, essas rotas respondem **503**. As que gravam e mostram itens (mudança de status, execução de serviço e decisão do cliente) leem o catálogo antes de gravar, então o 503 sai sem nada gravado.
+- Com o Inventory fora do ar, essas rotas respondem **503**. As que gravam e mostram itens (mudança de status e execução de serviço) leem o catálogo antes de gravar, então o 503 sai sem nada gravado.
 
 ---
 

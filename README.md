@@ -2,7 +2,7 @@
 
 # 🔧 Work Order Service
 
-**Sistema Integrado de Atendimento e Execução de Serviços para oficinas mecânicas** — ordens de serviço, clientes, veículos e orçamentos, com o catálogo de serviços e peças e o estoque lidos no serviço Inventory.
+**Sistema Integrado de Atendimento e Execução de Serviços para oficinas mecânicas** — ordens de serviço, clientes e veículos, com os orçamentos no serviço Billing e o catálogo de serviços e peças e o estoque no serviço Inventory.
 
 ![Node](https://img.shields.io/badge/Node.js-22-339933?logo=node.js&logoColor=white)
 ![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?logo=nestjs&logoColor=white)
@@ -22,8 +22,8 @@ Trata-se de uma API REST para gestão de oficinas mecânicas, construída com **
 Substitui o controle manual (anotações e planilhas) de uma oficina de médio porte por um **Sistema Integrado de Atendimento e Execução de Serviços** — do recebimento do veículo à entrega, com orçamento, aprovação do cliente, reserva e baixa de estoque e execução orquestrados pelo domínio, contemplando:
 
 - **Ordens de serviço** com máquina de estados validada no domínio
-- **Orçamentos** com aprovação/rejeição pelo **Cliente da Oficina autenticado** (ver [Autenticação](#-autenticação))
-- **Reserva de estoque pela Saga de aprovação**: aprovar um orçamento com peças pede a reserva ao Inventory, o serviço dono do catálogo e do estoque; a OS vai a `APPROVED` quando a reserva é confirmada, e a aprovação é desfeita, com e-mail ao cliente, quando falta estoque. A baixa é pedida ao Inventory no início do primeiro serviço
+- **Orçamentos no Billing**, o serviço dono dos orçamentos e dos pagamentos: a OS com itens nasce com o orçamento inicial criado lá (**Saga de abertura**, que apaga o orçamento se a gravação da OS falhar), o envio e a rejeição chegam por mensagem e movem a OS, e o **Cliente da Oficina autenticado** consulta e decide os orçamentos pela área dele (ver [Autenticação](#-autenticação))
+- **Reserva de estoque pela Saga de aprovação**: um orçamento aprovado no Billing com peças pede a reserva ao Inventory, o serviço dono do catálogo e do estoque; a OS vai a `APPROVED` quando a reserva é confirmada, e, quando falta estoque, a aprovação é desfeita no Billing e o cliente recebe um e-mail. A baixa é pedida ao Inventory no início do primeiro serviço
 - **Autorização por papéis (RBAC)**: `ADMIN`, `MECHANIC`, `ATTENDANT`
 - **Dois fluxos de autenticação JWT isolados**: interno (RS256, access + refresh com chaves separadas, bcrypt) e externo por CPF + senha (RS256, emitido por uma função serverless dedicada)
 - **Concorrência otimista** (lock por `version`) em agregados sensíveis
@@ -145,7 +145,7 @@ Após a inicialização:
 - **MailHog (interface web):** `http://localhost:8025`
 - **LocalStack (SNS/SQS):** `http://localhost:4566`
 
-> As rotas que mostram ou gravam itens de OS e de orçamento leem o catálogo no Inventory, o serviço dono de serviços, peças e estoque. Suba também a stack local do [`oficina-mecanica-inventory-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service) (API em `http://localhost:3003`); sem ela, essas rotas respondem 503. Ver [Como executar localmente › Inventory local](docs/local-setup.md#inventory-local).
+> As rotas que mostram ou gravam itens da OS leem o catálogo no Inventory, o serviço dono de serviços, peças e estoque, e a abertura de OS com itens e os orçamentos da área do cliente chamam o Billing, o serviço dono dos orçamentos. Suba também as stacks locais do [`oficina-mecanica-inventory-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service) (API em `http://localhost:3003`) e do [`oficina-mecanica-billing-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service) (API em `http://localhost:3002`); sem elas, essas rotas respondem 503. Ver [Como executar localmente › Inventory local](docs/local-setup.md#inventory-local) e [Billing local](docs/local-setup.md#billing-local).
 
 ```bash
 # Acompanhar os logs da API em tempo real
@@ -194,7 +194,7 @@ Execute todos os comandos a partir de `app/` (`cd app`) — não há `package.js
 
 ## 🏛️ Arquitetura
 
-**Clean Architecture** com camadas estritas — as dependências apontam só para dentro. `domain/` e `application/` são livres de framework e ORM (uma cerca de ESLint quebra a build se `@nestjs/*` ou o client do Prisma vazarem para lá). Práticas de **DDD**: entidades ricas, value objects e agregados (`WorkOrder`, `Quote`) que protegem invariantes. Os **Clean Controllers** e **Presenters** (POJOs) ficam em `interface-adapters/`; a borda NestJS (rotas, Swagger, guards) vive em `infrastructure/http/` e apenas delega.
+**Clean Architecture** com camadas estritas — as dependências apontam só para dentro. `domain/` e `application/` são livres de framework e ORM (uma cerca de ESLint quebra a build se `@nestjs/*` ou o client do Prisma vazarem para lá). Práticas de **DDD**: entidades ricas, value objects e o agregado `WorkOrder`, que protege invariantes. Os **Clean Controllers** e **Presenters** (POJOs) ficam em `interface-adapters/`; a borda NestJS (rotas, Swagger, guards) vive em `infrastructure/http/` e apenas delega.
 
 ➡️ Detalhes completos em **[Arquitetura](docs/architecture.md)**.
 
@@ -261,43 +261,37 @@ A função serverless de autenticação externa **não está neste repositório*
 | `PATCH /api/work-orders/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
 | `PATCH /api/work-orders/:workOrderId/services/:serviceId` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
 | `GET /api/work-orders/:id/status-history` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `GET /api/work-orders/:id/quotes` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `GET /api/quotes` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `POST /api/quotes` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `GET /api/quotes/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `POST /api/quotes/:id/services` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `PATCH /api/quotes/:id/services/:serviceId` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `DELETE /api/quotes/:id/services/:serviceId` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `POST /api/quotes/:id/parts-supplies` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `PATCH /api/quotes/:id/parts-supplies/:partSupplyId` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `DELETE /api/quotes/:id/parts-supplies/:partSupplyId` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `POST /api/quotes/:id/submissions` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
-| `PATCH /api/quotes/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
 | `GET /api/health/live`, `GET /api/health/ready` | `@Public()` | Público |
 | `GET /internal/work-orders/:id` | `@Public()` | Rede do cluster (fora do prefixo `/api`, não passa pelo API Gateway) |
-| `GET /internal/services/:serviceId/quote-usage` | `@Public()` | Rede do cluster (chamada pelo Inventory) |
-| `GET /internal/parts-supplies/:partSupplyId/quote-usage` | `@Public()` | Rede do cluster (chamada pelo Inventory) |
 
 > A autenticação é negada por padrão: um guard global (`AuthenticationGuard`) exige o token de funcionário em toda rota sem marcação, `@Public()` dispensa o token e `@CustomerArea()` troca o token exigido. O `RolesGuard` restringe por papel depois dele.
 
-> A decisão do cliente usa `POST /api/me/quotes/:quoteId/decisions`, com autenticação `customer-jwt` RS256.
+> A decisão do cliente usa `POST /api/me/quotes/:quoteId/decisions`, com autenticação `customer-jwt` RS256; este serviço confere o vínculo e repassa a decisão ao Billing.
 
-> As rotas de catálogo e estoque (`/api/services`, `/api/parts-supplies`, `/api/stock-movements`, `/api/stock-reservations`) e as permissões delas são do Inventory; deste serviço ficam só as métricas por serviço.
+> As rotas de catálogo e estoque (`/api/services`, `/api/parts-supplies`, `/api/stock-movements`, `/api/stock-reservations`) e as permissões delas são do Inventory; deste serviço ficam só as métricas por serviço. As rotas de orçamento (`/api/quotes` e `GET /api/work-orders/:id/quotes`) e as permissões delas são do Billing.
 
 </details>
 
 ## 🌐 Ecossistema de Repositórios
 
-A solução é composta por **sete repositórios especializados**, com responsabilidades separadas entre aplicação, rede, execução, dados, entrada pública, autenticação e observabilidade. Este README funciona como índice central; os detalhes de provisionamento e operação permanecem nos repositórios responsáveis.
+A solução é composta por **quinze repositórios especializados**, com responsabilidades separadas entre aplicação, rede, execução, mensageria, dados, entrada pública, autenticação, notificação e observabilidade. Este README funciona como índice central; os detalhes de provisionamento e operação permanecem nos repositórios responsáveis.
 
 | Repositório | Responsabilidade | Componente arquitetural | Tecnologias |
 |---|---|---|---|
 | **[oficina-mecanica-work-order-service](https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service)** *(este repositório)* | Aplicação, APIs, domínio e manifests dos workloads | API REST / container de aplicação no EKS | NestJS, TypeScript, Prisma, Jest, Docker |
+| **[oficina-mecanica-identity-service](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service)** | Usuários, papéis, credenciais e emissão do token de funcionário | API REST / container de aplicação no EKS | NestJS, TypeScript, Prisma |
+| **[oficina-mecanica-billing-service](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service)** | Orçamentos e pagamentos; cria o orçamento inicial da OS e publica as mudanças de status dos orçamentos | API REST / container de aplicação no EKS | NestJS, TypeScript, Prisma |
+| **[oficina-mecanica-inventory-service](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service)** | Catálogo de serviços e peças e estoque; reserva e baixa as peças das OS | API REST / container de aplicação no EKS | NestJS, TypeScript, Prisma |
 | **[oficina-mecanica-infra-base](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base)** | Fundação de rede compartilhada na AWS | VPC, subnets, IGW, NAT Gateway e rotas | Terraform, AWS VPC |
 | **[oficina-mecanica-infra-k8s](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s)** | Plataforma Kubernetes, registry e entrada privada do cluster | Amazon EKS, Node Group, ECR, NLB e `metrics-server` | Terraform, Helm, Amazon EKS 1.35 |
+| **[oficina-mecanica-infra-messaging](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-messaging)** | Tópico e filas da mensageria entre os serviços | Amazon SNS FIFO e uma fila Amazon SQS FIFO por serviço, com DLQ (fila de mensagens que falharam) | Terraform, Amazon SNS, Amazon SQS |
 | **[oficina-mecanica-infra-database-work-order](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order)** | Persistência relacional e cache gerenciados do `work-order`, fora do cluster | Amazon RDS PostgreSQL 18 e ElastiCache Valkey 9.1 em subnets privadas | Terraform, Amazon RDS, PostgreSQL 18, ElastiCache Valkey 9.1 |
+| **[oficina-mecanica-infra-database-identity](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-identity)** | Persistência relacional e cache gerenciados do `identity`, fora do cluster | Amazon RDS PostgreSQL 18 e ElastiCache Valkey 9.1 em subnets privadas | Terraform, Amazon RDS, PostgreSQL 18, ElastiCache Valkey 9.1 |
+| **[oficina-mecanica-infra-database-billing](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-billing)** | Persistência relacional e cache gerenciados do `billing`, fora do cluster | Amazon RDS PostgreSQL 18 e ElastiCache Valkey 9.1 em subnets privadas | Terraform, Amazon RDS, PostgreSQL 18, ElastiCache Valkey 9.1 |
+| **[oficina-mecanica-infra-database-inventory](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-inventory)** | Persistência relacional e cache gerenciados do `inventory`, fora do cluster | Amazon RDS PostgreSQL 18 e ElastiCache Valkey 9.1 em subnets privadas | Terraform, Amazon RDS, PostgreSQL 18, ElastiCache Valkey 9.1 |
 | **[oficina-mecanica-api-gateway](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway)** | Entrada pública, roteamento e integração privada com o EKS | AWS API Gateway HTTP API + VPC Link | Terraform, API Gateway, OpenAPI 3.0 |
 | **[oficina-mecanica-lambda-customer-auth](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth)** | Login externo por CPF e emissão de JWT RS256 | Função serverless de autenticação de clientes | TypeScript, AWS Lambda, Zod, Jest |
+| **[oficina-mecanica-lambda-notification](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-notification)** | Envio dos e-mails da solução, a partir das mensagens dos serviços | Função serverless de notificação | TypeScript, AWS Lambda, Zod, Nodemailer, Jest |
 | **[oficina-mecanica-custom-monitoring](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring)** | Dashboards, alertas e verificação sintética da solução | Camada de observabilidade no Datadog | Terraform, Datadog, OpenTelemetry |
 
 ## 📁 Estrutura do Repositório
@@ -335,20 +329,20 @@ A solução é composta por **sete repositórios especializados**, com responsab
 
 | Documento | Conteúdo |
 |---|---|
-| 🏛️ [Arquitetura](docs/architecture.md) | Clean Architecture, DDD, ciclos de vida, UoW, Saga de aprovação com reserva de estoque, mensageria com outbox, cache, chamadas internas, exceções |
+| 🏛️ [Arquitetura](docs/architecture.md) | Clean Architecture, DDD, ciclos de vida, UoW, orçamentos no Billing, Sagas de abertura e de aprovação, fluxo do orçamento, mensageria com outbox, cache, chamadas internas, exceções |
 | 🗃️ [Banco de Dados](docs/database.md) | Diagrama ER, tabelas e relacionamentos, enums, convenções de modelagem |
 | 🔀 [Diagramas de Sequência](docs/sequence-diagrams.md) | Login interno, abertura de OS, autenticação externa por CPF e aprovação de orçamento com reserva de estoque |
 | 🔌 [Referência da API](docs/api.md) | Endpoints por domínio, perfis (RBAC), rotas /internal, formato de resposta |
 | 💻 [Como executar localmente](docs/local-setup.md) | Setup local, MailHog, Valkey, LocalStack, variáveis de ambiente, seed |
 | 🆔 [Ids canônicos do seed](docs/seed-ids.md) | UUIDs fixos de usuários, clientes, veículos, serviços e peças, compartilhados entre os serviços |
-| 🧪 [Testes](docs/testing.md) | Unitários, E2E (PostgreSQL, Valkey e LocalStack), contrato das rotas /internal, Postman/Newman |
+| 🧪 [Testes](docs/testing.md) | Unitários, E2E (PostgreSQL, Valkey, LocalStack e stub do Inventory e do Billing), contrato das rotas /internal, Postman/Newman |
 | 🔒 [Segurança](docs/security.md) | Mitigações no código, proteção de dados nos logs e relatórios (ZAP, SonarQube) |
 | 🔭 [Observabilidade](docs/observability.md) | Logs estruturados, correlação, traces, métricas e degradação segura |
 | 🏗️ [Infra · Visão Geral](docs/infra/overview.md) | Arquitetura da infra como sistema: componentes, ownership e fluxos |
 | 🌍 [Infra · Terraform](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base) | Infraestrutura AWS e Kubernetes (IaC nos repositórios dedicados) |
 | ☸️ [Infra · Kubernetes](docs/infra/kubernetes.md) | Manifests de aplicação (`k8s/`), probes, HPA e deploy |
 | 🔄 [Infra · CI/CD](docs/infra/ci-cd.md) | Workflows de CI, CD, SAST e DAST |
-| 📐 [ADRs](docs/adr) | Decisões arquiteturais — [0001 PostgreSQL](docs/adr/0001-uso-do-postgresql-como-banco-de-dados.md), [0002 Logging estruturado](docs/adr/0002-logging-estruturado.md), [0003 Health checks](docs/adr/0003-health-checks.md), [0004 Autenticação de clientes](docs/adr/0004-autenticacao-de-clientes.md), [0005 OpenTelemetry](docs/adr/0005-opentelemetry.md), [0006 Escolha de nuvem](docs/adr/0006-escolha-de-nuvem-aws.md), [0007 Padrão de comunicação](docs/adr/0007-padrao-de-comunicacao-rest-monolito.md), [0008 Autoscaling (HPA)](docs/adr/0008-autoscaling-via-hpa.md), [0009 Clean Architecture/DDD](docs/adr/0009-clean-architecture-ddd-em-camadas.md), [0010 Concorrência otimista](docs/adr/0010-concorrencia-otimista-via-version.md), [0011 Unit of Work](docs/adr/0011-unit-of-work-transacoes-multi-repositorio.md), [0012 Exceções por camada](docs/adr/0012-hierarquia-de-excecoes-por-camada.md), [0013 Autenticação interna JWT](docs/adr/0013-autenticacao-interna-jwt-stateless.md) *(substituída pela 0022)*, [0014 Pipelines CI/CD/SAST/DAST](docs/adr/0014-pipelines-ci-cd-sast-dast-separados.md), [0015 Testcontainers no E2E](docs/adr/0015-testcontainers-e2e-postgresql-real.md), [0016 Sanitização e validação em duas camadas](docs/adr/0016-sanitizacao-e-validacao-em-duas-camadas.md), [0017 Credencial do banco no CD](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md), [0018 Mensageria com outbox](docs/adr/0018-mensageria-sns-sqs-fifo-com-outbox.md), [0019 Cache do dono](docs/adr/0019-cache-do-dono-no-elasticache.md), [0020 Chamadas internas e rotas negadas por padrão](docs/adr/0020-chamadas-internas-e-rotas-negadas-por-padrao.md), [0021 Span de consumo de mensagens](docs/adr/0021-span-de-consumo-de-mensagens.md), [0022 Token de funcionário em RS256](docs/adr/0022-token-de-funcionario-em-rs256.md), [0023 Catálogo e estoque no Inventory, com reserva pela Saga](docs/adr/0023-catalogo-e-estoque-no-inventory-com-reserva-pela-saga.md) |
+| 📐 [ADRs](docs/adr) | Decisões arquiteturais — [0001 PostgreSQL](docs/adr/0001-uso-do-postgresql-como-banco-de-dados.md), [0002 Logging estruturado](docs/adr/0002-logging-estruturado.md), [0003 Health checks](docs/adr/0003-health-checks.md), [0004 Autenticação de clientes](docs/adr/0004-autenticacao-de-clientes.md), [0005 OpenTelemetry](docs/adr/0005-opentelemetry.md), [0006 Escolha de nuvem](docs/adr/0006-escolha-de-nuvem-aws.md), [0007 Padrão de comunicação](docs/adr/0007-padrao-de-comunicacao-rest-monolito.md), [0008 Autoscaling (HPA)](docs/adr/0008-autoscaling-via-hpa.md), [0009 Clean Architecture/DDD](docs/adr/0009-clean-architecture-ddd-em-camadas.md), [0010 Concorrência otimista](docs/adr/0010-concorrencia-otimista-via-version.md), [0011 Unit of Work](docs/adr/0011-unit-of-work-transacoes-multi-repositorio.md), [0012 Exceções por camada](docs/adr/0012-hierarquia-de-excecoes-por-camada.md), [0013 Autenticação interna JWT](docs/adr/0013-autenticacao-interna-jwt-stateless.md) *(substituída pela 0022)*, [0014 Pipelines CI/CD/SAST/DAST](docs/adr/0014-pipelines-ci-cd-sast-dast-separados.md), [0015 Testcontainers no E2E](docs/adr/0015-testcontainers-e2e-postgresql-real.md), [0016 Sanitização e validação em duas camadas](docs/adr/0016-sanitizacao-e-validacao-em-duas-camadas.md), [0017 Credencial do banco no CD](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md), [0018 Mensageria com outbox](docs/adr/0018-mensageria-sns-sqs-fifo-com-outbox.md), [0019 Cache do dono](docs/adr/0019-cache-do-dono-no-elasticache.md), [0020 Chamadas internas e rotas negadas por padrão](docs/adr/0020-chamadas-internas-e-rotas-negadas-por-padrao.md), [0021 Span de consumo de mensagens](docs/adr/0021-span-de-consumo-de-mensagens.md), [0022 Token de funcionário em RS256](docs/adr/0022-token-de-funcionario-em-rs256.md), [0023 Catálogo e estoque no Inventory, com reserva pela Saga](docs/adr/0023-catalogo-e-estoque-no-inventory-com-reserva-pela-saga.md), [0024 Saga de abertura com orçamento inicial no Billing](docs/adr/0024-saga-de-abertura-com-orcamento-inicial-no-billing.md) |
 | 🧩 [Modelo C4](docs/c4) | Diagramas de Contexto, Container e Componente |
 | 🎨 [Modelagem de Domínio (Miro)](https://miro.com/app/board/uXjVGvVPEOw=/?share_link_id=9196435429) | Domain Storytelling, Event Storming e Dicionário de Linguagem Ubíqua |
 
