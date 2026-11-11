@@ -5,6 +5,7 @@ import request from 'supertest';
 import { MessagePayloads, MessageType } from '@domain/messaging/message-catalog';
 import { MessageHandlerRegistry } from '@infrastructure/messaging/message-handler.registry';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
+import { readInternalQuoteFixture } from '../helpers/billing-quotes-gateway-mock.factory';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
 import {
@@ -144,32 +145,40 @@ describe('WorkOrder (E2E)', () => {
       items: [],
     });
 
-    // shortcut: seeds the approved quote and the saga reserving stock, until billing.quote.approved starts the saga
-    await ctx.prisma.quote.create({
-      data: {
-        id: quoteId,
-        workOrderId,
-        status: 'APPROVED',
-        decidedBy: adminAuth.user.id,
-        services: {
-          create: services.map((item) => ({ ...item, totalPrice: item.unitPrice * item.quantity })),
-        },
-        partsSupplies: {
-          create: partsSupplies.map((item) => ({
-            ...item,
-            totalPrice: item.unitPrice * item.quantity,
-          })),
-        },
-      },
+    await deliver('billing.quote.approved', workOrderId, {
+      quoteId,
+      decidedBy: adminAuth.user.id,
+      total: [...services, ...partsSupplies]
+        .reduce((sum, item) => sum + item.unitPrice * item.quantity, 0)
+        .toFixed(2),
+      services: services.map((item) => ({ ...item, unitPrice: item.unitPrice.toFixed(2) })),
+      partsSupplies: partsSupplies.map((item) => ({
+        ...item,
+        unitPrice: item.unitPrice.toFixed(2),
+      })),
     });
 
-    await ctx.prisma.sagaInstance.create({
-      data: {
-        type: 'QUOTE_APPROVAL',
-        correlationId: quoteId,
-        workOrderId,
-        status: 'RESERVING_STOCK',
-      },
+    if (partsSupplies.length === 0) {
+      return;
+    }
+
+    const approvedQuote = readInternalQuoteFixture().data;
+
+    stub.quotes.set(quoteId, {
+      ...approvedQuote,
+      id: quoteId,
+      workOrderId,
+      decidedBy: adminAuth.user.id,
+      services: services.map(({ serviceId, ...item }) => ({
+        ...approvedQuote.services[0],
+        ...item,
+        id: serviceId,
+      })),
+      partsSupplies: partsSupplies.map(({ partSupplyId, ...item }) => ({
+        ...approvedQuote.partsSupplies[0],
+        ...item,
+        id: partSupplyId,
+      })),
     });
 
     await deliver('inventory.stock.reserved', workOrderId, { quoteId });

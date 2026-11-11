@@ -11,7 +11,6 @@ import { Vehicle } from './vehicle.entity';
 import { User } from './user.entity';
 import { WorkOrderService } from './work-order-service.entity';
 import { WorkOrderPartSupply } from './work-order-part-supply.entity';
-import { Quote } from './quote.entity';
 import { WorkOrderNumber } from '../value-objects/work-order-number.vo';
 
 import {
@@ -28,6 +27,11 @@ export interface CreateWorkOrderProps {
   internalNotes?: string | null;
   mileageAtService?: number | null;
   assignedUser?: User | null;
+}
+
+export interface ApprovedQuoteItems {
+  services: { serviceId: string; quantity: number; unitPrice: number }[];
+  partsSupplies: { partSupplyId: string; quantity: number; unitPrice: number }[];
 }
 
 export interface UpdateWorkOrderProps {
@@ -184,15 +188,15 @@ export class WorkOrder {
     }
   }
 
-  applyQuoteItems(quote: Quote): {
+  applyApprovedItems(items: ApprovedQuoteItems): {
     services: WorkOrderService[];
     partSupplies: WorkOrderPartSupply[];
   } {
     const existingServiceIds = new Set(this._services.map((s) => s.serviceId));
     const existingPartSupplyIds = new Set(this._partSupplies.map((p) => p.partSupplyId));
 
-    const duplicateService = quote.services.find((s) => existingServiceIds.has(s.serviceId));
-    const duplicatePart = quote.partsSupplies.find((p) =>
+    const duplicateService = items.services.find((s) => existingServiceIds.has(s.serviceId));
+    const duplicatePart = items.partsSupplies.find((p) =>
       existingPartSupplyIds.has(p.partSupplyId),
     );
 
@@ -208,7 +212,7 @@ export class WorkOrder {
       );
     }
 
-    const services = quote.services.map((s) =>
+    const services = items.services.map((s) =>
       WorkOrderService.create({
         workOrderId: this.id,
         serviceId: s.serviceId,
@@ -217,7 +221,7 @@ export class WorkOrder {
       }),
     );
 
-    const partSupplies = quote.partsSupplies.map((p) =>
+    const partSupplies = items.partsSupplies.map((p) =>
       WorkOrderPartSupply.create({
         workOrderId: this.id,
         partSupplyId: p.partSupplyId,

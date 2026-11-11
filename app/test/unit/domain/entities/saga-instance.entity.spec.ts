@@ -29,6 +29,19 @@ describe('SagaInstance', () => {
         expect(saga.failureReason).toBeNull();
       },
     );
+
+    it('should create a saga compensating with the failure reason', () => {
+      const saga = SagaInstance.create({
+        type: SagaType.QUOTE_APPROVAL,
+        correlationId: quoteId,
+        workOrderId,
+        status: SagaStatus.COMPENSATING,
+        failureReason: SagaFailureReason.WORK_ORDER_NOT_AWAITING,
+      });
+
+      expect(saga.status).toBe(SagaStatus.COMPENSATING);
+      expect(saga.failureReason).toBe(SagaFailureReason.WORK_ORDER_NOT_AWAITING);
+    });
   });
 
   describe('complete', () => {
@@ -52,26 +65,54 @@ describe('SagaInstance', () => {
     });
   });
 
-  describe('reopenStockReservation', () => {
-    it('should reopen a saga compensated for insufficient stock', () => {
+  describe('reopen', () => {
+    it.each([
+      [SagaStatus.RESERVING_STOCK, null],
+      [SagaStatus.COMPENSATING, SagaFailureReason.WORK_ORDER_NOT_AWAITING],
+    ] as const)(
+      'should reopen a saga compensated for insufficient stock in %s',
+      (status, failureReason) => {
+        const saga = createMockSagaInstance({
+          status: SagaStatus.COMPENSATED,
+          failureReason: SagaFailureReason.INSUFFICIENT_STOCK,
+        });
+
+        saga.reopen(status, failureReason);
+
+        expect(saga.status).toBe(status);
+        expect(saga.failureReason).toBe(failureReason);
+      },
+    );
+
+    it('should refuse to reopen a saga compensated because the work order was not awaiting approval', () => {
       const saga = createMockSagaInstance({
         status: SagaStatus.COMPENSATED,
-        failureReason: SagaFailureReason.INSUFFICIENT_STOCK,
+        failureReason: SagaFailureReason.WORK_ORDER_NOT_AWAITING,
       });
 
-      saga.reopenStockReservation();
-
-      expect(saga.status).toBe(SagaStatus.RESERVING_STOCK);
-      expect(saga.failureReason).toBeNull();
-    });
-
-    it('should refuse to reopen a compensated saga without the insufficient stock reason', () => {
-      const saga = createMockSagaInstance({ status: SagaStatus.COMPENSATED, failureReason: null });
-
-      expect(() => saga.reopenStockReservation()).toThrow(
+      expect(() => saga.reopen(SagaStatus.RESERVING_STOCK, null)).toThrow(
         'Só a Saga compensada por falta de estoque pode ser reaberta. Status atual: "COMPENSATED"',
       );
+
+      expect(saga.failureReason).toBe(SagaFailureReason.WORK_ORDER_NOT_AWAITING);
     });
+  });
+
+  describe('isReopenable', () => {
+    it.each([
+      [SagaStatus.COMPENSATED, SagaFailureReason.INSUFFICIENT_STOCK, true],
+      [SagaStatus.COMPENSATED, SagaFailureReason.WORK_ORDER_NOT_AWAITING, false],
+      [SagaStatus.COMPENSATING, SagaFailureReason.INSUFFICIENT_STOCK, false],
+      [SagaStatus.RESERVING_STOCK, null, false],
+      [SagaStatus.COMPLETED, null, false],
+    ])(
+      'should tell whether a saga in %s with %s failure reason is reopenable',
+      (status, failureReason, reopenable) => {
+        const saga = createMockSagaInstance({ status, failureReason });
+
+        expect(saga.isReopenable).toBe(reopenable);
+      },
+    );
   });
 
   describe('invalid transitions', () => {
@@ -84,6 +125,11 @@ describe('SagaInstance', () => {
       [
         'complete',
         SagaStatus.COMPENSATED,
+        'Só a Saga aguardando a reserva de estoque pode ser concluída',
+      ],
+      [
+        'complete',
+        SagaStatus.COMPENSATING,
         'Só a Saga aguardando a reserva de estoque pode ser concluída',
       ],
       [
@@ -106,13 +152,18 @@ describe('SagaInstance', () => {
         SagaStatus.COMPLETED,
         'Só a Saga compensada por falta de estoque pode ser reaberta',
       ],
+      [
+        'reopen',
+        SagaStatus.COMPENSATING,
+        'Só a Saga compensada por falta de estoque pode ser reaberta',
+      ],
     ])('should refuse to %s a saga in %s', (action, status, message) => {
       const saga = createMockSagaInstance({ status });
 
       const transitions: Record<string, () => void> = {
         complete: () => saga.complete(),
         compensate: () => saga.compensate(SagaFailureReason.INSUFFICIENT_STOCK),
-        reopen: () => saga.reopenStockReservation(),
+        reopen: () => saga.reopen(SagaStatus.RESERVING_STOCK, null),
       };
 
       expect(transitions[action]).toThrow(BusinessRuleViolationException);

@@ -25,7 +25,10 @@ export class PrismaSagaInstanceRepository implements ISagaInstanceRepository {
 
   async hasActiveByWorkOrderId(workOrderId: string): Promise<boolean> {
     const count = await this.prisma.sagaInstance.count({
-      where: { workOrderId, status: SagaStatus.RESERVING_STOCK },
+      where: {
+        workOrderId,
+        status: { in: [SagaStatus.RESERVING_STOCK, SagaStatus.COMPENSATING] },
+      },
     });
 
     return count > 0;

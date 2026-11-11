@@ -1,0 +1,5 @@
+-- AlterEnum
+ALTER TYPE "SagaFailureReason" ADD VALUE 'WORK_ORDER_NOT_AWAITING';
+
+-- AlterEnum
+ALTER TYPE "SagaStatus" ADD VALUE 'COMPENSATING';

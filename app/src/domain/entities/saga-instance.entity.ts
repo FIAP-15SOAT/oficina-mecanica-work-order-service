@@ -9,6 +9,7 @@ export interface CreateSagaInstanceProps {
   correlationId: string;
   workOrderId: string;
   status: SagaStatus;
+  failureReason?: SagaFailureReason | null;
 }
 
 interface SagaInstanceProps {
@@ -42,7 +43,11 @@ export class SagaInstance {
   }
 
   static create(props: CreateSagaInstanceProps): SagaInstance {
-    return new SagaInstance({ id: randomUUID(), ...props, failureReason: null });
+    return new SagaInstance({
+      id: randomUUID(),
+      ...props,
+      failureReason: props.failureReason ?? null,
+    });
   }
 
   complete(): void {
@@ -56,18 +61,18 @@ export class SagaInstance {
     this._failureReason = reason;
   }
 
-  reopenStockReservation(): void {
-    if (
-      this._status !== SagaStatus.COMPENSATED ||
-      this._failureReason !== SagaFailureReason.INSUFFICIENT_STOCK
-    ) {
+  reopen(
+    status: SagaStatus.RESERVING_STOCK | SagaStatus.COMPENSATING,
+    failureReason: SagaFailureReason | null,
+  ): void {
+    if (!this.isReopenable) {
       throw new BusinessRuleViolationException(
         `Só a Saga compensada por falta de estoque pode ser reaberta. Status atual: "${this._status}"`,
       );
     }
 
-    this._status = SagaStatus.RESERVING_STOCK;
-    this._failureReason = null;
+    this._status = status;
+    this._failureReason = failureReason;
   }
 
   private ensureReservingStock(targetStatus: SagaStatus.COMPLETED | SagaStatus.COMPENSATED): void {
@@ -86,5 +91,13 @@ export class SagaInstance {
 
   get failureReason(): SagaFailureReason | null {
     return this._failureReason;
+  }
+
+  // Only a stock shortage puts the quote back to SENT, so a new approval of it is legitimate.
+  get isReopenable(): boolean {
+    return (
+      this._status === SagaStatus.COMPENSATED &&
+      this._failureReason === SagaFailureReason.INSUFFICIENT_STOCK
+    );
   }
 }

@@ -320,36 +320,13 @@ describe('Telemetry (E2E)', () => {
       quoteId: string,
       service: { id: string; basePrice: number },
     ) {
-      // shortcut: seeds the approved quote and the saga reserving stock, until billing.quote.approved starts the saga
-      await ctx.prisma.quote.create({
-        data: {
-          id: quoteId,
-          workOrderId,
-          status: 'APPROVED',
-          decidedBy: adminAuth.user.id,
-          services: {
-            create: [
-              {
-                serviceId: service.id,
-                quantity: 1,
-                unitPrice: service.basePrice,
-                totalPrice: service.basePrice,
-              },
-            ],
-          },
-        },
+      await deliver('billing.quote.approved', workOrderId, {
+        quoteId,
+        decidedBy: adminAuth.user.id,
+        total: service.basePrice.toFixed(2),
+        services: [{ serviceId: service.id, quantity: 1, unitPrice: service.basePrice.toFixed(2) }],
+        partsSupplies: [],
       });
-
-      await ctx.prisma.sagaInstance.create({
-        data: {
-          type: 'QUOTE_APPROVAL',
-          correlationId: quoteId,
-          workOrderId,
-          status: 'RESERVING_STOCK',
-        },
-      });
-
-      await deliver('inventory.stock.reserved', workOrderId, { quoteId });
     }
 
     interface CollectedPoint {

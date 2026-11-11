@@ -52,12 +52,14 @@ enum SagaType {
 
 enum SagaStatus {
   RESERVING_STOCK
+  COMPENSATING
   COMPLETED
   COMPENSATED
 }
 
 enum SagaFailureReason {
   INSUFFICIENT_STOCK
+  WORK_ORDER_NOT_AWAITING
 }
 
 // ─── Models ───────────────────────────────────────────────────────────────────

@@ -8,11 +8,6 @@ import { EntityNotFoundException } from '@domain/exceptions/entity-not-found.exc
 import { DomainValidationException } from '@domain/exceptions/domain-validation.exception';
 import { UserRole } from '@domain/enums/user-role.enum';
 import { createMockWorkOrderService } from '../../../helpers/work-order-service-mock.factory';
-import {
-  createMockQuote,
-  createMockQuoteService,
-  createMockQuotePartSupply,
-} from '../../../helpers/quote-mock.factory';
 import { createMockWorkOrder } from '../../../helpers/work-order-mock.factory';
 import { randomUUID } from 'node:crypto';
 
@@ -648,81 +643,78 @@ describe('WorkOrder Entity', () => {
     });
   });
 
-  describe('applyQuoteItems()', () => {
-    it('should create WO service/part items and recalculate totalAmount from item prices', () => {
-      const quoteService = createMockQuoteService();
-      const quotePartSupply = createMockQuotePartSupply();
-      const quote = createMockQuote({ services: [quoteService], partsSupplies: [quotePartSupply] });
+  describe('applyApprovedItems()', () => {
+    it('should apply the approved items and recalculate the total', () => {
+      const serviceId = randomUUID();
+      const partSupplyId = randomUUID();
 
       const workOrder = WorkOrder.create(baseProps);
-      const result = workOrder.applyQuoteItems(quote);
 
-      expect(result.services).toHaveLength(1);
-      expect(result.partSupplies).toHaveLength(1);
-      expect(result.services[0].serviceId).toBe(quoteService.serviceId);
-      expect(result.partSupplies[0].partSupplyId).toBe(quotePartSupply.partSupplyId);
-      expect(workOrder.totalAmount).toBe(
-        result.services[0].totalPrice + result.partSupplies[0].totalPrice,
-      );
-      expect(workOrder.services).toHaveLength(1);
-      expect(workOrder.partSupplies).toHaveLength(1);
+      const result = workOrder.applyApprovedItems({
+        services: [{ serviceId, quantity: 2, unitPrice: 150 }],
+        partsSupplies: [{ partSupplyId, quantity: 3, unitPrice: 40.5 }],
+      });
+
+      expect(result.services).toEqual([
+        expect.objectContaining({
+          workOrderId: workOrder.id,
+          serviceId,
+          quantity: 2,
+          unitPrice: 150,
+        }),
+      ]);
+
+      expect(result.partSupplies).toEqual([
+        expect.objectContaining({
+          workOrderId: workOrder.id,
+          partSupplyId,
+          quantity: 3,
+          unitPrice: 40.5,
+        }),
+      ]);
+
+      expect(workOrder.services).toEqual(result.services);
+      expect(workOrder.partSupplies).toEqual(result.partSupplies);
+      expect(workOrder.totalAmount).toBe(421.5);
     });
 
-    it('should handle quote with no services or parts', () => {
-      const quote = createMockQuote({ services: [], partsSupplies: [] });
-
+    it('should apply services only when no part was approved', () => {
       const workOrder = WorkOrder.create(baseProps);
-      const result = workOrder.applyQuoteItems(quote);
 
-      expect(result.services).toHaveLength(0);
-      expect(result.partSupplies).toHaveLength(0);
-      expect(workOrder.totalAmount).toBe(0);
-    });
-
-    it('should treat undefined services as empty array', () => {
-      const quotePartSupply = createMockQuotePartSupply();
-      const quote = createMockQuote({ partsSupplies: [quotePartSupply] });
-
-      const workOrder = WorkOrder.create(baseProps);
-      const result = workOrder.applyQuoteItems(quote);
-
-      expect(result.services).toHaveLength(0);
-      expect(result.partSupplies).toHaveLength(1);
-    });
-
-    it('should treat undefined partsSupplies as empty array', () => {
-      const quoteService = createMockQuoteService();
-      const quote = createMockQuote({ services: [quoteService] });
-
-      const workOrder = WorkOrder.create(baseProps);
-      const result = workOrder.applyQuoteItems(quote);
+      const result = workOrder.applyApprovedItems({
+        services: [{ serviceId: randomUUID(), quantity: 1, unitPrice: 200 }],
+        partsSupplies: [],
+      });
 
       expect(result.services).toHaveLength(1);
       expect(result.partSupplies).toHaveLength(0);
+      expect(workOrder.totalAmount).toBe(200);
     });
 
     it('should throw BusinessRuleViolationException when a service was already added', () => {
-      const serviceId = randomUUID();
-      const quoteService = createMockQuoteService({ serviceId });
-      const quote = createMockQuote({ services: [quoteService], partsSupplies: [] });
+      const items = {
+        services: [{ serviceId: randomUUID(), quantity: 1, unitPrice: 200 }],
+        partsSupplies: [],
+      };
 
       const workOrder = WorkOrder.create(baseProps);
-      workOrder.applyQuoteItems(quote);
 
-      const quote2 = createMockQuote({ services: [quoteService], partsSupplies: [] });
-      expect(() => workOrder.applyQuoteItems(quote2)).toThrow(BusinessRuleViolationException);
+      workOrder.applyApprovedItems(items);
+
+      expect(() => workOrder.applyApprovedItems(items)).toThrow(BusinessRuleViolationException);
     });
 
     it('should throw BusinessRuleViolationException when a part/supply was already added', () => {
-      const partSupplyId = randomUUID();
-      const quotePartSupply = createMockQuotePartSupply({ partSupplyId });
-      const quote = createMockQuote({ services: [], partsSupplies: [quotePartSupply] });
+      const items = {
+        services: [],
+        partsSupplies: [{ partSupplyId: randomUUID(), quantity: 1, unitPrice: 30 }],
+      };
 
       const workOrder = WorkOrder.create(baseProps);
-      workOrder.applyQuoteItems(quote);
 
-      const quote2 = createMockQuote({ services: [], partsSupplies: [quotePartSupply] });
-      expect(() => workOrder.applyQuoteItems(quote2)).toThrow(BusinessRuleViolationException);
+      workOrder.applyApprovedItems(items);
+
+      expect(() => workOrder.applyApprovedItems(items)).toThrow(BusinessRuleViolationException);
     });
   });
 });

@@ -14,6 +14,7 @@ export type LogicalFieldName =
   | 'missingItemCount'
   | 'sagaId'
   | 'sagaStatus'
+  | 'sagaFailureReason'
   | 'targetUserId'
   | 'targetUserActive'
   | 'port'

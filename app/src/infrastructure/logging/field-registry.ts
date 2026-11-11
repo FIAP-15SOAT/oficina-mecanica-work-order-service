@@ -157,6 +157,13 @@ export const LOGICAL_FIELDS: Readonly<Record<LogicalFieldName, LogicalFieldDefin
     owner: 'use-case',
     sensitivity: 'clear',
   },
+  sagaFailureReason: {
+    key: 'oficina.saga.failure_reason',
+    type: 'string',
+    cardinality: 'low',
+    owner: 'use-case',
+    sensitivity: 'clear',
+  },
   targetUserId: {
     key: 'oficina.target.user.id',
     type: 'string',
