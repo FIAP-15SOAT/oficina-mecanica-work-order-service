@@ -3,11 +3,13 @@ import { OnModuleInit } from '@nestjs/common';
 import { MessageEnvelope } from '@application/messaging/message-envelope';
 import { ICompleteQuoteApprovalUseCase } from '@application/ports/input/quote-approval/complete-quote-approval.use-case.interface';
 import { ICompensateQuoteApprovalUseCase } from '@application/ports/input/quote-approval/compensate-quote-approval.use-case.interface';
+import { IConfirmQuoteApprovalReversalUseCase } from '@application/ports/input/quote-approval/confirm-quote-approval-reversal.use-case.interface';
 import { IStartQuoteApprovalUseCase } from '@application/ports/input/quote-approval/start-quote-approval.use-case.interface';
 
 import { InvalidMessageException } from '@infrastructure/exceptions/invalid-message.exception';
 
 import { MessageHandlerRegistry } from '../../message-handler.registry';
+import { QuoteApprovalRevertedPayloadDto } from './dto/quote-approval-reverted-payload.dto';
 import { QuoteApprovedPayloadDto } from './dto/quote-approved-payload.dto';
 import { StockReservationFailedPayloadDto } from './dto/stock-reservation-failed-payload.dto';
 import { StockReservedPayloadDto } from './dto/stock-reserved-payload.dto';
@@ -18,6 +20,7 @@ export class QuoteApprovalMessageHandlers implements OnModuleInit {
     private readonly startQuoteApprovalUseCase: IStartQuoteApprovalUseCase,
     private readonly completeQuoteApprovalUseCase: ICompleteQuoteApprovalUseCase,
     private readonly compensateQuoteApprovalUseCase: ICompensateQuoteApprovalUseCase,
+    private readonly confirmQuoteApprovalReversalUseCase: IConfirmQuoteApprovalReversalUseCase,
   ) {}
 
   onModuleInit(): void {
@@ -41,6 +44,12 @@ export class QuoteApprovalMessageHandlers implements OnModuleInit {
           missingItemCount: payload.missing.length,
         }),
       StockReservationFailedPayloadDto,
+    );
+
+    this.registry.register(
+      'billing.quote.approval_reverted',
+      ({ payload }) => this.confirmQuoteApprovalReversalUseCase.execute(payload.quoteId),
+      QuoteApprovalRevertedPayloadDto,
     );
   }
 

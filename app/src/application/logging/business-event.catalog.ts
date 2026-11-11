@@ -55,6 +55,7 @@ export const BUSINESS_EVENTS = {
     workOrderId: string;
     workOrderNumber: string;
     sagaFailureReason: string;
+    missingItemCount?: number;
   }>({
     name: 'quote_approval.compensation_requested',
     message: 'quote approval reversal requested from the billing',
@@ -75,10 +76,10 @@ export const BUSINESS_EVENTS = {
     quoteId: string;
     workOrderId: string;
     workOrderNumber: string;
-    missingItemCount: number;
+    sagaFailureReason: string;
   }>({
     name: 'quote_approval.compensated',
-    message: 'stock reservation refused and quote approval undone',
+    message: 'quote approval reversal confirmed and saga compensated',
     level: 'info',
   }),
   QUOTE_APPROVAL_STEP_SKIPPED: defineLogEvent<{ quoteId: string; sagaStatus?: string }>({

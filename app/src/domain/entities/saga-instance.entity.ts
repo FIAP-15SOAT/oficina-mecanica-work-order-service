@@ -51,14 +51,28 @@ export class SagaInstance {
   }
 
   complete(): void {
-    this.ensureReservingStock(SagaStatus.COMPLETED);
+    this.ensureStatus(
+      SagaStatus.RESERVING_STOCK,
+      'Só a Saga aguardando a reserva de estoque pode ser concluída',
+    );
+
     this._status = SagaStatus.COMPLETED;
   }
 
-  compensate(reason: SagaFailureReason): void {
-    this.ensureReservingStock(SagaStatus.COMPENSATED);
-    this._status = SagaStatus.COMPENSATED;
+  requestCompensation(reason: SagaFailureReason): void {
+    this.ensureStatus(
+      SagaStatus.RESERVING_STOCK,
+      'Só a Saga aguardando a reserva de estoque pode entrar em compensação',
+    );
+
+    this._status = SagaStatus.COMPENSATING;
     this._failureReason = reason;
+  }
+
+  compensate(): void {
+    this.ensureStatus(SagaStatus.COMPENSATING, 'Só a Saga em compensação pode ser compensada');
+
+    this._status = SagaStatus.COMPENSATED;
   }
 
   reopen(
@@ -75,13 +89,9 @@ export class SagaInstance {
     this._failureReason = failureReason;
   }
 
-  private ensureReservingStock(targetStatus: SagaStatus.COMPLETED | SagaStatus.COMPENSATED): void {
-    if (this._status !== SagaStatus.RESERVING_STOCK) {
-      const transition = targetStatus === SagaStatus.COMPLETED ? 'concluída' : 'compensada';
-
-      throw new BusinessRuleViolationException(
-        `Só a Saga aguardando a reserva de estoque pode ser ${transition}. Status atual: "${this._status}"`,
-      );
+  private ensureStatus(expectedStatus: SagaStatus, message: string): void {
+    if (this._status !== expectedStatus) {
+      throw new BusinessRuleViolationException(`${message}. Status atual: "${this._status}"`);
     }
   }
 

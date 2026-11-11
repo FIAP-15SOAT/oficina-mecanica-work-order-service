@@ -11,6 +11,7 @@ import { ILogger } from '@application/ports/output/services/logger.service.inter
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
 import { CompensateQuoteApprovalUseCase } from '@application/use-cases/quote-approval/compensate-quote-approval.use-case';
 import { CompleteQuoteApprovalUseCase } from '@application/use-cases/quote-approval/complete-quote-approval.use-case';
+import { ConfirmQuoteApprovalReversalUseCase } from '@application/use-cases/quote-approval/confirm-quote-approval-reversal.use-case';
 import { StartQuoteApprovalUseCase } from '@application/use-cases/quote-approval/start-quote-approval.use-case';
 
 import { InfrastructureServicesModule } from '@infrastructure/services/infrastructure-services.module';
@@ -55,6 +56,10 @@ import { QuoteApprovalMessageHandlers } from './quote-approval-message-handlers'
           new CompensateQuoteApprovalUseCase(
             unitOfWork,
             logger.forContext(CompensateQuoteApprovalUseCase.name),
+          ),
+          new ConfirmQuoteApprovalReversalUseCase(
+            unitOfWork,
+            logger.forContext(ConfirmQuoteApprovalReversalUseCase.name),
             emailSender,
           ),
         ),

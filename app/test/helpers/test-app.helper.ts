@@ -67,6 +67,8 @@ export interface SetupTestAppOptions {
   withMessaging?: boolean;
   /** Base URL of the Inventory and Billing stub; the default refuses every connection. */
   internalServicesUrl?: string;
+  /** Modules swapped before compile, as `[original, replacement]` pairs. */
+  overrideModules?: [Type, Type][];
 }
 
 interface LogCaptureSeam {
@@ -186,6 +188,10 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
   if (!localstackContainer) {
     builder.overrideProvider(OutboxRelayService).useValue({});
     builder.overrideProvider(SqsConsumerService).useValue({});
+  }
+
+  for (const [original, replacement] of options.overrideModules ?? []) {
+    builder.overrideModule(original).useModule(replacement);
   }
 
   const captureLogs = options.captureLogs === true || options.captureBootstrap === true;

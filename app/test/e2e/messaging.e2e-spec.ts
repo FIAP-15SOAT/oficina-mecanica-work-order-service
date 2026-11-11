@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Client } from 'pg';
+import { Module } from '@nestjs/common';
 import { IsIn, IsISO8601, IsString, IsUUID } from 'class-validator';
 import {
   GetQueueAttributesCommand,
@@ -11,6 +12,7 @@ import { MessageEnvelope } from '@application/messaging/message-envelope';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { OutboxMessage } from '@domain/messaging/message-catalog';
 import { DECLARED_FIELD_NAMES } from '@infrastructure/logging/field-registry';
+import { QuoteApprovalMessagingModule } from '@infrastructure/messaging/handlers/quote-approval/quote-approval-messaging.module';
 import { MessageHandlerRegistry } from '@infrastructure/messaging/message-handler.registry';
 import { OUTBOX_RELAY_LOCK_KEY } from '@infrastructure/messaging/outbox-relay.service';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
@@ -35,6 +37,10 @@ class PaymentApprovedPayload {
   paidAt!: string;
 }
 
+// Stands in for the quote approval handlers, so this suite owns the billing.quote.approval_reverted handler.
+@Module({})
+class NoQuoteApprovalHandlersModule {}
+
 // Every test publishes on its own work order, so a message stuck in one FIFO group never blocks another test.
 describe('Messaging (E2E)', () => {
   let ctx: TestContext;
@@ -47,7 +53,11 @@ describe('Messaging (E2E)', () => {
   let workOrderCounter = 0;
 
   beforeAll(async () => {
-    ctx = await setupTestApp({ withMessaging: true, captureLogs: true });
+    ctx = await setupTestApp({
+      withMessaging: true,
+      captureLogs: true,
+      overrideModules: [[QuoteApprovalMessagingModule, NoQuoteApprovalHandlersModule]],
+    });
     unitOfWork = ctx.app.get<IUnitOfWork>('IUnitOfWork');
     registry = ctx.app.get(MessageHandlerRegistry);
     sqs = ctx.app.get(SQSClient);

@@ -3,7 +3,6 @@ import { IVehicleRepository } from '@domain/interfaces/repositories/vehicle.repo
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { createMockWorkOrderRepository } from './work-order-mock.factory';
 import { createMockStatusHistoryRepository } from './status-history-mock.factory';
-import { createMockQuoteRepository } from './quote-mock.factory';
 import { createMockOutboxRepository } from './outbox-mock.factory';
 import { createMockSagaInstanceRepository } from './saga-instance-mock.factory';
 
@@ -31,7 +30,6 @@ export function createMockRepositories(): jest.Mocked<IRepositories> {
       isVehicleInUse: jest.fn(),
     } as unknown as jest.Mocked<IVehicleRepository>,
     workOrder: createMockWorkOrderRepository(),
-    quote: createMockQuoteRepository(),
     statusHistory: createMockStatusHistoryRepository(),
     user: {
       create: jest.fn(),

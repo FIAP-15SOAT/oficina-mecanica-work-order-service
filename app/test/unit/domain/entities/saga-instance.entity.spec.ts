@@ -54,14 +54,28 @@ describe('SagaInstance', () => {
     });
   });
 
-  describe('compensate', () => {
-    it('should compensate a saga reserving stock with the failure reason', () => {
+  describe('requestCompensation', () => {
+    it('should move a saga reserving stock to COMPENSATING with the failure reason', () => {
       const saga = createMockSagaInstance({ status: SagaStatus.RESERVING_STOCK });
 
-      saga.compensate(SagaFailureReason.INSUFFICIENT_STOCK);
+      saga.requestCompensation(SagaFailureReason.INSUFFICIENT_STOCK);
+
+      expect(saga.status).toBe(SagaStatus.COMPENSATING);
+      expect(saga.failureReason).toBe(SagaFailureReason.INSUFFICIENT_STOCK);
+    });
+  });
+
+  describe('compensate', () => {
+    it('should compensate a saga compensating and keep its failure reason', () => {
+      const saga = createMockSagaInstance({
+        status: SagaStatus.COMPENSATING,
+        failureReason: SagaFailureReason.WORK_ORDER_NOT_AWAITING,
+      });
+
+      saga.compensate();
 
       expect(saga.status).toBe(SagaStatus.COMPENSATED);
-      expect(saga.failureReason).toBe(SagaFailureReason.INSUFFICIENT_STOCK);
+      expect(saga.failureReason).toBe(SagaFailureReason.WORK_ORDER_NOT_AWAITING);
     });
   });
 
@@ -133,15 +147,23 @@ describe('SagaInstance', () => {
         'Só a Saga aguardando a reserva de estoque pode ser concluída',
       ],
       [
-        'compensate',
+        'requestCompensation',
         SagaStatus.COMPLETED,
-        'Só a Saga aguardando a reserva de estoque pode ser compensada',
+        'Só a Saga aguardando a reserva de estoque pode entrar em compensação',
       ],
       [
-        'compensate',
-        SagaStatus.COMPENSATED,
-        'Só a Saga aguardando a reserva de estoque pode ser compensada',
+        'requestCompensation',
+        SagaStatus.COMPENSATING,
+        'Só a Saga aguardando a reserva de estoque pode entrar em compensação',
       ],
+      [
+        'requestCompensation',
+        SagaStatus.COMPENSATED,
+        'Só a Saga aguardando a reserva de estoque pode entrar em compensação',
+      ],
+      ['compensate', SagaStatus.RESERVING_STOCK, 'Só a Saga em compensação pode ser compensada'],
+      ['compensate', SagaStatus.COMPLETED, 'Só a Saga em compensação pode ser compensada'],
+      ['compensate', SagaStatus.COMPENSATED, 'Só a Saga em compensação pode ser compensada'],
       [
         'reopen',
         SagaStatus.RESERVING_STOCK,
@@ -162,7 +184,8 @@ describe('SagaInstance', () => {
 
       const transitions: Record<string, () => void> = {
         complete: () => saga.complete(),
-        compensate: () => saga.compensate(SagaFailureReason.INSUFFICIENT_STOCK),
+        requestCompensation: () => saga.requestCompensation(SagaFailureReason.INSUFFICIENT_STOCK),
+        compensate: () => saga.compensate(),
         reopen: () => saga.reopen(SagaStatus.RESERVING_STOCK, null),
       };
 

@@ -4,9 +4,11 @@ import { randomUUID } from 'node:crypto';
 import { MessageEnvelope } from '@application/messaging/message-envelope';
 import { ICompleteQuoteApprovalUseCase } from '@application/ports/input/quote-approval/complete-quote-approval.use-case.interface';
 import { ICompensateQuoteApprovalUseCase } from '@application/ports/input/quote-approval/compensate-quote-approval.use-case.interface';
+import { IConfirmQuoteApprovalReversalUseCase } from '@application/ports/input/quote-approval/confirm-quote-approval-reversal.use-case.interface';
 import { IStartQuoteApprovalUseCase } from '@application/ports/input/quote-approval/start-quote-approval.use-case.interface';
 import { InvalidMessageException } from '@infrastructure/exceptions/invalid-message.exception';
 import { QuoteApprovalMessageHandlers } from '@infrastructure/messaging/handlers/quote-approval/quote-approval-message-handlers';
+import { QuoteApprovalRevertedPayloadDto } from '@infrastructure/messaging/handlers/quote-approval/dto/quote-approval-reverted-payload.dto';
 import { QuoteApprovedPayloadDto } from '@infrastructure/messaging/handlers/quote-approval/dto/quote-approved-payload.dto';
 import { StockReservedPayloadDto } from '@infrastructure/messaging/handlers/quote-approval/dto/stock-reserved-payload.dto';
 import { StockReservationFailedPayloadDto } from '@infrastructure/messaging/handlers/quote-approval/dto/stock-reservation-failed-payload.dto';
@@ -18,6 +20,7 @@ describe('QuoteApprovalMessageHandlers', () => {
   let startQuoteApprovalUseCase: jest.Mocked<IStartQuoteApprovalUseCase>;
   let completeQuoteApprovalUseCase: jest.Mocked<ICompleteQuoteApprovalUseCase>;
   let compensateQuoteApprovalUseCase: jest.Mocked<ICompensateQuoteApprovalUseCase>;
+  let confirmQuoteApprovalReversalUseCase: jest.Mocked<IConfirmQuoteApprovalReversalUseCase>;
 
   beforeEach(() => {
     registry = new MessageHandlerRegistry();
@@ -28,18 +31,24 @@ describe('QuoteApprovalMessageHandlers', () => {
 
     compensateQuoteApprovalUseCase = { execute: jest.fn().mockResolvedValue(undefined) };
 
+    confirmQuoteApprovalReversalUseCase = { execute: jest.fn().mockResolvedValue(undefined) };
+
     handlers = new QuoteApprovalMessageHandlers(
       registry,
       startQuoteApprovalUseCase,
       completeQuoteApprovalUseCase,
       compensateQuoteApprovalUseCase,
+      confirmQuoteApprovalReversalUseCase,
     );
 
     handlers.onModuleInit();
   });
 
-  it('should register the billing approval and both inventory responses with their payload classes', () => {
+  it('should register both billing quote events and both inventory responses with their payload classes', () => {
     expect(registry.find('billing.quote.approved')?.payloadClass).toBe(QuoteApprovedPayloadDto);
+    expect(registry.find('billing.quote.approval_reverted')?.payloadClass).toBe(
+      QuoteApprovalRevertedPayloadDto,
+    );
     expect(registry.find('inventory.stock.reserved')?.payloadClass).toBe(StockReservedPayloadDto);
     expect(registry.find('inventory.stock.reservation_failed')?.payloadClass).toBe(
       StockReservationFailedPayloadDto,
@@ -137,5 +146,21 @@ describe('QuoteApprovalMessageHandlers', () => {
       quoteId: envelope.payload.quoteId,
       missingItemCount: 2,
     });
+  });
+
+  it('should confirm the reversal with the quote id', async () => {
+    const envelope: MessageEnvelope<'billing.quote.approval_reverted'> = {
+      messageId: randomUUID(),
+      type: 'billing.quote.approval_reverted',
+      occurredAt: new Date().toISOString(),
+      workOrderId: randomUUID(),
+      payload: { quoteId: randomUUID(), revertTo: 'SENT' },
+    };
+
+    await registry.find('billing.quote.approval_reverted')?.handler(envelope);
+
+    expect(confirmQuoteApprovalReversalUseCase.execute).toHaveBeenCalledWith(
+      envelope.payload.quoteId,
+    );
   });
 });
