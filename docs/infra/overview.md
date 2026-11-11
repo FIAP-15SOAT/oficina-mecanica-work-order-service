@@ -20,9 +20,9 @@ A solução roda inteiramente na região **`us-east-1`**, dentro de uma única V
 
 A primeira vista preserva o fluxo arquitetural resumido; a segunda detalha rede, ownership e workloads sem alterar a separação entre os recursos gerenciados e o cluster.
 
-![Arquitetura de infraestrutura: API Gateway e Lambda na entrada pública, Work Order, Inventory (o serviço dono do catálogo e do estoque, chamado pelo Work Order por HTTP) e Datadog Agent no EKS, o Amazon RDS e o Amazon ElastiCache do Work Order fora do cluster, Amazon SNS e as filas SQS FIFO work-order.fifo e inventory.fifo para a mensageria dos dois serviços e Datadog como destino da telemetria](../diagrams/infrastructure-diagram.png)
+![Arquitetura de infraestrutura: API Gateway e Lambda na entrada pública, Work Order, Inventory (o serviço dono do catálogo e do estoque) e Billing (o serviço dono dos orçamentos e dos pagamentos), os dois chamados pelo Work Order por HTTP, e o Datadog Agent no EKS, o Amazon RDS e o Amazon ElastiCache do Work Order fora do cluster, Amazon SNS e as filas SQS FIFO work-order.fifo, inventory.fifo e billing.fifo para a mensageria dos três serviços e Datadog como destino da telemetria](../diagrams/infrastructure-diagram.png)
 
-![Arquitetura de referência detalhada: fluxo API Gateway, VPC Link, NLB interno e NodePort; subnets públicas e privadas; cluster EKS com o Work Order e o Inventory, Lambda, RDS, ElastiCache, SNS e as filas SQS FIFO work-order.fifo e inventory.fifo e serviços de suporte](../diagrams/infrastructure-details.png)
+![Arquitetura de referência detalhada: fluxo API Gateway, VPC Link, NLB interno e NodePort; subnets públicas e privadas; cluster EKS com o Work Order, o Inventory e o Billing, Lambda, RDS, ElastiCache, SNS e as filas SQS FIFO work-order.fifo, inventory.fifo e billing.fifo e serviços de suporte](../diagrams/infrastructure-details.png)
 
 ## As sete camadas de provisionamento
 
