@@ -14,12 +14,15 @@
     { "key": "mechanicUserId", "value": "", "type": "default", "enabled": true },
     { "key": "serviceId", "value": "3551b3f8-625e-4f2b-b777-a1d0ec4e4585", "type": "default", "enabled": true },
     { "key": "partSupplyId", "value": "361b050f-c441-429d-8a73-dfc12415dc62", "type": "default", "enabled": true },
+    { "key": "myCustomerId", "value": "70bb2668-aa3a-4412-afca-198286ca98db", "type": "default", "enabled": true },
+    { "key": "myVehicleId", "value": "4074d524-911a-4e03-a827-d3d0dd01447e", "type": "default", "enabled": true },
     { "key": "customerId", "value": "", "type": "default", "enabled": true },
     { "key": "customerId2", "value": "", "type": "default", "enabled": true },
     { "key": "vehicleId", "value": "", "type": "default", "enabled": true },
     { "key": "vehicleId2", "value": "", "type": "default", "enabled": true },
     { "key": "workOrderId", "value": "", "type": "default", "enabled": true },
     { "key": "tempWorkOrderId", "value": "", "type": "default", "enabled": true },
+    { "key": "rejectQuoteId", "value": "", "type": "default", "enabled": true },
     { "key": "quoteId", "value": "", "type": "default", "enabled": true }
   ],
   "_postman_variable_scope": "environment"

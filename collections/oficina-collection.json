@@ -2973,10 +2973,11 @@
               "script": {
                 "exec": [
                   "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Retorna apenas veículos Toyota', () => {",
+                  "pm.test('Retorna apenas veículos Toyota, inclusive o criado pela collection', () => {",
                   "    const res = pm.response.json();",
-                  "    pm.expect(res.pagination.totalRecords).to.equal(1);",
-                  "    pm.expect(res.data[0].brand).to.include('Toyota');",
+                  "    pm.expect(res.data).to.be.an('array').that.is.not.empty;",
+                  "    res.data.forEach(vehicle => pm.expect(vehicle.brand).to.include('Toyota'));",
+                  "    pm.expect(res.data.map(vehicle => vehicle.id)).to.include(pm.environment.get('vehicleId'));",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -4436,7 +4437,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\"customerId\": \"{{customerId2}}\", \"vehicleId\": \"{{vehicleId}}\"}",
+              "raw": "{\"customerId\": \"{{myCustomerId}}\", \"vehicleId\": \"{{vehicleId}}\"}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4563,7 +4564,7 @@
                   "pm.test('Retorna lista filtrada por veículo', () => {",
                   "    const res = pm.response.json();",
                   "    pm.expect(res.data).to.be.an('array');",
-                  "    res.data.forEach(wo => pm.expect(wo.vehicleId).to.equal(pm.environment.get('vehicleId')));",
+                  "    res.data.forEach(wo => pm.expect(wo.vehicle.id).to.equal(pm.environment.get('vehicleId')));",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -4851,10 +4852,12 @@
               "script": {
                 "exec": [
                   "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Retorna sub e authFlow', () => {",
+                  "pm.test('Retorna o usuário cliente autenticado', () => {",
                   "    const res = pm.response.json();",
-                  "    pm.expect(res.data).to.have.property('sub');",
-                  "    pm.expect(res.data.authFlow).to.equal('CUSTOMER');",
+                  "    pm.expect(res.data.id).to.be.a('string').and.not.empty;",
+                  "    pm.expect(res.data.email).to.be.a('string').and.not.empty;",
+                  "    pm.expect(res.data.role).to.equal(null);",
+                  "    pm.expect(res.data.customers).to.be.an('array');",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -4932,7 +4935,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\r\n    \"currentPassword\": \"SenhaAtual@123\",\r\n    \"newPassword\": \"NovaSenha@456\"\r\n}",
+              "raw": "{\n    \"currentPassword\": \"{{customerPassword}}\",\n    \"newPassword\": \"NovaSenha@456\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -4952,6 +4955,58 @@
               }
             }
           ]
+        },
+        {
+          "name": "TC-ME-03B — Login do cliente com a nova senha (sucesso)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Retorna accessToken externo', () => {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.data).to.have.property('accessToken');",
+                  "    pm.expect(response.data.accessToken).to.be.a('string').and.not.empty;",
+                  "    pm.environment.set('customerJwtToken', response.data.accessToken);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"cpf\": \"{{customerCpf}}\",\n    \"password\": \"NovaSenha@456\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/customer-auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer-auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
         },
         {
           "name": "TC-ME-04 — Trocar senha com senha atual incorreta (401)",
@@ -5008,6 +5063,112 @@
           ]
         },
         {
+          "name": "TC-ME-04B — Restaurar a senha original (204)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204 No Content', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/me/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "me",
+                "password"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerJwtToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"currentPassword\": \"NovaSenha@456\",\n    \"newPassword\": \"{{customerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-ME-04C — Login do cliente com a senha original (sucesso)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Retorna accessToken externo', () => {",
+                  "    const response = pm.response.json();",
+                  "    pm.expect(response.data).to.have.property('accessToken');",
+                  "    pm.expect(response.data.accessToken).to.be.a('string').and.not.empty;",
+                  "    pm.environment.set('customerJwtToken', response.data.accessToken);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"cpf\": \"{{customerCpf}}\",\n    \"password\": \"{{customerPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/customer-auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer-auth",
+                "login"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
           "name": "TC-ME-05 — Listar ordens de serviço vinculadas",
           "request": {
             "method": "GET",
@@ -5058,6 +5219,248 @@
           ]
         },
         {
+          "name": "TC-ME-05A — Abrir OS do cliente vinculado com um serviço",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('Retorna ID da OS do cliente vinculado', () => {",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.data.customer.id).to.equal(pm.environment.get('myCustomerId'));",
+                  "    pm.environment.set('workOrderId', res.data.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/work-orders",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "work-orders"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{myCustomerId}}\",\n  \"vehicleId\": \"{{myVehicleId}}\",\n  \"problemDescription\": \"Revisão pedida pelo cliente\",\n  \"mileageAtService\": 55000,\n  \"services\": [\n    { \"serviceId\": \"{{serviceId}}\", \"quantity\": 1 }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-ME-05B — Colocar a OS vinculada em diagnóstico",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/work-orders/{{workOrderId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "work-orders",
+                "{{workOrderId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"status\": \"IN_DIAGNOSIS\",\n    \"notes\": \"Iniciando diagnóstico técnico\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-ME-05C — Enviar o orçamento inicial da OS vinculada (Billing)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// The opening created the initial quote in the Billing; its id comes from the work order quote list.",
+                  "pm.sendRequest({",
+                  "    url: pm.environment.get('baseUrl') + '/api/work-orders/' + pm.environment.get('workOrderId') + '/quotes',",
+                  "    method: 'GET',",
+                  "    header: { Authorization: 'Bearer ' + pm.environment.get('authToken') }",
+                  "}, (err, res) => {",
+                  "    if (!err && res.code === 200 && res.json().data.length > 0) {",
+                  "        pm.environment.set('quoteId', res.json().data[0].id);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Orçamento enviado', () => pm.expect(pm.response.json().data.status).to.equal('SENT'));",
+                  "",
+                  "// The work order only becomes AWAITING_APPROVAL after it consumes the Billing event.",
+                  "const maxAttempts = 15;",
+                  "",
+                  "function waitForStatus(attempt) {",
+                  "    pm.sendRequest({",
+                  "        url: pm.environment.get('baseUrl') + '/api/work-orders/' + pm.environment.get('workOrderId'),",
+                  "        method: 'GET',",
+                  "        header: { Authorization: 'Bearer ' + pm.environment.get('authToken') }",
+                  "    }, (err, res) => {",
+                  "        const status = !err && res.code === 200 ? res.json().data.status : null;",
+                  "",
+                  "        if (status === 'AWAITING_APPROVAL' || attempt >= maxAttempts) {",
+                  "            pm.test('OS vinculada aguardando aprovação depois do envio', () => pm.expect(status).to.equal('AWAITING_APPROVAL'));",
+                  "            return;",
+                  "        }",
+                  "",
+                  "        setTimeout(() => waitForStatus(attempt + 1), 1000);",
+                  "    });",
+                  "}",
+                  "",
+                  "waitForStatus(1);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/submissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "quotes",
+                "{{quoteId}}",
+                "submissions"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-ME-05D — Criar um segundo orçamento da OS vinculada (Billing)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('Retorna o segundo orçamento', () => {",
+                  "    pm.environment.set('rejectQuoteId', pm.response.json().data.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/quotes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "quotes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"workOrderId\": \"{{workOrderId}}\",\n  \"services\": [\n    { \"serviceId\": \"{{serviceId}}\", \"quantity\": 1 }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-ME-05E — Enviar o segundo orçamento da OS vinculada (Billing)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Orçamento enviado', () => pm.expect(pm.response.json().data.status).to.equal('SENT'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/quotes/{{rejectQuoteId}}/submissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "quotes",
+                "{{rejectQuoteId}}",
+                "submissions"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
           "name": "TC-ME-06 — Detalhe de ordem de serviço vinculada (sucesso)",
           "request": {
             "method": "GET",
@@ -5096,7 +5499,8 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));"
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Retorna a OS vinculada', () => pm.expect(pm.response.json().data.id).to.equal(pm.environment.get('workOrderId')));"
                 ],
                 "type": "text/javascript"
               }
@@ -5189,7 +5593,8 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));"
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Retorna os dois orçamentos enviados', () => pm.expect(pm.response.json().data).to.have.lengthOf(2));"
                 ],
                 "type": "text/javascript"
               }
@@ -5235,7 +5640,69 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));"
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Retorna o orçamento com o serviço', () => {",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.data.id).to.equal(pm.environment.get('quoteId'));",
+                  "    pm.expect(res.data.services).to.have.lengthOf(1);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "TC-ME-11 — Rejeitar orçamento vinculado com justificativa (sucesso)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/me/quotes/{{rejectQuoteId}}/decisions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "me",
+                "quotes",
+                "{{rejectQuoteId}}",
+                "decisions"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerJwtToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"action\": \"reject\",\r\n    \"reason\": \"Valor acima do esperado\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Orçamento rejeitado', () => pm.expect(pm.response.json().data.status).to.equal('REJECTED'));"
                 ],
                 "type": "text/javascript"
               }
@@ -5291,63 +5758,8 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ]
-        },
-        {
-          "name": "TC-ME-11 — Rejeitar orçamento vinculado com justificativa (sucesso)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/me/quotes/{{quoteId}}/decisions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "me",
-                "quotes",
-                "{{quoteId}}",
-                "decisions"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{customerJwtToken}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\r\n    \"action\": \"reject\",\r\n    \"reason\": \"Valor acima do esperado\"\r\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));"
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Orçamento aprovado', () => pm.expect(pm.response.json().data.status).to.equal('APPROVED'));"
                 ],
                 "type": "text/javascript"
               }
