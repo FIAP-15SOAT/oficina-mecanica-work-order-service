@@ -56,6 +56,7 @@ describe('CompensateQuoteApprovalUseCase', () => {
     expect(saga.status).toBe(SagaStatus.COMPENSATING);
     expect(saga.failureReason).toBe(SagaFailureReason.INSUFFICIENT_STOCK);
     expect(repos.sagaInstance.update).toHaveBeenCalledWith(saga);
+
     expect(repos.outbox.add).toHaveBeenCalledWith({
       type: 'billing.quote.revert_approval',
       workOrderId: workOrder.id,
@@ -86,6 +87,7 @@ describe('CompensateQuoteApprovalUseCase', () => {
     await useCase.execute({ quoteId, missingItemCount: 1 });
 
     expect(repos.workOrder.update).toHaveBeenCalledWith(workOrder);
+
     expect(jest.mocked(repos.workOrder.update).mock.invocationCallOrder[0]).toBeLessThan(
       jest.mocked(repos.outbox.add).mock.invocationCallOrder[0],
     );
@@ -108,6 +110,7 @@ describe('CompensateQuoteApprovalUseCase', () => {
       expect(repos.workOrder.update).not.toHaveBeenCalled();
       expect(repos.sagaInstance.update).not.toHaveBeenCalled();
       expect(repos.outbox.add).not.toHaveBeenCalled();
+
       expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_APPROVAL_STEP_SKIPPED, {
         quoteId,
         sagaStatus,

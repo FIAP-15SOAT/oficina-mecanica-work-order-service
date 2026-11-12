@@ -46,9 +46,11 @@ describe('QuoteApprovalMessageHandlers', () => {
 
   it('should register both billing quote events and both inventory responses with their payload classes', () => {
     expect(registry.find('billing.quote.approved')?.payloadClass).toBe(QuoteApprovedPayloadDto);
+
     expect(registry.find('billing.quote.approval_reverted')?.payloadClass).toBe(
       QuoteApprovalRevertedPayloadDto,
     );
+
     expect(registry.find('inventory.stock.reserved')?.payloadClass).toBe(StockReservedPayloadDto);
     expect(registry.find('inventory.stock.reservation_failed')?.payloadClass).toBe(
       StockReservationFailedPayloadDto,

@@ -96,6 +96,7 @@ describe('CreateWorkOrderUseCase', () => {
     expect(result.status).toBe(WorkOrderStatus.RECEIVED);
     expect(result.customer).toBe(customer);
     expect(result.vehicle).toBe(vehicle);
+
     expect(repos.statusHistory.create).toHaveBeenCalledWith(
       expect.objectContaining({ newStatus: WorkOrderStatus.RECEIVED, previousStatus: null }),
     );
@@ -114,6 +115,7 @@ describe('CreateWorkOrderUseCase', () => {
     });
 
     expect(result.assignedUser).toBe(mechanic);
+
     expect(repos.workOrder.create).toHaveBeenCalledWith(
       expect.objectContaining({ assignedUserId: mechanic.id }),
     );
@@ -153,6 +155,7 @@ describe('CreateWorkOrderUseCase', () => {
     expect(quoteInput).toEqual({ workOrderId: expect.any(String), services, partsSupplies });
     expect(created.id).toBe(quoteInput.workOrderId);
     expect(result.id).toBe(quoteInput.workOrderId);
+
     expect(billingQuotesGateway.createInitialQuote.mock.invocationCallOrder[0]).toBeLessThan(
       unitOfWork.executeTransaction.mock.invocationCallOrder[0],
     );
@@ -173,6 +176,7 @@ describe('CreateWorkOrderUseCase', () => {
 
   it('should send parts without services to the Billing and open nothing on its 409', async () => {
     const partsSupplies = [{ partSupplyId: randomUUID(), quantity: 1 }];
+
     const rejection = new ServiceRequestRejectedException(
       409,
       'O orçamento precisa de ao menos um serviço',
@@ -192,6 +196,7 @@ describe('CreateWorkOrderUseCase', () => {
     expect(billingQuotesGateway.createInitialQuote).toHaveBeenCalledWith(
       expect.objectContaining({ services: [], partsSupplies }),
     );
+
     expect(unitOfWork.executeTransaction).not.toHaveBeenCalled();
   });
 

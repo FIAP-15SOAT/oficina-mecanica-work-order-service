@@ -107,6 +107,7 @@ describe('CompleteQuoteApprovalUseCase', () => {
     expect(repos.workOrder.findByIdWithDetails).toHaveBeenCalledWith(saga.workOrderId);
     expect(workOrder.status).toBe(WorkOrderStatus.APPROVED);
     expect(workOrder.totalAmount).toBe(quote.totalAmount);
+
     expect(repos.workOrder.addServiceItems).toHaveBeenCalledWith([
       expect.objectContaining({
         serviceId: quote.services[0].id,
@@ -171,6 +172,7 @@ describe('CompleteQuoteApprovalUseCase', () => {
       expect(billingQuotesGateway.getQuote).not.toHaveBeenCalled();
       expect(unitOfWork.executeTransaction).not.toHaveBeenCalled();
       expect(cache.delete).not.toHaveBeenCalled();
+
       expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_APPROVAL_STEP_SKIPPED, {
         quoteId,
         sagaStatus,

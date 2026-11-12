@@ -92,6 +92,7 @@ describe('PinoLoggerAdapter', () => {
       'oficina.work_order.id': 'wo-1',
       'oficina.work_order.number': 'OS-0001',
     });
+
     expect(lines[0]).not.toHaveProperty('quoteId');
   });
 

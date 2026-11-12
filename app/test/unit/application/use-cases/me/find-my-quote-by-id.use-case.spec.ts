@@ -49,10 +49,12 @@ describe('FindMyQuoteByIdUseCase', () => {
     expect(result).toBe(quote);
     expect(billingQuotesGateway.getQuote).toHaveBeenCalledWith(quote.id);
     expect(workOrderRepository.findById).toHaveBeenCalledWith(quote.workOrderId);
+
     expect(customerAccessPolicy.assertCustomerAuthorized).toHaveBeenCalledWith(
       userId,
       workOrder.customerId,
     );
+
     expect(billingQuotesGateway.getQuote.mock.invocationCallOrder[0]).toBeLessThan(
       customerAccessPolicy.assertCustomerAuthorized.mock.invocationCallOrder[0],
     );

@@ -49,6 +49,7 @@ describe('DecideMyQuoteUseCase', () => {
   it('should forward the decision with the customer as author after checking link, status and saga', async () => {
     const userId = randomUUID();
     const quote = readInternalQuoteFixture().data;
+
     const workOrder = createMockWorkOrder({
       id: quote.workOrderId,
       status: WorkOrderStatus.AWAITING_APPROVAL,

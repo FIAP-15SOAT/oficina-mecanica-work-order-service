@@ -691,6 +691,7 @@ describe('Me (E2E)', () => {
       expect(res.body.message).toBe(
         'Ordem de serviço com aprovação de orçamento em andamento: aguarde a conclusão e tente novamente',
       );
+
       expect(stub.quotes.get(quote.id)).toEqual(quote);
     });
 

@@ -68,6 +68,7 @@ describe('ApplyRejectedQuoteUseCase', () => {
     expect(repos.workOrder.findById).toHaveBeenCalledWith(workOrder.id);
     expect(workOrder.status).toBe(WorkOrderStatus.REJECTED);
     expect(repos.workOrder.update).toHaveBeenCalledWith(workOrder);
+
     expect(repos.statusHistory.create).toHaveBeenCalledWith(
       expect.objectContaining({
         workOrderId: workOrder.id,
@@ -102,6 +103,7 @@ describe('ApplyRejectedQuoteUseCase', () => {
       expect(repos.workOrder.update).not.toHaveBeenCalled();
       expect(repos.statusHistory.create).not.toHaveBeenCalled();
       expect(cache.delete).not.toHaveBeenCalled();
+
       expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_EVENT_SKIPPED, {
         quoteId: input.quoteId,
         workOrderId: outsideWorkOrder.id,
@@ -127,6 +129,7 @@ describe('ApplyRejectedQuoteUseCase', () => {
     await useCase.execute(input);
 
     expect(cache.delete).toHaveBeenCalledWith([workOrderCacheKey(workOrder.id)]);
+
     expect(metrics.record).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'work_order.status.duration' }),
       2 * 3600,

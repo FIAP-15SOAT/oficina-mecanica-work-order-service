@@ -468,6 +468,7 @@ describe('WorkOrder (E2E)', () => {
 
       expect(res.status).toBe(201);
       expect(res.body.data.status).toBe('RECEIVED');
+
       expect([...stub.quotes.values()]).toContainEqual(
         expect.objectContaining({ workOrderId: res.body.data.id }),
       );
@@ -891,6 +892,7 @@ describe('WorkOrder (E2E)', () => {
       expect(res.body.message).toBe(
         'Ordem de serviço com aprovação de orçamento em andamento: aguarde a conclusão e tente novamente',
       );
+
       expect(stored.status).toBe('RECEIVED');
       expect(historyCount).toBe(0);
     });

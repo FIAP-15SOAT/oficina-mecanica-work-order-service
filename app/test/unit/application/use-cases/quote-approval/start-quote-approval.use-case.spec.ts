@@ -86,6 +86,7 @@ describe('StartQuoteApprovalUseCase', () => {
     expect(repos.workOrder.findByIdWithDetails).toHaveBeenCalledWith(workOrderId);
     expect(workOrder.status).toBe(WorkOrderStatus.AWAITING_APPROVAL);
     expect(repos.workOrder.update).toHaveBeenCalledWith(workOrder);
+
     expect(repos.sagaInstance.create).toHaveBeenCalledWith(
       expect.objectContaining({
         type: SagaType.QUOTE_APPROVAL,
@@ -106,6 +107,7 @@ describe('StartQuoteApprovalUseCase', () => {
     expect(repos.statusHistory.create).not.toHaveBeenCalled();
     expect(cache.delete).not.toHaveBeenCalled();
     expect(metrics.record).not.toHaveBeenCalled();
+
     expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_APPROVAL_STARTED, {
       sagaId: expect.any(String),
       quoteId,
@@ -140,6 +142,7 @@ describe('StartQuoteApprovalUseCase', () => {
     expect(workOrder.status).toBe(WorkOrderStatus.APPROVED);
     expect(workOrder.totalAmount).toBe(200);
     expect(repos.workOrder.update).toHaveBeenCalledWith(workOrder);
+
     expect(repos.workOrder.addServiceItems).toHaveBeenCalledWith([
       expect.objectContaining({ workOrderId, serviceId, quantity: 1, unitPrice: 200 }),
     ]);
@@ -159,6 +162,7 @@ describe('StartQuoteApprovalUseCase', () => {
 
     expect(repos.outbox.add).not.toHaveBeenCalled();
     expect(cache.delete).toHaveBeenCalledWith([workOrderCacheKey(workOrderId)]);
+
     expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_APPROVAL_COMPLETED, {
       sagaId: expect.any(String),
       quoteId,
@@ -182,6 +186,7 @@ describe('StartQuoteApprovalUseCase', () => {
 
     expect(workOrder.status).toBe(WorkOrderStatus.CANCELLED);
     expect(repos.workOrder.update).toHaveBeenCalledWith(workOrder);
+
     expect(repos.sagaInstance.create).toHaveBeenCalledWith(
       expect.objectContaining({
         correlationId: quoteId,
@@ -201,6 +206,7 @@ describe('StartQuoteApprovalUseCase', () => {
     expect(repos.statusHistory.create).not.toHaveBeenCalled();
     expect(cache.delete).not.toHaveBeenCalled();
     expect(metrics.record).not.toHaveBeenCalled();
+
     expect(logger.event).toHaveBeenCalledWith(
       BUSINESS_EVENTS.QUOTE_APPROVAL_COMPENSATION_REQUESTED,
       {
@@ -235,6 +241,7 @@ describe('StartQuoteApprovalUseCase', () => {
     expect(saga.failureReason).toBeNull();
     expect(repos.sagaInstance.update).toHaveBeenCalledWith(saga);
     expect(repos.sagaInstance.create).not.toHaveBeenCalled();
+
     expect(repos.outbox.add).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'inventory.stock.reserve', workOrderId }),
     );
@@ -266,6 +273,7 @@ describe('StartQuoteApprovalUseCase', () => {
     expect(workOrder.status).toBe(WorkOrderStatus.CANCELLED);
     expect(repos.sagaInstance.update).toHaveBeenCalledWith(saga);
     expect(repos.sagaInstance.create).not.toHaveBeenCalled();
+
     expect(repos.outbox.add).toHaveBeenCalledWith({
       type: 'billing.quote.revert_approval',
       workOrderId,
@@ -297,6 +305,7 @@ describe('StartQuoteApprovalUseCase', () => {
       expect(repos.sagaInstance.update).not.toHaveBeenCalled();
       expect(repos.outbox.add).not.toHaveBeenCalled();
       expect(cache.delete).not.toHaveBeenCalled();
+
       expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_APPROVAL_STEP_SKIPPED, {
         quoteId,
         sagaStatus: status,
@@ -304,12 +313,13 @@ describe('StartQuoteApprovalUseCase', () => {
     },
   );
 
-  it('should update the work order before writing the outbox', async () => {
+  it.each([
+    ['requesting the stock reservation', WorkOrderStatus.AWAITING_APPROVAL],
+    ['requesting the approval reversal', WorkOrderStatus.CANCELLED],
+  ])('should update the work order before writing the outbox when %s', async (_label, status) => {
     jest
       .mocked(repos.workOrder.findByIdWithDetails)
-      .mockResolvedValue(
-        createMockWorkOrder({ id: workOrderId, status: WorkOrderStatus.AWAITING_APPROVAL }),
-      );
+      .mockResolvedValue(createMockWorkOrder({ id: workOrderId, status }));
 
     await useCase.execute(withParts);
 

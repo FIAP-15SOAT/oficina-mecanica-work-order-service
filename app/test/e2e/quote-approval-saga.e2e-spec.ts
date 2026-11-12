@@ -257,12 +257,14 @@ describe('Quote approval saga (E2E)', () => {
         payload: { quoteId, items: [{ partSupplyId, quantity: 2 }] },
       }),
     ]);
+
     expect(woRes.body.data).toMatchObject({
       status: 'APPROVED',
       totalAmount: 240,
       services: [expect.objectContaining({ quantity: 1, unitPrice: 150 })],
       partSupplies: [expect.objectContaining({ id: partSupplyId, quantity: 2, unitPrice: 45 })],
     });
+
     expect(history).toMatchObject({
       previousStatus: 'AWAITING_APPROVAL',
       changedById: adminAuth.user.id,
@@ -352,19 +354,23 @@ describe('Quote approval saga (E2E)', () => {
         payload: { quoteId, revertTo: 'SENT' },
       }),
     ]);
+
     expect(compensatingSaga).toMatchObject({
       status: 'COMPENSATING',
       failureReason: 'INSUFFICIENT_STOCK',
     });
+
     expect(compensatedSaga).toMatchObject({
       status: 'COMPENSATED',
       failureReason: 'INSUFFICIENT_STOCK',
     });
+
     expect(history).toEqual([
       expect.objectContaining({
         notes: `Aprovação do orçamento ${quoteId} desfeita por falta de estoque`,
       }),
     ]);
+
     expect(compensatedWorkOrder.status).toBe('AWAITING_APPROVAL');
 
     await waitForEmail(workOrder.number, 'Estoque');
@@ -382,6 +388,7 @@ describe('Quote approval saga (E2E)', () => {
       status: 'RESERVING_STOCK',
       failureReason: null,
     });
+
     expect(reserveCommands).toEqual([
       expect.objectContaining({
         type: 'inventory.stock.reserve',
@@ -419,10 +426,12 @@ describe('Quote approval saga (E2E)', () => {
         payload: { quoteId, revertTo: 'REJECTED' },
       }),
     ]);
+
     expect(saga).toMatchObject({
       status: 'COMPENSATING',
       failureReason: 'WORK_ORDER_NOT_AWAITING',
     });
+
     expect(cancelledWorkOrder.status).toBe('CANCELLED');
   });
 

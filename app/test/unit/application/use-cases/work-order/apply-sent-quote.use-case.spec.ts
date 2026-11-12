@@ -99,6 +99,7 @@ describe('ApplySentQuoteUseCase', () => {
       expect(repos.workOrder.findById).toHaveBeenCalledWith(sentWorkOrder.id);
       expect(sentWorkOrder.status).toBe(WorkOrderStatus.AWAITING_APPROVAL);
       expect(repos.workOrder.update).toHaveBeenCalledWith(sentWorkOrder);
+
       expect(repos.statusHistory.create).toHaveBeenCalledWith(
         expect.objectContaining({
           workOrderId: sentWorkOrder.id,
@@ -123,6 +124,7 @@ describe('ApplySentQuoteUseCase', () => {
     expect(repos.workOrder.update).not.toHaveBeenCalled();
     expect(repos.statusHistory.create).not.toHaveBeenCalled();
     expect(cache.delete).not.toHaveBeenCalled();
+
     expect(emailSender.send).toHaveBeenCalledWith(
       expect.objectContaining({ toEmail: 'maria@example.com' }),
     );
@@ -156,6 +158,7 @@ describe('ApplySentQuoteUseCase', () => {
     );
 
     expect(email.message.text).toContain('Acesse o sistema autenticando com seu CPF e senha');
+
     expect(email.message.html).toContain(
       '<ul><li>Troca de óleo: 1 x R$ 200.00</li><li>Filtro de óleo: 3 x R$ 50.00</li></ul>',
     );
@@ -192,6 +195,7 @@ describe('ApplySentQuoteUseCase', () => {
 
     expect(workOrder.status).toBe(WorkOrderStatus.AWAITING_APPROVAL);
     expect(cache.delete).toHaveBeenCalledWith([workOrderCacheKey(workOrder.id)]);
+
     expect(emailSender.send).toHaveBeenCalledWith(
       expect.objectContaining({ toEmail: 'second@example.com' }),
     );
@@ -211,6 +215,7 @@ describe('ApplySentQuoteUseCase', () => {
       expect(repos.statusHistory.create).not.toHaveBeenCalled();
       expect(emailSender.send).not.toHaveBeenCalled();
       expect(cache.delete).not.toHaveBeenCalled();
+
       expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_EVENT_SKIPPED, {
         quoteId: input.quoteId,
         workOrderId: outsideWorkOrder.id,
@@ -236,6 +241,7 @@ describe('ApplySentQuoteUseCase', () => {
     await useCase.execute(input);
 
     expect(cache.delete).toHaveBeenCalledWith([workOrderCacheKey(workOrder.id)]);
+
     expect(metrics.record).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'work_order.status.duration' }),
       3 * 3600,

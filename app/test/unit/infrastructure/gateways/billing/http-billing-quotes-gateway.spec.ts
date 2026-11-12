@@ -45,6 +45,7 @@ describe('HttpBillingQuotesGateway', () => {
 
       expect(quote).toEqual(summaryFixture.data);
       expect(quote.status).toBe(BillingQuoteStatus.PENDING);
+
       expect(internalHttpClient.request).toHaveBeenCalledWith({
         method: 'POST',
         url: `${baseUrl}/internal/quotes`,
@@ -102,6 +103,7 @@ describe('HttpBillingQuotesGateway', () => {
 
     expect(quote).toEqual(quoteFixture.data);
     expect(quote.status).toBe(BillingQuoteStatus.APPROVED);
+
     expect(internalHttpClient.request).toHaveBeenCalledWith({
       method: 'GET',
       url: `${baseUrl}/internal/quotes/${quoteFixture.data.id}`,
@@ -117,6 +119,7 @@ describe('HttpBillingQuotesGateway', () => {
     const quotes = await gateway.listWorkOrderQuotes(workOrderId);
 
     expect(quotes).toEqual(workOrderQuotesFixture.data);
+
     expect(internalHttpClient.request).toHaveBeenCalledWith({
       method: 'GET',
       url: `${baseUrl}/internal/work-orders/${workOrderId}/quotes`,
@@ -135,6 +138,7 @@ describe('HttpBillingQuotesGateway', () => {
     const quote = await gateway.decide(quoteFixture.data.id, decision);
 
     expect(quote).toEqual(quoteFixture.data);
+
     expect(internalHttpClient.request).toHaveBeenCalledWith({
       method: 'POST',
       url: `${baseUrl}/internal/quotes/${quoteFixture.data.id}/decisions`,

@@ -64,6 +64,7 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
 
     expect(saga.status).toBe(SagaStatus.COMPENSATED);
     expect(repos.sagaInstance.update).toHaveBeenCalledWith(saga);
+
     expect(repos.statusHistory.create).toHaveBeenCalledWith(
       expect.objectContaining({
         workOrderId: workOrder.id,
@@ -75,6 +76,7 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
     );
 
     expect(workOrder.status).toBe(WorkOrderStatus.AWAITING_APPROVAL);
+
     expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_APPROVAL_COMPENSATED, {
       sagaId: saga.id,
       quoteId,
@@ -108,6 +110,7 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
     await useCase.execute(quoteId);
 
     expect(saga.status).toBe(SagaStatus.COMPENSATED);
+
     expect(logger.event).toHaveBeenCalledWith(
       BUSINESS_EVENTS.QUOTE_APPROVAL_COMPENSATED,
       expect.objectContaining({ quoteId }),
@@ -131,6 +134,7 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
     await useCase.execute(quoteId);
 
     expect(notAwaitingSaga.status).toBe(SagaStatus.COMPENSATED);
+
     expect(repos.statusHistory.create).toHaveBeenCalledWith(
       expect.objectContaining({
         previousStatus: WorkOrderStatus.CANCELLED,
@@ -140,6 +144,7 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
     );
 
     expect(emailSender.send).not.toHaveBeenCalled();
+
     expect(logger.event).toHaveBeenCalledWith(
       BUSINESS_EVENTS.QUOTE_APPROVAL_COMPENSATED,
       expect.objectContaining({ sagaFailureReason: SagaFailureReason.WORK_ORDER_NOT_AWAITING }),
@@ -161,6 +166,7 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
     expect(repos.sagaInstance.update).not.toHaveBeenCalled();
     expect(repos.statusHistory.create).not.toHaveBeenCalled();
     expect(emailSender.send).not.toHaveBeenCalled();
+
     expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_APPROVAL_STEP_SKIPPED, {
       quoteId,
       sagaStatus,
