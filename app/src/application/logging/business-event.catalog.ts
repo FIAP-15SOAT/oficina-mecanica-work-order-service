@@ -39,39 +39,26 @@ export const BUSINESS_EVENTS = {
     message: 'refresh token rejected',
     level: 'warn',
   }),
-  QUOTE_SUBMITTED: defineLogEvent<{
+  QUOTE_APPROVAL_STARTED: defineLogEvent<{
+    sagaId: string;
     quoteId: string;
-    previousQuoteStatus: string;
     workOrderId: string;
     workOrderNumber: string;
   }>({
-    name: 'quote.submitted',
-    message: 'quote submitted to the customer for decision',
+    name: 'quote_approval.started',
+    message: 'quote approval saga started and stock reservation requested',
     level: 'info',
   }),
-  QUOTE_APPROVED: defineLogEvent<{
+  QUOTE_APPROVAL_COMPENSATION_REQUESTED: defineLogEvent<{
+    sagaId: string;
     quoteId: string;
-    previousQuoteStatus: string;
     workOrderId: string;
     workOrderNumber: string;
-    previousWorkOrderStatus: string;
-    customerId: string;
+    sagaFailureReason: string;
+    missingItemCount?: number;
   }>({
-    name: 'quote.approved',
-    message: 'quote approved and work order items applied',
-    level: 'info',
-  }),
-  QUOTE_REJECTED: defineLogEvent<{
-    quoteId: string;
-    previousQuoteStatus: string;
-    workOrderId: string;
-    workOrderNumber: string;
-    previousWorkOrderStatus?: string;
-    workOrderStatusChanged: boolean;
-    customerId: string;
-  }>({
-    name: 'quote.rejected',
-    message: 'quote rejected by customer decision',
+    name: 'quote_approval.compensation_requested',
+    message: 'quote approval reversal requested from the billing',
     level: 'info',
   }),
   QUOTE_APPROVAL_COMPLETED: defineLogEvent<{
@@ -81,7 +68,7 @@ export const BUSINESS_EVENTS = {
     workOrderNumber: string;
   }>({
     name: 'quote_approval.completed',
-    message: 'stock reserved and work order approved with the quote items',
+    message: 'work order approved with the approved quote items and saga completed',
     level: 'info',
   }),
   QUOTE_APPROVAL_COMPENSATED: defineLogEvent<{
@@ -89,15 +76,24 @@ export const BUSINESS_EVENTS = {
     quoteId: string;
     workOrderId: string;
     workOrderNumber: string;
-    missingItemCount: number;
+    sagaFailureReason: string;
   }>({
     name: 'quote_approval.compensated',
-    message: 'stock reservation refused and quote approval undone',
+    message: 'quote approval reversal confirmed and saga compensated',
     level: 'info',
   }),
   QUOTE_APPROVAL_STEP_SKIPPED: defineLogEvent<{ quoteId: string; sagaStatus?: string }>({
     name: 'quote_approval.step_skipped',
-    message: 'stock reservation reply skipped because the saga is not reserving stock',
+    message: 'saga message skipped because it does not match the saga status',
+    level: 'info',
+  }),
+  QUOTE_EVENT_SKIPPED: defineLogEvent<{
+    quoteId: string;
+    workOrderId: string;
+    currentWorkOrderStatus: string;
+  }>({
+    name: 'quote_event.skipped',
+    message: 'billing quote event skipped because the work order is not in an expected status',
     level: 'info',
   }),
   WORK_ORDER_STATUS_UPDATED: defineLogEvent<{
@@ -122,6 +118,14 @@ export const BUSINESS_EVENTS = {
     name: 'work_order.service.status.updated',
     message: 'work order service item moved to a new status',
     level: 'info',
+  }),
+  WORK_ORDER_OPENING_COMPENSATION_FAILED: defineLogEvent<{
+    quoteId: string;
+    workOrderId: string;
+  }>({
+    name: 'work_order.opening.compensation_failed',
+    message: 'initial quote left in the billing after the work order write failed',
+    level: 'warn',
   }),
   USER_STATUS_UPDATED: defineLogEvent<{ targetUserId: string; targetUserActive: boolean }>({
     name: 'user.status.updated',

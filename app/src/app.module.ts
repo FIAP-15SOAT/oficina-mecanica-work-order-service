@@ -24,11 +24,11 @@ import { CustomerModule } from './infrastructure/http/controllers/customer/custo
 import { CustomerAccessModule } from './infrastructure/http/controllers/customer-access/customer-access.module';
 import { VehicleModule } from './infrastructure/http/controllers/vehicle/vehicle.module';
 import { WorkOrderModule } from './infrastructure/http/controllers/work-order/work-order.module';
-import { QuoteModule } from './infrastructure/http/controllers/quote/quote.module';
 import { MeModule } from './infrastructure/http/controllers/me/me.module';
 import { InternalModule } from './infrastructure/http/controllers/internal/internal.module';
 import { MessagingModule } from './infrastructure/messaging/messaging.module';
 import { QuoteApprovalMessagingModule } from './infrastructure/messaging/handlers/quote-approval/quote-approval-messaging.module';
+import { QuoteMessagingModule } from './infrastructure/messaging/handlers/quote/quote-messaging.module';
 import { CacheModule } from './infrastructure/cache/cache.module';
 import { ClientsModule } from './infrastructure/clients/clients.module';
 import { GatewaysModule } from './infrastructure/gateways/gateways.module';
@@ -68,8 +68,8 @@ import { GatewaysModule } from './infrastructure/gateways/gateways.module';
     CustomerAccessModule,
     VehicleModule,
     WorkOrderModule,
-    QuoteModule,
     QuoteApprovalMessagingModule,
+    QuoteMessagingModule,
     MeModule,
     InternalModule,
   ],

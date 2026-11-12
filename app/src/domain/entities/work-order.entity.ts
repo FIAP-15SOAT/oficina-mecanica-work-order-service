@@ -11,7 +11,6 @@ import { Vehicle } from './vehicle.entity';
 import { User } from './user.entity';
 import { WorkOrderService } from './work-order-service.entity';
 import { WorkOrderPartSupply } from './work-order-part-supply.entity';
-import { Quote } from './quote.entity';
 import { WorkOrderNumber } from '../value-objects/work-order-number.vo';
 
 import {
@@ -20,6 +19,7 @@ import {
 } from '../constants/validation/work-order.constants';
 
 export interface CreateWorkOrderProps {
+  id?: string;
   number: string;
   customerId: string;
   vehicleId: string;
@@ -27,6 +27,11 @@ export interface CreateWorkOrderProps {
   internalNotes?: string | null;
   mileageAtService?: number | null;
   assignedUser?: User | null;
+}
+
+export interface ApprovedQuoteItems {
+  services: { serviceId: string; quantity: number; unitPrice: number }[];
+  partsSupplies: { partSupplyId: string; quantity: number; unitPrice: number }[];
 }
 
 export interface UpdateWorkOrderProps {
@@ -128,7 +133,7 @@ export class WorkOrder {
     WorkOrder.validateAssignedUser(props.assignedUser ?? null);
 
     const workOrder = new WorkOrder({
-      id: randomUUID(),
+      id: props.id ?? randomUUID(),
       number: WorkOrderNumber.create(props.number),
       customerId: props.customerId,
       vehicleId: props.vehicleId,
@@ -183,15 +188,15 @@ export class WorkOrder {
     }
   }
 
-  applyQuoteItems(quote: Quote): {
+  applyApprovedItems(items: ApprovedQuoteItems): {
     services: WorkOrderService[];
     partSupplies: WorkOrderPartSupply[];
   } {
     const existingServiceIds = new Set(this._services.map((s) => s.serviceId));
     const existingPartSupplyIds = new Set(this._partSupplies.map((p) => p.partSupplyId));
 
-    const duplicateService = quote.services.find((s) => existingServiceIds.has(s.serviceId));
-    const duplicatePart = quote.partsSupplies.find((p) =>
+    const duplicateService = items.services.find((s) => existingServiceIds.has(s.serviceId));
+    const duplicatePart = items.partsSupplies.find((p) =>
       existingPartSupplyIds.has(p.partSupplyId),
     );
 
@@ -207,7 +212,7 @@ export class WorkOrder {
       );
     }
 
-    const services = quote.services.map((s) =>
+    const services = items.services.map((s) =>
       WorkOrderService.create({
         workOrderId: this.id,
         serviceId: s.serviceId,
@@ -216,7 +221,7 @@ export class WorkOrder {
       }),
     );
 
-    const partSupplies = quote.partsSupplies.map((p) =>
+    const partSupplies = items.partsSupplies.map((p) =>
       WorkOrderPartSupply.create({
         workOrderId: this.id,
         partSupplyId: p.partSupplyId,
@@ -242,38 +247,10 @@ export class WorkOrder {
     this._totalAmount = servicesTotal + partsTotal;
   }
 
-  ensureCanCreateQuote(): void {
-    const allowedStatuses = [
-      WorkOrderStatus.IN_DIAGNOSIS,
-      WorkOrderStatus.AWAITING_APPROVAL,
-      WorkOrderStatus.REJECTED,
-    ];
-
-    if (!allowedStatuses.includes(this.status)) {
-      throw new BusinessRuleViolationException(
-        `Orçamento só pode ser criado quando a Ordem de Serviço está nos status permitidos. Status atual: "${this.status}".`,
-      );
-    }
-  }
-
-  ensureCanApproveQuote(): void {
+  ensureAwaitingQuoteDecision(): void {
     if (this.status !== WorkOrderStatus.AWAITING_APPROVAL) {
       throw new BusinessRuleViolationException(
-        `Orçamento só pode ser aprovado com a Ordem de Serviço aguardando aprovação. Status atual: "${this.status}"`,
-      );
-    }
-  }
-
-  ensureCanSubmitQuote(): void {
-    const allowedStatuses = [
-      WorkOrderStatus.IN_DIAGNOSIS,
-      WorkOrderStatus.AWAITING_APPROVAL,
-      WorkOrderStatus.REJECTED,
-    ];
-
-    if (!allowedStatuses.includes(this.status)) {
-      throw new BusinessRuleViolationException(
-        `Orçamento só pode ser enviado após o diagnóstico da Ordem de Serviço. Status atual: "${this.status}".`,
+        `Orçamento só pode ser decidido com a Ordem de Serviço aguardando aprovação. Status atual: "${this.status}"`,
       );
     }
   }
@@ -337,6 +314,10 @@ export class WorkOrder {
     [WorkOrderStatus.CANCELLED]: [],
   };
 
+  canChangeStatusTo(newStatus: WorkOrderStatus): boolean {
+    return (WorkOrder.STATUS_TRANSITION_MAP[this.status] ?? []).includes(newStatus);
+  }
+
   static isTerminalStatus(status: WorkOrderStatus): boolean {
     return (WorkOrder.STATUS_TRANSITION_MAP[status] ?? []).length === 0;
   }
@@ -348,9 +329,7 @@ export class WorkOrder {
       );
     }
 
-    const allowedTransitions = WorkOrder.STATUS_TRANSITION_MAP[this.status] || [];
-
-    if (!allowedTransitions.includes(newStatus)) {
+    if (!this.canChangeStatusTo(newStatus)) {
       throw new BusinessRuleViolationException(
         `Transição de status não permitida: de ${this.status} para ${newStatus}.`,
       );
@@ -435,7 +414,7 @@ export class WorkOrder {
     }
   }
 
-  private static validateAssignedUser(assignedUser: User | null): void {
+  static validateAssignedUser(assignedUser: User | null): void {
     if (assignedUser) {
       if (assignedUser.role !== UserRole.MECHANIC || !assignedUser.isActive) {
         throw new BusinessRuleViolationException(

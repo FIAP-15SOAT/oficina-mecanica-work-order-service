@@ -69,14 +69,17 @@ describe('PrismaSagaInstanceRepository', () => {
       [1, true],
       [0, false],
     ])(
-      'should tell whether the work order has a saga reserving stock (%s rows)',
+      'should tell whether the work order has a saga reserving stock or compensating (%s rows)',
       async (count, expected) => {
         prisma.sagaInstance.count.mockResolvedValue(count);
 
         const result = await repository.hasActiveByWorkOrderId(record.workOrderId);
 
         expect(prisma.sagaInstance.count).toHaveBeenCalledWith({
-          where: { workOrderId: record.workOrderId, status: SagaStatus.RESERVING_STOCK },
+          where: {
+            workOrderId: record.workOrderId,
+            status: { in: [SagaStatus.RESERVING_STOCK, SagaStatus.COMPENSATING] },
+          },
         });
 
         expect(result).toBe(expected);
@@ -113,9 +116,12 @@ describe('PrismaSagaInstanceRepository', () => {
 
   describe('update', () => {
     it('should update status and failure reason', async () => {
-      const saga = createMockSagaInstance({ status: SagaStatus.RESERVING_STOCK });
+      const saga = createMockSagaInstance({
+        status: SagaStatus.COMPENSATING,
+        failureReason: SagaFailureReason.INSUFFICIENT_STOCK,
+      });
 
-      saga.compensate(SagaFailureReason.INSUFFICIENT_STOCK);
+      saga.compensate();
       prisma.sagaInstance.update.mockResolvedValue(record);
 
       const result = await repository.update(saga);

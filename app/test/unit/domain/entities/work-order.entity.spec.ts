@@ -8,11 +8,6 @@ import { EntityNotFoundException } from '@domain/exceptions/entity-not-found.exc
 import { DomainValidationException } from '@domain/exceptions/domain-validation.exception';
 import { UserRole } from '@domain/enums/user-role.enum';
 import { createMockWorkOrderService } from '../../../helpers/work-order-service-mock.factory';
-import {
-  createMockQuote,
-  createMockQuoteService,
-  createMockQuotePartSupply,
-} from '../../../helpers/quote-mock.factory';
 import { createMockWorkOrder } from '../../../helpers/work-order-mock.factory';
 import { randomUUID } from 'node:crypto';
 
@@ -37,6 +32,14 @@ describe('WorkOrder Entity', () => {
       expect(workOrder.startedAt).toBeNull();
       expect(workOrder.finishedAt).toBeNull();
       expect(workOrder.deliveredAt).toBeNull();
+    });
+
+    it('should keep the id given by the caller', () => {
+      const id = randomUUID();
+
+      const workOrder = WorkOrder.create({ ...baseProps, id });
+
+      expect(workOrder.id).toBe(id);
     });
 
     it('should throw DomainValidationException when customerId is empty', () => {
@@ -337,6 +340,19 @@ describe('WorkOrder Entity', () => {
     });
   });
 
+  describe('canChangeStatusTo()', () => {
+    it.each([
+      [WorkOrderStatus.IN_DIAGNOSIS, WorkOrderStatus.AWAITING_APPROVAL, true],
+      [WorkOrderStatus.AWAITING_APPROVAL, WorkOrderStatus.REJECTED, true],
+      [WorkOrderStatus.CANCELLED, WorkOrderStatus.AWAITING_APPROVAL, false],
+      [WorkOrderStatus.AWAITING_APPROVAL, WorkOrderStatus.AWAITING_APPROVAL, false],
+    ])('should tell whether a work order in %s can change to %s', (status, newStatus, expected) => {
+      const workOrder = createMockWorkOrder({ status });
+
+      expect(workOrder.canChangeStatusTo(newStatus)).toBe(expected);
+    });
+  });
+
   describe('isTerminalStatus()', () => {
     it('should report a status with outgoing transitions as not terminal', () => {
       expect(WorkOrder.isTerminalStatus(WorkOrderStatus.RECEIVED)).toBe(false);
@@ -351,94 +367,25 @@ describe('WorkOrder Entity', () => {
     });
   });
 
-  describe('ensureCanCreateQuote()', () => {
-    it('should not throw for IN_DIAGNOSIS status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.IN_DIAGNOSIS });
-      expect(() => workOrder.ensureCanCreateQuote()).not.toThrow();
-    });
-
-    it('should not throw for AWAITING_APPROVAL status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.AWAITING_APPROVAL });
-      expect(() => workOrder.ensureCanCreateQuote()).not.toThrow();
-    });
-
-    it('should not throw for REJECTED status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.REJECTED });
-      expect(() => workOrder.ensureCanCreateQuote()).not.toThrow();
-    });
-
-    it('should throw for RECEIVED status', () => {
-      const workOrder = WorkOrder.create(baseProps);
-      expect(() => workOrder.ensureCanCreateQuote()).toThrow(BusinessRuleViolationException);
-    });
-  });
-
-  describe('ensureCanApproveQuote()', () => {
-    it('should allow quote approval in AWAITING_APPROVAL', () => {
+  describe('ensureAwaitingQuoteDecision()', () => {
+    it('should allow a quote decision in AWAITING_APPROVAL', () => {
       const workOrder = createMockWorkOrder({ status: WorkOrderStatus.AWAITING_APPROVAL });
 
-      expect(() => workOrder.ensureCanApproveQuote()).not.toThrow();
+      expect(() => workOrder.ensureAwaitingQuoteDecision()).not.toThrow();
     });
 
     it.each([WorkOrderStatus.IN_DIAGNOSIS, WorkOrderStatus.APPROVED, WorkOrderStatus.REJECTED])(
-      'should refuse quote approval outside AWAITING_APPROVAL (%s)',
+      'should refuse a quote decision outside AWAITING_APPROVAL (%s)',
       (status) => {
         const workOrder = createMockWorkOrder({ status });
 
-        expect(() => workOrder.ensureCanApproveQuote()).toThrow(
+        expect(() => workOrder.ensureAwaitingQuoteDecision()).toThrow(
           new BusinessRuleViolationException(
-            `Orçamento só pode ser aprovado com a Ordem de Serviço aguardando aprovação. Status atual: "${status}"`,
+            `Orçamento só pode ser decidido com a Ordem de Serviço aguardando aprovação. Status atual: "${status}"`,
           ),
         );
       },
     );
-  });
-
-  describe('ensureCanSubmitQuote()', () => {
-    it('should not throw for IN_DIAGNOSIS status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.IN_DIAGNOSIS });
-      expect(() => workOrder.ensureCanSubmitQuote()).not.toThrow();
-    });
-
-    it('should not throw for REJECTED status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.REJECTED });
-      expect(() => workOrder.ensureCanSubmitQuote()).not.toThrow();
-    });
-
-    it('should throw for RECEIVED status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.RECEIVED });
-      expect(() => workOrder.ensureCanSubmitQuote()).toThrow(BusinessRuleViolationException);
-    });
-
-    it('should not throw for AWAITING_APPROVAL status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.AWAITING_APPROVAL });
-      expect(() => workOrder.ensureCanSubmitQuote()).not.toThrow();
-    });
-
-    it('should throw for APPROVED status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.APPROVED });
-      expect(() => workOrder.ensureCanSubmitQuote()).toThrow(BusinessRuleViolationException);
-    });
-
-    it('should throw for IN_PROGRESS status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.IN_PROGRESS });
-      expect(() => workOrder.ensureCanSubmitQuote()).toThrow(BusinessRuleViolationException);
-    });
-
-    it('should throw for COMPLETED status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.COMPLETED });
-      expect(() => workOrder.ensureCanSubmitQuote()).toThrow(BusinessRuleViolationException);
-    });
-
-    it('should throw for DELIVERED status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.DELIVERED });
-      expect(() => workOrder.ensureCanSubmitQuote()).toThrow(BusinessRuleViolationException);
-    });
-
-    it('should throw for CANCELLED status', () => {
-      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.CANCELLED });
-      expect(() => workOrder.ensureCanSubmitQuote()).toThrow(BusinessRuleViolationException);
-    });
   });
 
   describe('startServiceItem()', () => {
@@ -696,81 +643,78 @@ describe('WorkOrder Entity', () => {
     });
   });
 
-  describe('applyQuoteItems()', () => {
-    it('should create WO service/part items and recalculate totalAmount from item prices', () => {
-      const quoteService = createMockQuoteService();
-      const quotePartSupply = createMockQuotePartSupply();
-      const quote = createMockQuote({ services: [quoteService], partsSupplies: [quotePartSupply] });
+  describe('applyApprovedItems()', () => {
+    it('should apply the approved items and recalculate the total', () => {
+      const serviceId = randomUUID();
+      const partSupplyId = randomUUID();
 
       const workOrder = WorkOrder.create(baseProps);
-      const result = workOrder.applyQuoteItems(quote);
 
-      expect(result.services).toHaveLength(1);
-      expect(result.partSupplies).toHaveLength(1);
-      expect(result.services[0].serviceId).toBe(quoteService.serviceId);
-      expect(result.partSupplies[0].partSupplyId).toBe(quotePartSupply.partSupplyId);
-      expect(workOrder.totalAmount).toBe(
-        result.services[0].totalPrice + result.partSupplies[0].totalPrice,
-      );
-      expect(workOrder.services).toHaveLength(1);
-      expect(workOrder.partSupplies).toHaveLength(1);
+      const result = workOrder.applyApprovedItems({
+        services: [{ serviceId, quantity: 2, unitPrice: 150 }],
+        partsSupplies: [{ partSupplyId, quantity: 3, unitPrice: 40.5 }],
+      });
+
+      expect(result.services).toEqual([
+        expect.objectContaining({
+          workOrderId: workOrder.id,
+          serviceId,
+          quantity: 2,
+          unitPrice: 150,
+        }),
+      ]);
+
+      expect(result.partSupplies).toEqual([
+        expect.objectContaining({
+          workOrderId: workOrder.id,
+          partSupplyId,
+          quantity: 3,
+          unitPrice: 40.5,
+        }),
+      ]);
+
+      expect(workOrder.services).toEqual(result.services);
+      expect(workOrder.partSupplies).toEqual(result.partSupplies);
+      expect(workOrder.totalAmount).toBe(421.5);
     });
 
-    it('should handle quote with no services or parts', () => {
-      const quote = createMockQuote({ services: [], partsSupplies: [] });
-
+    it('should apply services only when no part was approved', () => {
       const workOrder = WorkOrder.create(baseProps);
-      const result = workOrder.applyQuoteItems(quote);
 
-      expect(result.services).toHaveLength(0);
-      expect(result.partSupplies).toHaveLength(0);
-      expect(workOrder.totalAmount).toBe(0);
-    });
-
-    it('should treat undefined services as empty array', () => {
-      const quotePartSupply = createMockQuotePartSupply();
-      const quote = createMockQuote({ partsSupplies: [quotePartSupply] });
-
-      const workOrder = WorkOrder.create(baseProps);
-      const result = workOrder.applyQuoteItems(quote);
-
-      expect(result.services).toHaveLength(0);
-      expect(result.partSupplies).toHaveLength(1);
-    });
-
-    it('should treat undefined partsSupplies as empty array', () => {
-      const quoteService = createMockQuoteService();
-      const quote = createMockQuote({ services: [quoteService] });
-
-      const workOrder = WorkOrder.create(baseProps);
-      const result = workOrder.applyQuoteItems(quote);
+      const result = workOrder.applyApprovedItems({
+        services: [{ serviceId: randomUUID(), quantity: 1, unitPrice: 200 }],
+        partsSupplies: [],
+      });
 
       expect(result.services).toHaveLength(1);
       expect(result.partSupplies).toHaveLength(0);
+      expect(workOrder.totalAmount).toBe(200);
     });
 
     it('should throw BusinessRuleViolationException when a service was already added', () => {
-      const serviceId = randomUUID();
-      const quoteService = createMockQuoteService({ serviceId });
-      const quote = createMockQuote({ services: [quoteService], partsSupplies: [] });
+      const items = {
+        services: [{ serviceId: randomUUID(), quantity: 1, unitPrice: 200 }],
+        partsSupplies: [],
+      };
 
       const workOrder = WorkOrder.create(baseProps);
-      workOrder.applyQuoteItems(quote);
 
-      const quote2 = createMockQuote({ services: [quoteService], partsSupplies: [] });
-      expect(() => workOrder.applyQuoteItems(quote2)).toThrow(BusinessRuleViolationException);
+      workOrder.applyApprovedItems(items);
+
+      expect(() => workOrder.applyApprovedItems(items)).toThrow(BusinessRuleViolationException);
     });
 
     it('should throw BusinessRuleViolationException when a part/supply was already added', () => {
-      const partSupplyId = randomUUID();
-      const quotePartSupply = createMockQuotePartSupply({ partSupplyId });
-      const quote = createMockQuote({ services: [], partsSupplies: [quotePartSupply] });
+      const items = {
+        services: [],
+        partsSupplies: [{ partSupplyId: randomUUID(), quantity: 1, unitPrice: 30 }],
+      };
 
       const workOrder = WorkOrder.create(baseProps);
-      workOrder.applyQuoteItems(quote);
 
-      const quote2 = createMockQuote({ services: [], partsSupplies: [quotePartSupply] });
-      expect(() => workOrder.applyQuoteItems(quote2)).toThrow(BusinessRuleViolationException);
+      workOrder.applyApprovedItems(items);
+
+      expect(() => workOrder.applyApprovedItems(items)).toThrow(BusinessRuleViolationException);
     });
   });
 });

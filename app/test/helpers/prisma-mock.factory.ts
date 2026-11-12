@@ -36,9 +36,6 @@ export type MockPrismaService = {
   address: MockDelegate;
   vehicle: MockDelegate;
   workOrder: MockDelegate;
-  quote: MockDelegate;
-  quotePartSupply: MockDelegate;
-  quoteService: MockDelegate;
   workOrderService: MockDelegate;
   workOrderPartSupply: MockDelegate;
   statusHistory: MockDelegate;
@@ -60,9 +57,6 @@ export function createMockPrismaClient(): MockPrismaService {
     address: createMockDelegate(),
     vehicle: createMockDelegate(),
     workOrder: createMockDelegate(),
-    quote: createMockDelegate(),
-    quotePartSupply: createMockDelegate(),
-    quoteService: createMockDelegate(),
     workOrderService: createMockDelegate(),
     workOrderPartSupply: createMockDelegate(),
     statusHistory: createMockDelegate(),

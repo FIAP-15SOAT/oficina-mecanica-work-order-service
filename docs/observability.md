@@ -87,25 +87,31 @@ A sensibilidade declarada é o que mascara: `subjectName`/`subjectEmail` saem ma
 O Prisma só pede o COMMIT quando o callback de `$transaction` retorna, então a última linha dentro de `executeTransaction` ainda roda *antes* do commit. O padrão é retornar um **composto**, desestruturá-lo depois do `await` e só então emitir:
 
 ```ts
-const { quote, workOrderId, previousStatus } = await this.unitOfWork.executeTransaction(
-  async (repos) => {
-    // ...
-    return { quote, workOrderId: workOrder.id, previousStatus };
-  },
+const { workOrder, workOrderStatusTransition } = await this.unitOfWork.executeTransaction(
+  (repos) => this.complete(repos, saga, quote),
 );
 
-this.logger.event(BUSINESS_EVENTS.QUOTE_APPROVED, { quoteId: quote.id, workOrderId, ... });
+await this.cache.delete([workOrderCacheKey(workOrder.id)]);
+
+this.logger.event(BUSINESS_EVENTS.QUOTE_APPROVAL_COMPLETED, {
+  sagaId: saga.id,
+  quoteId,
+  workOrderId: workOrder.id,
+  workOrderNumber: workOrder.number.toString(),
+});
 ```
+
+O trecho é do `CompleteQuoteApprovalUseCase`, o passo da Saga de aprovação que leva a OS a `APPROVED` quando o Inventory confirma a reserva do estoque.
 
 Nenhum tipo de retorno público muda, nenhuma regra de negócio é duplicada, e um rollback lança antes do emit — então uma operação revertida nunca produz log de sucesso.
 
-**O caso inverso, dito explicitamente para ninguém "consertar":** `SubmitQuoteUseCase` chama `emailSender.send` *dentro* da transação, e o log técnico do mailer é portanto emitido pré-commit — e isso está **correto**: o e-mail foi realmente enviado, e um rollback não o desenvia. A regra pós-commit governa afirmações de sucesso *de negócio*, não registros de efeito colateral irreversível.
+**O caso inverso, dito explicitamente para ninguém "consertar":** o log técnico do mailer acompanha o envio, onde quer que ele rode. Os e-mails de orçamento (`ApplySentQuoteUseCase` e `ConfirmQuoteApprovalReversalUseCase`) saem depois do commit, para que um rollback não deixe o cliente avisado de algo que não aconteceu; mas um e-mail enviado dentro de uma transação gera o log antes do commit, e isso está **correto**: o e-mail foi realmente enviado, e um rollback não o desenvia. A regra pós-commit governa afirmações de sucesso *de negócio*, não registros de efeito colateral irreversível.
 
 ### A régua para dar um logger a um caso de uso
 
-*Este log responde a uma pergunta que o access log não responde?* Método, rota, status, duração e autor já estão lá — `logger.info('entrando em FindAllCustomers')` é ruído puro. O logger é injetado somente nos casos de uso que emitem eventos de segurança ou negócio declarados: autenticação e senha, concessão/revogação de acesso, estoque, aprovação/rejeição/submissão de orçamento, usuário e transições de ordem de serviço. Os demais casos de uso não recebem logger deliberadamente.
+*Este log responde a uma pergunta que o access log não responde?* Método, rota, status, duração e autor já estão lá — `logger.info('entrando em FindAllCustomers')` é ruído puro. O logger é injetado somente nos casos de uso que emitem eventos de segurança ou negócio declarados: autenticação e senha, concessão/revogação de acesso, os passos da Saga de aprovação (`quote_approval.*`), as mensagens de orçamento ignoradas (`quote_event.skipped`), a compensação da abertura que falhou (`work_order.opening.compensation_failed`), usuário e transições de ordem de serviço. Os demais casos de uso não recebem logger deliberadamente.
 
-A aprovação e a rejeição do orçamento são donas da transição de negócio e emitem o evento somente depois da confirmação transacional. No fluxo externo, `DecideMyQuoteUseCase` resolve autorização por vínculo e delega à mesma regra; o canal da decisão já é distinguido por `http.route`, e `request.id` correlaciona as linhas.
+Os passos da Saga de aprovação são donos das transições da OS e emitem o evento somente depois da confirmação transacional. A decisão do Cliente da Oficina (`DecideMyQuoteUseCase`) não emite evento próprio: ela resolve a autorização por vínculo e repassa a decisão ao Billing, o serviço dono dos orçamentos, que a registra; o access log, com `http.route`, e o `request.id`, propagado ao Billing no `x-request-id`, correlacionam as linhas.
 
 ### Fronteira de cobertura — o que **não** é registrado, e por quê
 

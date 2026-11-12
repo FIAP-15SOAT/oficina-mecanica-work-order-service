@@ -9,23 +9,15 @@ import { FindMyWorkOrderByIdUseCase } from '@application/use-cases/me/find-my-wo
 import { FindMyWorkOrdersQuotesUseCase } from '@application/use-cases/me/find-my-work-orders-quotes.use-case';
 import { FindMyQuoteByIdUseCase } from '@application/use-cases/me/find-my-quote-by-id.use-case';
 import { DecideMyQuoteUseCase } from '@application/use-cases/me/decide-my-quote.use-case';
-import { ApproveQuoteUseCase } from '@application/use-cases/quote-approval/approve-quote.use-case';
-import { RejectQuoteUseCase } from '@application/use-cases/quote/reject-quote.use-case';
-import { UpdateQuoteStatusUseCase } from '@application/use-cases/quote/update-quote-status.use-case';
 import { CustomerAccessPolicy } from '@application/policies/customer-access.policy';
-import { FindCatalogItemsUseCase } from '@application/use-cases/catalog/find-catalog-items.use-case';
-import { IInventoryCatalogGateway } from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.interface';
+import { IBillingQuotesGateway } from '@application/ports/output/gateways/billing/billing-quotes-gateway.interface';
 
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IUserCustomerRepository } from '@domain/interfaces/repositories/user-customer.repository.interface';
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
-import { IQuoteRepository } from '@domain/interfaces/repositories/quote.repository.interface';
-import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
-import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
+import { ISagaInstanceRepository } from '@domain/interfaces/repositories/saga-instance.repository.interface';
 import { IHashService } from '@application/ports/output/services/hash.service.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
-import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
-import { ICache } from '@application/ports/output/services/cache.service.interface';
 
 import { MeController as MeCleanController } from '@interface-adapters/me/me.controller';
 import { MeController } from './me.controller';
@@ -41,35 +33,13 @@ import { MeController } from './me.controller';
         hashService: IHashService,
         userCustomerRepository: IUserCustomerRepository,
         workOrderRepository: IWorkOrderRepository,
-        quoteRepository: IQuoteRepository,
-        unitOfWork: IUnitOfWork,
+        sagaInstanceRepository: ISagaInstanceRepository,
         logger: ILogger,
-        metrics: IMetrics,
-        statusHistoryRepository: IStatusHistoryRepository,
-        cache: ICache,
-        inventoryCatalogGateway: IInventoryCatalogGateway,
+        billingQuotesGateway: IBillingQuotesGateway,
       ) => {
         const customerAccessPolicy = new CustomerAccessPolicy(
           userCustomerRepository,
           logger.forContext(CustomerAccessPolicy.name),
-        );
-        const approveQuoteUseCase = new ApproveQuoteUseCase(
-          unitOfWork,
-          logger.forContext(ApproveQuoteUseCase.name),
-          metrics,
-          statusHistoryRepository,
-          cache,
-        );
-        const rejectQuoteUseCase = new RejectQuoteUseCase(
-          unitOfWork,
-          logger.forContext(RejectQuoteUseCase.name),
-          metrics,
-          statusHistoryRepository,
-          cache,
-        );
-        const updateQuoteStatusUseCase = new UpdateQuoteStatusUseCase(
-          approveQuoteUseCase,
-          rejectQuoteUseCase,
         );
 
         return new MeCleanController(
@@ -83,17 +53,20 @@ import { MeController } from './me.controller';
           new FindMyWorkOrderByIdUseCase(workOrderRepository, customerAccessPolicy),
           new FindMyWorkOrdersQuotesUseCase(
             workOrderRepository,
-            quoteRepository,
+            billingQuotesGateway,
             customerAccessPolicy,
           ),
-          new FindMyQuoteByIdUseCase(quoteRepository, workOrderRepository, customerAccessPolicy),
-          new DecideMyQuoteUseCase(
-            quoteRepository,
+          new FindMyQuoteByIdUseCase(
+            billingQuotesGateway,
             workOrderRepository,
             customerAccessPolicy,
-            updateQuoteStatusUseCase,
           ),
-          new FindCatalogItemsUseCase(inventoryCatalogGateway),
+          new DecideMyQuoteUseCase(
+            billingQuotesGateway,
+            workOrderRepository,
+            sagaInstanceRepository,
+            customerAccessPolicy,
+          ),
         );
       },
       inject: [
@@ -101,13 +74,9 @@ import { MeController } from './me.controller';
         'IHashService',
         'IUserCustomerRepository',
         'IWorkOrderRepository',
-        'IQuoteRepository',
-        'IUnitOfWork',
+        'ISagaInstanceRepository',
         'ILogger',
-        'IMetrics',
-        'IStatusHistoryRepository',
-        'ICache',
-        'IInventoryCatalogGateway',
+        'IBillingQuotesGateway',
       ],
     },
   ],

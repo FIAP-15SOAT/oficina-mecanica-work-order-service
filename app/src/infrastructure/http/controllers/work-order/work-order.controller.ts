@@ -22,6 +22,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiProduces,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
@@ -46,7 +47,6 @@ import {
   WorkOrderServiceItemDataResponseDto,
 } from './dto/responses/work-order-response.dto';
 import { StatusHistoryListResponseDto } from './dto/responses/status-history-response.dto';
-import { QuoteListResponseDto } from '@infrastructure/http/controllers/quote/dto/responses/quote-response.dto';
 
 @ApiTags('Gestão de Ordens de Serviço')
 @ApiProduces('application/json')
@@ -56,16 +56,6 @@ import { QuoteListResponseDto } from '@infrastructure/http/controllers/quote/dto
 @ApiBearerAuth('access-token')
 export class WorkOrderController {
   constructor(private readonly controller: WorkOrderCleanController) {}
-
-  @Get(':id/quotes')
-  @Roles(UserRole.ADMIN, UserRole.MECHANIC, UserRole.ATTENDANT)
-  @ApiOperation({ summary: 'Listar orçamentos de uma Ordem de Serviço' })
-  @ApiOkResponse({ type: QuoteListResponseDto, description: 'Lista de orçamentos' })
-  @ApiNotFoundResponse({ description: 'Ordem de Serviço não encontrada' })
-  @ApiParam({ name: 'id', format: 'uuid' })
-  findQuotes(@Param('id', ParseUUIDPipe) id: string): Promise<QuoteListResponseDto> {
-    return this.controller.findQuotes(id);
-  }
 
   @Post()
   @Roles(UserRole.ADMIN, UserRole.ATTENDANT)
@@ -79,6 +69,9 @@ export class WorkOrderController {
   @ApiNotFoundResponse({ description: 'Serviço ou peça/insumo não encontrado' })
   @ApiConflictResponse({
     description: 'Regra de negócio violada',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'Billing ou Inventory indisponível ao criar o orçamento inicial',
   })
   create(
     @Body() request: CreateWorkOrderRequestDto,

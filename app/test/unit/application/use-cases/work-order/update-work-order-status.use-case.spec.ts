@@ -141,7 +141,7 @@ describe('UpdateWorkOrderStatusUseCase', () => {
       }),
     ).rejects.toThrow(
       new ResourceConflictException(
-        'Ordem de serviço com aprovação de orçamento em andamento: aguarde a confirmação do estoque',
+        'Ordem de serviço com aprovação de orçamento em andamento: aguarde a conclusão e tente novamente',
       ),
     );
 

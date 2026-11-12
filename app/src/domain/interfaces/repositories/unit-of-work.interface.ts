@@ -1,7 +1,6 @@
 import { ICustomerRepository } from './customer.repository.interface';
 import { IVehicleRepository } from './vehicle.repository.interface';
 import { IWorkOrderRepository } from './work-order.repository.interface';
-import { IQuoteRepository } from './quote.repository.interface';
 import { IStatusHistoryRepository } from './status-history.repository.interface';
 import { IUserRepository } from './user.repository.interface';
 import { IUserCustomerRepository } from './user-customer.repository.interface';
@@ -13,7 +12,6 @@ export interface IRepositories {
   customer: ICustomerRepository;
   vehicle: IVehicleRepository;
   workOrder: IWorkOrderRepository;
-  quote: IQuoteRepository;
   statusHistory: IStatusHistoryRepository;
   user: IUserRepository;
   userCustomer: IUserCustomerRepository;

@@ -5,7 +5,6 @@ import { IUpdateWorkOrderUseCase } from '@application/ports/input/work-order/upd
 import { IUpdateWorkOrderStatusUseCase } from '@application/ports/input/work-order/update-work-order-status.use-case.interface';
 import { IUpdateWorkOrderServiceStatusUseCase } from '@application/ports/input/work-order/update-work-order-service-status.use-case.interface';
 import { IFindWorkOrderStatusHistoryUseCase } from '@application/ports/input/work-order/find-work-order-status-history.use-case.interface';
-import { IFindWorkOrderQuotesUseCase } from '@application/ports/input/quote/find-work-order-quotes.use-case.interface';
 import { IFindCatalogItemsUseCase } from '@application/ports/input/catalog/find-catalog-items.use-case.interface';
 import { FindCatalogItemsOutputDto } from '@application/ports/input/catalog/dto/find-catalog-items.dto';
 
@@ -25,9 +24,6 @@ import {
 } from './responses/work-order.response';
 import { StatusHistoryListResponse } from './responses/status-history.response';
 
-import { QuotePresenter } from '@interface-adapters/quote/quote.presenter';
-import { QuoteListResponse } from '@interface-adapters/quote/responses/quote.response';
-
 export class WorkOrderController {
   constructor(
     private readonly createWorkOrderUseCase: ICreateWorkOrderUseCase,
@@ -37,7 +33,6 @@ export class WorkOrderController {
     private readonly updateWorkOrderStatusUseCase: IUpdateWorkOrderStatusUseCase,
     private readonly updateWorkOrderServiceStatusUseCase: IUpdateWorkOrderServiceStatusUseCase,
     private readonly findWorkOrderStatusHistoryUseCase: IFindWorkOrderStatusHistoryUseCase,
-    private readonly findWorkOrderQuotesUseCase: IFindWorkOrderQuotesUseCase,
     private readonly findCatalogItemsUseCase: IFindCatalogItemsUseCase,
   ) {}
 
@@ -114,11 +109,6 @@ export class WorkOrderController {
   async getStatusHistory(id: string): Promise<StatusHistoryListResponse> {
     const history = await this.findWorkOrderStatusHistoryUseCase.execute(id);
     return WorkOrderPresenter.toStatusHistoryListResponse(history);
-  }
-
-  async findQuotes(workOrderId: string): Promise<QuoteListResponse> {
-    const quotes = await this.findWorkOrderQuotesUseCase.execute(workOrderId);
-    return QuotePresenter.toListResponse(quotes);
   }
 
   private findItemsCatalog(workOrder: WorkOrder): Promise<FindCatalogItemsOutputDto> {

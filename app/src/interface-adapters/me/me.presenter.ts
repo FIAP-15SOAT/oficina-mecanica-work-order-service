@@ -1,12 +1,14 @@
 import { WorkOrder } from '@domain/entities/work-order.entity';
-import { Quote } from '@domain/entities/quote.entity';
 import { CustomerType } from '@domain/enums/customer-type.enum';
 import {
   PaginatedRepositoryResult,
   PaginationInput,
 } from '@domain/interfaces/common/pagination.interface';
 import { FindUserByIdOutput } from '@application/ports/input/user/dto/find-user-by-id.dto';
-import { FindCatalogItemsOutputDto } from '@application/ports/input/catalog/dto/find-catalog-items.dto';
+import {
+  BillingQuoteGatewayResponse,
+  BillingQuoteWithItemsGatewayResponse,
+} from '@application/ports/output/gateways/billing/billing-quotes-gateway.response';
 import { buildPaginationMeta } from '@application/utils/pagination.util';
 
 import {
@@ -14,6 +16,7 @@ import {
   MyWorkOrderResponse,
   MyWorkOrderDataResponse,
   MyWorkOrderPaginatedResponse,
+  MyQuoteItemResponse,
   MyQuoteSummaryResponse,
   MyQuoteResponse,
   MyQuoteDataResponse,
@@ -74,8 +77,7 @@ export class MePresenter {
     };
   }
 
-  /** Summary — used in listings, where the items are not loaded. */
-  static toQuoteSummaryResponse(quote: Quote): MyQuoteSummaryResponse {
+  static toQuoteSummaryResponse(quote: BillingQuoteGatewayResponse): MyQuoteSummaryResponse {
     return {
       id: quote.id,
       status: quote.status,
@@ -89,37 +91,27 @@ export class MePresenter {
     };
   }
 
-  /** Detail — requires a Quote loaded with findByIdWithDetails. */
-  static toQuoteResponse(quote: Quote, catalog: FindCatalogItemsOutputDto): MyQuoteResponse {
+  static toQuoteResponse(quote: BillingQuoteWithItemsGatewayResponse): MyQuoteResponse {
+    const toItem = ({ id, name, quantity, unitPrice, totalPrice }: MyQuoteItemResponse) => ({
+      id,
+      name,
+      quantity,
+      unitPrice,
+      totalPrice,
+    });
+
     return {
       ...MePresenter.toQuoteSummaryResponse(quote),
-      services: quote.services.map((item) => ({
-        id: item.serviceId,
-        name: catalog.services.find((service) => service.id === item.serviceId)?.name ?? null,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        totalPrice: item.totalPrice,
-      })),
-      partsSupplies: quote.partsSupplies.map((item) => ({
-        id: item.partSupplyId,
-        name:
-          catalog.partsSupplies.find((partSupply) => partSupply.id === item.partSupplyId)?.name ??
-          null,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        totalPrice: item.totalPrice,
-      })),
+      services: quote.services.map(toItem),
+      partsSupplies: quote.partsSupplies.map(toItem),
     };
   }
 
-  static toQuoteDataResponse(
-    quote: Quote,
-    catalog: FindCatalogItemsOutputDto,
-  ): MyQuoteDataResponse {
-    return { data: MePresenter.toQuoteResponse(quote, catalog) };
+  static toQuoteDataResponse(quote: BillingQuoteWithItemsGatewayResponse): MyQuoteDataResponse {
+    return { data: MePresenter.toQuoteResponse(quote) };
   }
 
-  static toQuoteListResponse(quotes: Quote[]): MyQuoteListResponse {
+  static toQuoteListResponse(quotes: BillingQuoteGatewayResponse[]): MyQuoteListResponse {
     return { data: quotes.map((quote) => MePresenter.toQuoteSummaryResponse(quote)) };
   }
 }

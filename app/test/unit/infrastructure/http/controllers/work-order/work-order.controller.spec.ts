@@ -5,7 +5,6 @@ import { WorkOrderController } from '@infrastructure/http/controllers/work-order
 import { WorkOrderController as WorkOrderCleanController } from '@interface-adapters/work-order/work-order.controller';
 
 import { WorkOrderPresenter } from '@interface-adapters/work-order/work-order.presenter';
-import { QuotePresenter } from '@interface-adapters/quote/quote.presenter';
 
 import { CreateWorkOrderRequestDto } from '@infrastructure/http/controllers/work-order/dto/requests/create-work-order-request.dto';
 import { UpdateWorkOrderRequestDto } from '@infrastructure/http/controllers/work-order/dto/requests/update-work-order-request.dto';
@@ -23,7 +22,6 @@ import { createMockCustomer } from '../../../../../helpers/customer-mock.factory
 import { createMockVehicle } from '../../../../../helpers/vehicle-mock.factory';
 import { createMockWorkOrder } from '../../../../../helpers/work-order-mock.factory';
 import { createMockWorkOrderService } from '../../../../../helpers/work-order-service-mock.factory';
-import { createMockQuote } from '../../../../../helpers/quote-mock.factory';
 
 describe('WorkOrderController', () => {
   const emptyCatalog: FindCatalogItemsOutputDto = { services: [], partsSupplies: [] };
@@ -47,7 +45,6 @@ describe('WorkOrderController', () => {
 
   beforeEach(() => {
     cleanController = new WorkOrderCleanController(
-      { execute: jest.fn() },
       { execute: jest.fn() },
       { execute: jest.fn() },
       { execute: jest.fn() },
@@ -195,23 +192,6 @@ describe('WorkOrderController', () => {
 
       expect(result).toBe(response);
       expect(cleanController.getStatusHistory).toHaveBeenCalledWith(id);
-    });
-  });
-
-  describe('findQuotes', () => {
-    it('should delegate to the clean controller and return its result', async () => {
-      const workOrder = createMockWorkOrder({ customer, vehicle });
-      const quote = createMockQuote({ workOrderId: workOrder.id });
-      quote.workOrder = workOrder;
-
-      const response = QuotePresenter.toListResponse([quote]);
-
-      jest.spyOn(cleanController, 'findQuotes').mockResolvedValue(response);
-
-      const result = await httpController.findQuotes(workOrder.id);
-
-      expect(result).toBe(response);
-      expect(cleanController.findQuotes).toHaveBeenCalledWith(workOrder.id);
     });
   });
 });

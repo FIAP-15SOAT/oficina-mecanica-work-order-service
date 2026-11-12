@@ -1,18 +1,16 @@
-import { randomUUID } from 'node:crypto';
 import { CompleteQuoteApprovalUseCase } from '@application/use-cases/quote-approval/complete-quote-approval.use-case';
-import { QuoteStatus } from '@domain/enums/quote-status.enum';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { SagaType } from '@domain/enums/saga-type.enum';
 import { SagaStatus } from '@domain/enums/saga-status.enum';
-import {
-  createMockQuote,
-  createMockQuotePartSupply,
-  createMockQuoteService,
-} from '../../../../helpers/quote-mock.factory';
 import { createMockWorkOrder } from '../../../../helpers/work-order-mock.factory';
-import { createMockSagaInstance } from '../../../../helpers/saga-instance-mock.factory';
+import {
+  createMockSagaInstance,
+  createMockSagaInstanceRepository,
+} from '../../../../helpers/saga-instance-mock.factory';
 import { createMockUnitOfWorkWithRepos } from '../../../../helpers/unit-of-work-mock.factory';
 import { IUnitOfWork, IRepositories } from '@domain/interfaces/repositories/unit-of-work.interface';
+import { ISagaInstanceRepository } from '@domain/interfaces/repositories/saga-instance.repository.interface';
+import { IBillingQuotesGateway } from '@application/ports/output/gateways/billing/billing-quotes-gateway.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { createMockLogger } from '../../../../helpers/logger-mock.factory';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
@@ -24,10 +22,17 @@ import {
 import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { createMockCache } from '../../../../helpers/cache-mock.factory';
+import {
+  createMockBillingQuotesGateway,
+  readInternalQuoteFixture,
+} from '../../../../helpers/billing-quotes-gateway-mock.factory';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
+import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
 
 describe('CompleteQuoteApprovalUseCase', () => {
   let useCase: CompleteQuoteApprovalUseCase;
+  let sagaInstanceRepository: jest.Mocked<ISagaInstanceRepository>;
+  let billingQuotesGateway: jest.Mocked<IBillingQuotesGateway>;
   let unitOfWork: jest.Mocked<IUnitOfWork>;
   let repos: jest.Mocked<IRepositories>;
   let logger: jest.Mocked<ILogger>;
@@ -35,6 +40,10 @@ describe('CompleteQuoteApprovalUseCase', () => {
   let cache: jest.Mocked<ICache>;
 
   beforeEach(() => {
+    sagaInstanceRepository = createMockSagaInstanceRepository();
+
+    billingQuotesGateway = createMockBillingQuotesGateway();
+
     ({ unitOfWork, repos } = createMockUnitOfWorkWithRepos());
 
     logger = createMockLogger();
@@ -44,6 +53,8 @@ describe('CompleteQuoteApprovalUseCase', () => {
     cache = createMockCache();
 
     useCase = new CompleteQuoteApprovalUseCase(
+      sagaInstanceRepository,
+      billingQuotesGateway,
       unitOfWork,
       logger,
       metrics,
@@ -52,19 +63,8 @@ describe('CompleteQuoteApprovalUseCase', () => {
     );
   });
 
-  it('should approve the work order with the quote items and total, record the decision author and complete the saga', async () => {
-    const decidedBy = randomUUID();
-
-    const serviceItem = createMockQuoteService({ quantity: 1, unitPrice: 200, totalPrice: 200 });
-
-    const partItem = createMockQuotePartSupply({ quantity: 3, unitPrice: 50, totalPrice: 150 });
-
-    const quote = createMockQuote({
-      status: QuoteStatus.APPROVED,
-      decidedBy,
-      services: [serviceItem],
-      partsSupplies: [partItem],
-    });
+  it('should approve the work order with the items, total and author of the approved quote read in the Billing', async () => {
+    const quote = readInternalQuoteFixture().data;
 
     const workOrder = createMockWorkOrder({
       id: quote.workOrderId,
@@ -77,9 +77,9 @@ describe('CompleteQuoteApprovalUseCase', () => {
       status: SagaStatus.RESERVING_STOCK,
     });
 
-    jest.mocked(repos.sagaInstance.findByTypeAndCorrelationId).mockResolvedValue(saga);
+    sagaInstanceRepository.findByTypeAndCorrelationId.mockResolvedValue(saga);
 
-    jest.mocked(repos.quote.findByIdWithDetails).mockResolvedValue(quote);
+    billingQuotesGateway.getQuote.mockResolvedValue(quote);
 
     jest.mocked(repos.workOrder.findByIdWithDetails).mockResolvedValue(workOrder);
 
@@ -98,26 +98,36 @@ describe('CompleteQuoteApprovalUseCase', () => {
 
     await useCase.execute(quote.id);
 
-    expect(repos.sagaInstance.findByTypeAndCorrelationId).toHaveBeenCalledWith(
+    expect(sagaInstanceRepository.findByTypeAndCorrelationId).toHaveBeenCalledWith(
       SagaType.QUOTE_APPROVAL,
       quote.id,
     );
 
+    expect(billingQuotesGateway.getQuote).toHaveBeenCalledWith(quote.id);
     expect(repos.workOrder.findByIdWithDetails).toHaveBeenCalledWith(saga.workOrderId);
     expect(workOrder.status).toBe(WorkOrderStatus.APPROVED);
-    expect(workOrder.totalAmount).toBe(350);
+    expect(workOrder.totalAmount).toBe(quote.totalAmount);
+
     expect(repos.workOrder.addServiceItems).toHaveBeenCalledWith([
-      expect.objectContaining({ serviceId: serviceItem.serviceId, quantity: 1, unitPrice: 200 }),
+      expect.objectContaining({
+        serviceId: quote.services[0].id,
+        quantity: quote.services[0].quantity,
+        unitPrice: quote.services[0].unitPrice,
+      }),
     ]);
 
     expect(repos.workOrder.addPartSupplyItems).toHaveBeenCalledWith([
-      expect.objectContaining({ partSupplyId: partItem.partSupplyId, quantity: 3, unitPrice: 50 }),
+      expect.objectContaining({
+        partSupplyId: quote.partsSupplies[0].id,
+        quantity: quote.partsSupplies[0].quantity,
+        unitPrice: quote.partsSupplies[0].unitPrice,
+      }),
     ]);
 
     expect(repos.statusHistory.create).toHaveBeenCalledWith(
       expect.objectContaining({
         workOrderId: workOrder.id,
-        changedById: decidedBy,
+        changedById: quote.decidedBy,
         previousStatus: WorkOrderStatus.AWAITING_APPROVAL,
         newStatus: WorkOrderStatus.APPROVED,
       }),
@@ -146,31 +156,60 @@ describe('CompleteQuoteApprovalUseCase', () => {
 
   it.each([
     ['COMPLETED', SagaStatus.COMPLETED],
-    ['COMPENSATED', SagaStatus.COMPENSATED],
+    ['COMPENSATING', SagaStatus.COMPENSATING],
     ['missing', undefined],
-  ])('should skip a reservation confirmation when the saga is %s', async (_label, sagaStatus) => {
-    const quoteId = randomUUID();
+  ])(
+    'should not read the Billing for a reservation reply when the saga is %s',
+    async (_label, sagaStatus) => {
+      const quoteId = readInternalQuoteFixture().data.id;
 
-    jest
-      .mocked(repos.sagaInstance.findByTypeAndCorrelationId)
-      .mockResolvedValue(sagaStatus ? createMockSagaInstance({ status: sagaStatus }) : null);
+      sagaInstanceRepository.findByTypeAndCorrelationId.mockResolvedValue(
+        sagaStatus ? createMockSagaInstance({ status: sagaStatus }) : null,
+      );
 
-    await useCase.execute(quoteId);
+      await useCase.execute(quoteId);
 
-    expect(repos.workOrder.update).not.toHaveBeenCalled();
-    expect(repos.sagaInstance.update).not.toHaveBeenCalled();
-    expect(repos.statusHistory.create).not.toHaveBeenCalled();
+      expect(billingQuotesGateway.getQuote).not.toHaveBeenCalled();
+      expect(unitOfWork.executeTransaction).not.toHaveBeenCalled();
+      expect(cache.delete).not.toHaveBeenCalled();
+
+      expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_APPROVAL_STEP_SKIPPED, {
+        quoteId,
+        sagaStatus,
+      });
+    },
+  );
+
+  it('should fail and change nothing when the Billing does not answer', async () => {
+    const quoteId = readInternalQuoteFixture().data.id;
+
+    sagaInstanceRepository.findByTypeAndCorrelationId.mockResolvedValue(
+      createMockSagaInstance({ correlationId: quoteId, status: SagaStatus.RESERVING_STOCK }),
+    );
+
+    billingQuotesGateway.getQuote.mockRejectedValue(
+      new ServiceIntegrationException('Serviço de destino indisponível'),
+    );
+
+    await expect(useCase.execute(quoteId)).rejects.toThrow(ServiceIntegrationException);
+
+    expect(unitOfWork.executeTransaction).not.toHaveBeenCalled();
     expect(cache.delete).not.toHaveBeenCalled();
-    expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_APPROVAL_STEP_SKIPPED, {
-      quoteId,
-      sagaStatus,
-    });
+    expect(logger.event).not.toHaveBeenCalled();
   });
 
   it('should leave cache, log and metric untouched when the transaction fails', async () => {
+    const quote = readInternalQuoteFixture().data;
+
+    sagaInstanceRepository.findByTypeAndCorrelationId.mockResolvedValue(
+      createMockSagaInstance({ correlationId: quote.id, status: SagaStatus.RESERVING_STOCK }),
+    );
+
+    billingQuotesGateway.getQuote.mockResolvedValue(quote);
+
     unitOfWork.executeTransaction.mockRejectedValueOnce(new Error('commit failed'));
 
-    await expect(useCase.execute(randomUUID())).rejects.toThrow('commit failed');
+    await expect(useCase.execute(quote.id)).rejects.toThrow('commit failed');
 
     expect(cache.delete).not.toHaveBeenCalled();
     expect(logger.event).not.toHaveBeenCalled();

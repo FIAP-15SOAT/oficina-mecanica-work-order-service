@@ -7,15 +7,15 @@ import { UpdateWorkOrderUseCase } from '@application/use-cases/work-order/update
 import { UpdateWorkOrderStatusUseCase } from '@application/use-cases/work-order/update-work-order-status.use-case';
 import { UpdateWorkOrderServiceStatusUseCase } from '@application/use-cases/work-order/update-work-order-service-status.use-case';
 import { FindWorkOrderStatusHistoryUseCase } from '@application/use-cases/work-order/find-work-order-status-history.use-case';
-import { FindWorkOrderQuotesUseCase } from '@application/use-cases/quote/find-work-order-quotes.use-case';
 import { FindCatalogItemsUseCase } from '@application/use-cases/catalog/find-catalog-items.use-case';
 import { IInventoryCatalogGateway } from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.interface';
-import { QuoteItemValidator } from '@application/services/quote-item-validator';
+import { IBillingQuotesGateway } from '@application/ports/output/gateways/billing/billing-quotes-gateway.interface';
 
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
+import { ICustomerRepository } from '@domain/interfaces/repositories/customer.repository.interface';
+import { IVehicleRepository } from '@domain/interfaces/repositories/vehicle.repository.interface';
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
-import { IQuoteRepository } from '@domain/interfaces/repositories/quote.repository.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
 import { ICache } from '@application/ports/output/services/cache.service.interface';
@@ -34,16 +34,22 @@ import { WorkOrderController } from './work-order.controller';
         workOrderRepository: IWorkOrderRepository,
         userRepository: IUserRepository,
         statusHistoryRepository: IStatusHistoryRepository,
-        quoteRepository: IQuoteRepository,
         logger: ILogger,
         metrics: IMetrics,
         cache: ICache,
         inventoryCatalogGateway: IInventoryCatalogGateway,
+        customerRepository: ICustomerRepository,
+        vehicleRepository: IVehicleRepository,
+        billingQuotesGateway: IBillingQuotesGateway,
       ) =>
         new WorkOrderCleanController(
           new CreateWorkOrderUseCase(
             unitOfWork,
-            new QuoteItemValidator(inventoryCatalogGateway),
+            customerRepository,
+            vehicleRepository,
+            userRepository,
+            billingQuotesGateway,
+            logger.forContext(CreateWorkOrderUseCase.name),
             metrics,
           ),
           new FindWorkOrderByIdUseCase(workOrderRepository, userRepository, cache),
@@ -64,7 +70,6 @@ import { WorkOrderController } from './work-order.controller';
             cache,
           ),
           new FindWorkOrderStatusHistoryUseCase(statusHistoryRepository, workOrderRepository),
-          new FindWorkOrderQuotesUseCase(quoteRepository, workOrderRepository),
           new FindCatalogItemsUseCase(inventoryCatalogGateway),
         ),
       inject: [
@@ -72,11 +77,13 @@ import { WorkOrderController } from './work-order.controller';
         'IWorkOrderRepository',
         'IUserRepository',
         'IStatusHistoryRepository',
-        'IQuoteRepository',
         'ILogger',
         'IMetrics',
         'ICache',
         'IInventoryCatalogGateway',
+        'ICustomerRepository',
+        'IVehicleRepository',
+        'IBillingQuotesGateway',
       ],
     },
   ],

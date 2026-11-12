@@ -1,7 +1,6 @@
 import type { Server } from 'http';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
@@ -11,10 +10,6 @@ const UNKNOWN_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
 
 const fixture: unknown = JSON.parse(
   readFileSync(join(__dirname, '../contracts/internal-work-order.json'), 'utf8'),
-);
-
-const quoteUsageFixture: unknown = JSON.parse(
-  readFileSync(join(__dirname, '../contracts/internal-quote-usage.json'), 'utf8'),
 );
 
 // Keys at every level mapped to their JSON type; the fixture's `$source` header is not part of the contract.
@@ -150,35 +145,6 @@ describe('Internal routes (E2E)', () => {
       );
 
       expect(internalPaths).toEqual([]);
-    });
-  });
-
-  describe('GET /internal/{services,parts-supplies}/:id/quote-usage', () => {
-    it('should answer the service quote usage as in the contract fixture', async () => {
-      const workOrder = await createWorkOrder();
-      const serviceId = randomUUID();
-
-      await ctx.prisma.quote.create({
-        data: {
-          workOrderId: workOrder.id,
-          services: { create: [{ serviceId, quantity: 1, unitPrice: 100, totalPrice: 100 }] },
-        },
-      });
-
-      const res = await request(httpServer)
-        .get(`/internal/services/${serviceId}/quote-usage`)
-        .expect(200);
-
-      expect(res.body).toEqual({ data: { inUse: true } });
-      expect(jsonShape(res.body)).toEqual(jsonShape(quoteUsageFixture));
-    });
-
-    it('should answer false for a part used in no quote', async () => {
-      const res = await request(httpServer)
-        .get(`/internal/parts-supplies/${randomUUID()}/quote-usage`)
-        .expect(200);
-
-      expect(res.body).toEqual({ data: { inUse: false } });
     });
   });
 });

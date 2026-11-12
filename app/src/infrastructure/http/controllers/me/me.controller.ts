@@ -21,6 +21,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiProduces,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
@@ -110,6 +111,7 @@ export class MeController {
   @ApiParam({ name: 'workOrderId', format: 'uuid' })
   @ApiOkResponse({ type: MyQuoteListResponseDto })
   @ApiNotFoundResponse({ description: 'Ordem inexistente ou não vinculada' })
+  @ApiServiceUnavailableResponse({ description: 'Billing indisponível' })
   listWorkOrderQuotes(
     @Param('workOrderId', ParseUUIDPipe) workOrderId: string,
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
@@ -123,6 +125,7 @@ export class MeController {
   @ApiParam({ name: 'quoteId', format: 'uuid' })
   @ApiOkResponse({ type: MyQuoteDataResponseDto })
   @ApiNotFoundResponse({ description: 'Orçamento inexistente ou não vinculado' })
+  @ApiServiceUnavailableResponse({ description: 'Billing ou Inventory indisponível' })
   getQuote(
     @Param('quoteId', ParseUUIDPipe) quoteId: string,
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
@@ -138,7 +141,11 @@ export class MeController {
   @ApiOkResponse({ type: MyQuoteDataResponseDto })
   @ApiNotFoundResponse({ description: 'Orçamento inexistente ou não vinculado' })
   @ApiBadRequestResponse({ description: 'Justificativa ausente na rejeição' })
-  @ApiConflictResponse({ description: 'Transição de status inválida para o orçamento' })
+  @ApiConflictResponse({
+    description:
+      'Ordem de serviço fora de aguardo de aprovação, aprovação de orçamento em andamento ou orçamento já decidido',
+  })
+  @ApiServiceUnavailableResponse({ description: 'Billing ou Inventory indisponível' })
   decideQuote(
     @Param('quoteId', ParseUUIDPipe) quoteId: string,
     @Body() request: DecideMyQuoteRequestDto,

@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { FindCatalogItemsOutputDto } from '@application/ports/input/catalog/dto/find-catalog-items.dto';
 
 import { MeController } from '@infrastructure/http/controllers/me/me.controller';
 import { MeController as MeCleanController } from '@interface-adapters/me/me.controller';
@@ -15,12 +14,10 @@ import { DecideMyQuoteRequestDto } from '@infrastructure/http/controllers/me/dto
 import { FindMyWorkOrdersQueryDto } from '@infrastructure/http/controllers/me/dto/requests/find-my-work-orders-query.dto';
 
 import { createMockCustomer } from '../../../../../helpers/customer-mock.factory';
-import { createMockQuote } from '../../../../../helpers/quote-mock.factory';
+import { readInternalQuoteFixture } from '../../../../../helpers/billing-quotes-gateway-mock.factory';
 import { createMockWorkOrder } from '../../../../../helpers/work-order-mock.factory';
 
 describe('MeController', () => {
-  const emptyCatalog: FindCatalogItemsOutputDto = { services: [], partsSupplies: [] };
-
   let httpController: MeController;
   let cleanController: MeCleanController;
 
@@ -29,15 +26,16 @@ describe('MeController', () => {
     authFlow: AuthFlow.CUSTOMER,
     email: 'joao@example.com',
   };
+
   const workOrderStub = createMockWorkOrder({
     vehicle: undefined,
     customer: createMockCustomer({ type: CustomerType.COMPANY }),
   });
-  const quoteStub = createMockQuote({ services: [], partsSupplies: [] });
+
+  const quoteStub = readInternalQuoteFixture().data;
 
   beforeEach(() => {
     cleanController = new MeCleanController(
-      { execute: jest.fn() },
       { execute: jest.fn() },
       { execute: jest.fn() },
       { execute: jest.fn() },
@@ -154,7 +152,7 @@ describe('MeController', () => {
 
   describe('getQuote', () => {
     it('should delegate to the clean controller and return its result', async () => {
-      const response = MePresenter.toQuoteDataResponse(quoteStub, emptyCatalog);
+      const response = MePresenter.toQuoteDataResponse(quoteStub);
 
       jest.spyOn(cleanController, 'getQuote').mockResolvedValue(response);
 
@@ -172,7 +170,7 @@ describe('MeController', () => {
         reason: 'Valor acima do previsto',
       };
 
-      const response = MePresenter.toQuoteDataResponse(quoteStub, emptyCatalog);
+      const response = MePresenter.toQuoteDataResponse(quoteStub);
 
       jest.spyOn(cleanController, 'decideQuote').mockResolvedValue(response);
 
