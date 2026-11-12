@@ -194,7 +194,7 @@ Enquanto a aprovação está em andamento (reserva do estoque ou reversão no Bi
 > | OS fora de `AWAITING_APPROVAL` | **409** `Orçamento só pode ser decidido com a Ordem de Serviço aguardando aprovação. Status atual: "<status>"` |
 > | Aprovação de outro orçamento da OS em andamento | **409** `Ordem de serviço com aprovação de orçamento em andamento: aguarde a conclusão e tente novamente` |
 > | Orçamento que deixou de estar `SENT` (decisão concorrente, por exemplo) | **409** do Billing, com a mensagem dele |
-> | Billing ou Inventory fora do ar, ou sem resposta (5 s no detalhe e na decisão, 2 s na listagem) | **503**; numa decisão, nada é gravado |
+> | Billing ou Inventory fora do ar, ou sem resposta (5 s no detalhe e na decisão, 2 s na listagem) | **503**; numa decisão, nada é gravado no work-order. Se o Billing gravou a decisão e respondeu depois do prazo, uma nova tentativa recebe **409** |
 
 ---
 

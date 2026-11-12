@@ -25,11 +25,17 @@ O `CreateWorkOrderUseCase`:
 3. só então abre a transação que aloca o número da OS (da sequence `work_order_number_seq`) e grava a OS e o histórico;
 4. se a transação falhar, apaga o orçamento (`DELETE /internal/quotes/:id`; um `404` conta como já apagado) e relança o erro da gravação. Se a exclusão também falhar, registra o orçamento sem OS no evento de log `work_order.opening.compensation_failed` e segue com o erro original.
 
-A falha mais comum, um item inválido, é recusada pelo Billing no passo 2: nada é gravado e nenhum número de OS é consumido, como acontecia antes. Billing ou Inventory fora do ar respondem 503 com nada criado.
+A falha mais comum, um item inválido, é recusada pelo Billing no passo 2: nada é gravado e nenhum número de OS é consumido, como acontecia antes. Billing ou Inventory fora do ar respondem 503 sem OS gravada. Se o Billing chegar a gravar o orçamento e responder depois do prazo de 5 s, o work-order também responde 503, mas o orçamento fica no Billing sem OS (seção 2).
 
 ### 2. Sem estado persistido
 
-A Saga de abertura começa e termina numa requisição e não grava linha em `saga_instances`. Se o processo cair entre o passo 2 e o 3, sobra um orçamento `PENDING` sem OS, que não aparece em lugar nenhum, porque toda leitura de orçamento parte de uma OS.
+A Saga de abertura começa e termina numa requisição e não grava linha em `saga_instances`. Sobra um orçamento `PENDING` sem OS, chamado de órfão, em três casos:
+
+- o processo cai entre o passo 2 e o 3;
+- o Billing grava o orçamento e responde depois do prazo de 5 s: o work-order não recebe o id do orçamento e não tem o que apagar;
+- a exclusão de compensação falha (evento `work_order.opening.compensation_failed`).
+
+O órfão não aparece para o cliente nem nas leituras de orçamento por OS. Na listagem de orçamentos dos funcionários no Billing (`GET /api/quotes`), que busca no work-order a OS de cada orçamento da página, ele aparece com `workOrder: null`, porque o work-order responde 404 para aquela OS, e o Billing registra o evento de log `quote.work_order_missing` (`warn`). Esse evento é o único sinal do órfão deixado pelo prazo esgotado.
 
 ### 3. Os itens são validados só pelo Billing
 
@@ -47,11 +53,15 @@ Gravar a OS com um evento no outbox e deixar o Billing criar o orçamento ao rec
 
 ### Linha em `saga_instances` para a abertura
 
-Guardar o estado da abertura para retomá-la depois de uma queda do processo. Descartada porque a Saga dura uma requisição: o orçamento órfão que sobraria não aparece em lugar nenhum, e uma tabela de estado traria um job de limpeza e um caso a mais em cada leitura para cobrir um risco que não tem efeito visível.
+Guardar o estado da abertura para retomá-la depois de uma queda do processo. Descartada porque a Saga dura uma requisição e o estado guardado não cobriria o órfão mais provável, o do orçamento que o Billing grava e confirma depois do prazo, cujo id o work-order nunca recebe; além disso, uma tabela de estado traria um job de limpeza e um caso a mais em cada leitura.
 
 ### Repetir a criação do orçamento quando o Billing não responde
 
 Tentar de novo o `POST /internal/quotes` em vez de responder 503. Descartada porque o cliente interno não faz retentativa por regra (uma retentativa automática numa cadeia de dois saltos multiplica a espera), e a nova tentativa do atendente gera outra OS, com outro id, então não há duplicação a evitar.
+
+### Apagar o orçamento pelo id da OS quando o Billing não responde a tempo
+
+O work-order gera o id da OS antes de chamar o Billing, então uma exclusão no Billing por esse id cobriria também o órfão do prazo esgotado, cujo id de orçamento o work-order não recebe. Descartada porque muda o contrato interno do Billing e acrescenta à abertura um passo de compensação que também pode falhar, para um caso raro cujo efeito é uma linha com `workOrder: null` na listagem dos funcionários.
 
 ### Continuar validando os itens no work-order antes de chamar o Billing
 
@@ -69,16 +79,17 @@ Manter a validação e a precificação no Inventory pelo work-order e mandar ao
 
 - A abertura com itens depende do Billing e do Inventory no ar: com qualquer um fora, responde 503, onde antes dependia só do Inventory.
 - A abertura ficou mais lenta: uma chamada de dois saltos (work-order → Billing → Inventory) antes da transação.
-- A compensação é de melhor esforço: se a exclusão falhar, o orçamento órfão fica no Billing, registrado só no log.
+- A compensação é de melhor esforço: se a exclusão falhar, o orçamento órfão fica no Billing, registrado só no log; se o Billing responder depois do prazo, o órfão fica sem nenhum registro no work-order.
+- O órfão aparece na listagem de orçamentos dos funcionários no Billing com `workOrder: null`, e os funcionários não têm rota para apagá-lo.
 
 ### Riscos mitigados
 
 - A transação da OS nunca espera a rede: a chamada ao Billing termina antes de ela abrir.
-- Um orçamento órfão não aparece para ninguém, porque toda leitura parte de uma OS.
+- O órfão não chega ao cliente nem às leituras de orçamento por OS.
 
 ### Revisar se
 
-- Surgir uma leitura de orçamentos que não parta de uma OS (aí um órfão passaria a aparecer, e a Saga precisaria de estado ou de limpeza).
+- O evento `quote.work_order_missing` aparecer com frequência (aí a abertura ganharia uma exclusão do orçamento pelo id da OS no Billing, que cobriria também a resposta fora do prazo).
 - O Billing deixar de ler o Inventory na criação do orçamento (aí o prazo de 5 s pode voltar aos 2 s padrão).
 - A abertura passar a gravar em um terceiro serviço.
 

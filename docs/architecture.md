@@ -381,7 +381,7 @@ Os dois fluxos que gravam neste serviço e no Billing são **Sagas**: uma sequê
 4. se essa transação falhar, apaga o orçamento (`deleteQuote`, `DELETE /internal/quotes/:id`, em que um `404` conta como já apagado) e relança o erro da gravação. Se a exclusão também falhar, o orçamento sem OS fica registrado no evento de log `work_order.opening.compensation_failed` (`warn`), com os ids do orçamento e da OS.
 
 - **Por que o Billing primeiro:** o erro mais comum, um item inválido, não cria nada nem consome número de OS. Na ordem inversa, cada item inválido criaria e apagaria uma OS.
-- **Sem estado persistido:** a Saga começa e termina na requisição, sem linha em `saga_instances`. Se o processo cair entre o passo 2 e o 3, sobra um orçamento `PENDING` sem OS, que não aparece em lugar nenhum, porque toda leitura de orçamento parte de uma OS.
+- **Sem estado persistido:** a Saga começa e termina na requisição, sem linha em `saga_instances`. Sobra um orçamento `PENDING` sem OS (órfão) se o processo cair entre o passo 2 e o 3, se o Billing gravar o orçamento e responder depois do prazo de 5 s (o work-order responde 503 sem conhecer o id do orçamento) ou se a exclusão de compensação falhar. O órfão não chega ao cliente nem às leituras por OS, mas aparece na listagem de orçamentos dos funcionários no Billing (`GET /api/quotes`) com `workOrder: null`, porque o work-order não conhece aquela OS, e o Billing registra o evento de log `quote.work_order_missing`.
 - **Sem itens**, a OS é aberta sem chamar o Billing.
 
 A decisão e as alternativas descartadas estão no [ADR 0024](adr/0024-saga-de-abertura-com-orcamento-inicial-no-billing.md); o diagrama, em [`docs/sequence-diagrams.md`](sequence-diagrams.md).

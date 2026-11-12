@@ -22,6 +22,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiProduces,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
@@ -68,6 +69,9 @@ export class WorkOrderController {
   @ApiNotFoundResponse({ description: 'Serviço ou peça/insumo não encontrado' })
   @ApiConflictResponse({
     description: 'Regra de negócio violada',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'Billing ou Inventory indisponível ao criar o orçamento inicial',
   })
   create(
     @Body() request: CreateWorkOrderRequestDto,
