@@ -168,7 +168,7 @@ A coleção e o environment estão em `collections/`. Importe `collections/ofici
 
 O environment já vem com `adminEmail`/`adminPassword` e `customerCpf`/`customerPassword` correspondentes ao seed. As senhas e os três tokens (`authToken`, `refreshToken` e `customerJwtToken`) permanecem com tipo `secret`; os identificadores produzidos pelos scripts também estão declarados para que a importação resolva todas as variáveis da collection.
 
-A collection mantém as pastas de domínio sem numeração ou agrupadores adicionais. Execute-as de cima para baixo: **Health → Autenticação → Gestão de Usuários → Gestão de Clientes → Validação → Acesso Externo de Clientes → Gestão de Veículos → Gestão de Ordens de Serviço → Minha Conta → Relatórios e Métricas**. Essa ordem mantém as requests produtoras antes das consumidoras, inclusive `Minha Conta` fica depois das ordens porque seus cenários consomem `workOrderId` e `quoteId` produzidos anteriormente.
+A collection mantém as pastas de domínio sem numeração ou agrupadores adicionais. Execute-as de cima para baixo: **Health → Autenticação → Gestão de Usuários → Gestão de Clientes → Validação → Acesso Externo de Clientes → Gestão de Veículos → Gestão de Ordens de Serviço → Minha Conta → Relatórios e Métricas**. Essa ordem mantém as requests produtoras antes das consumidoras: `Gestão de Ordens de Serviço` usa o cliente e o veículo criados nas pastas anteriores, e `Minha Conta` usa o `authToken` do login interno para preparar a própria OS.
 
 O cadastro de serviços, peças e estoque não está nesta collection: é do Inventory, que tem a collection própria. Os orçamentos também não: são do Billing, cuja collection cobre as rotas de orçamento. As OS usam um serviço e uma peça do seed do Inventory, com os ids canônicos de [Ids canônicos do seed](seed-ids.md) já gravados no environment (`serviceId` = `Troca de óleo`, `partSupplyId` = `FILT-OL-001`).
 
@@ -180,9 +180,13 @@ npx newman run collections/oficina-collection.json -e collections/oficina-enviro
   --folder "Gestão de Clientes" --folder "Gestão de Veículos"
 ```
 
-O grupo **Autenticação** mantém os dois fluxos separados: o login interno grava `authToken` e `refreshToken`, e `POST /customer-auth/login` é `noauth` e grava somente `customerJwtToken`. O grupo **Minha Conta** exercita `/api/me/*` com `Bearer {{customerJwtToken}}`, sobrescrevendo o bearer interno herdado da collection.
+O grupo **Autenticação** mantém os dois fluxos separados: o login interno grava `authToken` e `refreshToken`, e `POST /customer-auth/login` é `noauth` e grava somente `customerJwtToken`. O grupo **Minha Conta** exercita `/api/me/*` com `Bearer {{customerJwtToken}}`, sobrescrevendo o bearer interno herdado da collection. O login de cliente é o do usuário semeado `joao.silva@email.com` (CPF `customerCpf`), vinculado ao cliente semeado `myCustomerId`, dono do veículo `myVehicleId`; a OS e os orçamentos criados em **Gestão de Ordens de Serviço** são de outro cliente, que esse usuário não vê, e chegam a esta pasta já entregues. Por isso a pasta prepara a própria OS com o token interno e regrava `workOrderId` e `quoteId` com ela:
 
-Com apenas a API local em execução, ignore o login serverless e preencha `customerJwtToken` por um destes caminhos:
+- `TC-ME-03` troca a senha do cliente para `NovaSenha@456`. A troca invalida os tokens emitidos antes dela, então `TC-ME-03B` faz login com a senha nova, `TC-ME-04B` devolve a senha original e `TC-ME-04C` faz login de novo, o que deixa a collection pronta para rodar outra vez;
+- `TC-ME-05A` a `TC-ME-05E` abrem uma OS de `myCustomerId` com um serviço (o orçamento inicial nasce no Billing), colocam-na em diagnóstico, enviam esse orçamento, esperam a OS chegar a `AWAITING_APPROVAL` e criam e enviam um segundo orçamento (`rejectQuoteId`);
+- `TC-ME-11` rejeita o segundo orçamento antes de `TC-ME-10` aprovar o inicial, porque a aprovação rejeita os outros orçamentos da OS.
+
+Com apenas a API local em execução, ignore os logins serverless (`TC-AUTH-06`, `TC-ME-03B` e `TC-ME-04C`) e a troca de senha (`TC-ME-03` e `TC-ME-04B`), que invalidaria o token preenchido à mão, e preencha `customerJwtToken` por um destes caminhos:
 
 - **Token de teste manual** — use o mesmo mecanismo de `test/helpers/customer-jwt.helper.ts`, descrito acima; a Lambda não precisa estar em execução.
 - **Token real da Lambda local** — configure [`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth) contra o mesmo banco e execute `npm run invoke`; use `customerCpf`/`customerPassword` do seed e copie o `accessToken` retornado para `customerJwtToken`.
