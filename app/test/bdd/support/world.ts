@@ -43,7 +43,7 @@ export class OficinaWorld extends World {
   workOrderId!: string;
   workOrderNumber!: string;
   quoteId!: string;
-  paymentId?: string;
+  payment!: { id: string; amount: string; checkoutUrl: string };
   service!: { id: string; name: string; basePrice: number };
   partSupply?: { id: string; name: string; salePrice: number };
 

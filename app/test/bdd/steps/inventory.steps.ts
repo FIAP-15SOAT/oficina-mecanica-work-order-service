@@ -18,3 +18,16 @@ When('o Inventory confirma a reserva', async function (this: OficinaWorld) {
     quoteId: this.quoteId,
   });
 });
+
+When('o Inventory recusa a reserva por falta de estoque', async function (this: OficinaWorld) {
+  await publishEvent(bdd.context.sns, 'inventory.stock.reservation_failed', this.workOrderId, {
+    quoteId: this.quoteId,
+    missing: [{ partSupplyId: this.partSupply?.id as string, requested: 2, available: 0 }],
+  });
+});
+
+Then('o work-order pede ao Inventory a baixa do estoque', async function (this: OficinaWorld) {
+  const command = await this.expectCommand('inventory', 'inventory.stock.consume');
+
+  assert.deepEqual(command.payload, {});
+});
