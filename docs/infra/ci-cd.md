@@ -47,20 +47,21 @@ Todos os jobs do CD rodam sob o GitHub `environment: production` (portão de dep
 
 ## 1) Workflow de CI (`ci.yml`)
 
-![Diagrama do workflow de CI: os 5 jobs de validação (Lint, Unit Tests, E2E Tests, Build, DB Validation) rodam em paralelo a partir do push e convergem no job open-pr, que abre o PR para main](../diagrams/ci-workflow.png)
+![Diagrama do workflow de CI: os 6 jobs de validação (Lint, Unit Tests, E2E Tests, BDD, Build, DB Validation) rodam em paralelo a partir do push e convergem no job open-pr, que abre o PR para main](../diagrams/ci-workflow.png)
 
 Escopo: validação de qualquer branch de trabalho, sempre por completo (sem detecção condicional de mudança — determinístico e consistente).
 
-Os 5 jobs de validação rodam **em paralelo** (fail-fast); passando todos, o `open-pr` abre o PR. Os jobs usam o composite `.github/actions/setup-ci` (Node com cache de npm + `npm ci` + `prisma generate`, tudo em `app/`); todas as actions de terceiros são fixadas por commit SHA completo (mitigação de supply-chain).
+Os 6 jobs de validação rodam **em paralelo** (fail-fast); passando todos, o `open-pr` abre o PR. Os jobs usam o composite `.github/actions/setup-ci` (Node com cache de npm + `npm ci` + `prisma generate`, tudo em `app/`); todas as actions de terceiros são fixadas por commit SHA completo (mitigação de supply-chain).
 
 | # | Job | O que faz |
 |---|---|---|
 | 1 | `lint` | `npm run lint` — ESLint (inclui a cerca de dependências entre camadas) |
 | 2 | `unit-tests` | `npm run test:cov` — testes unitários com cobertura |
 | 3 | `e2e-tests` | `npm run test:e2e:cov` — E2E com um PostgreSQL descartável via Testcontainers no próprio job |
-| 4 | `build` | `npm run build` — compila o TypeScript |
-| 5 | `db-validation` | Sobe um PostgreSQL efêmero (service container) e roda `npm run db:reset` (migrate reset + seed): prova que as migrations aplicam do zero e o seed funciona. Banco descartado com o job — nunca toca ambiente real |
-| 6 | `open-pr` | `needs:` os 5 jobs acima; abre o PR para `main` de forma idempotente (não duplica), autenticado por **GitHub App** (`BOT_APP_ID` + `BOT_PRIVATE_KEY`) para que o `sast.yml` rode no PR desde o primeiro push |
+| 4 | `bdd` | `npm run test:bdd` — cenários BDD (Behavior-Driven Development: os fluxos de negócio escritos em Gherkin, em português, e executados pelo Cucumber) sobre a aplicação com PostgreSQL, Valkey, LocalStack (SNS e SQS emulados) e MailHog (servidor SMTP de teste) via Testcontainers; publica o relatório HTML do Cucumber como artefato do run, inclusive quando um cenário falha |
+| 5 | `build` | `npm run build` — compila o TypeScript |
+| 6 | `db-validation` | Sobe um PostgreSQL efêmero (service container) e roda `npm run db:reset` (migrate reset + seed): prova que as migrations aplicam do zero e o seed funciona. Banco descartado com o job — nunca toca ambiente real |
+| 7 | `open-pr` | `needs:` os 6 jobs acima; abre o PR para `main` de forma idempotente (não duplica), autenticado por **GitHub App** (`BOT_APP_ID` + `BOT_PRIVATE_KEY`) para que o `sast.yml` rode no PR desde o primeiro push |
 
 ### Steps de cada job de CI
 
@@ -87,6 +88,15 @@ Os 5 jobs de validação rodam **em paralelo** (fail-fast); passando todos, o `o
 | 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
 | 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm, `npm ci` e `prisma generate` em `app/`. |
 | 3 | E2E tests with coverage | Executa `npm run test:e2e:cov` com PostgreSQL descartável via Testcontainers. |
+
+#### `bdd` — BDD
+
+| # | Step no workflow | O que faz |
+| --- | --- | --- |
+| 1 | actions/checkout | Obtém a revisão que disparou o workflow; os comandos seguintes usam esse checkout. |
+| 2 | Setup CI (`./.github/actions/setup-ci`) | Composite local: Node 24 com cache npm, `npm ci` e `prisma generate` em `app/`. |
+| 3 | BDD scenarios | Executa `npm run test:bdd` (Cucumber sobre `app/test/bdd/features/`); um cenário que falha reprova o job. |
+| 4 | Upload BDD report | `actions/upload-artifact` com `if: always()`: publica `app/reports/bdd/` (o `cucumber-report.html`) como o artefato `bdd-report` do run, mesmo quando o step anterior falha. |
 
 #### `build` — Build
 
