@@ -9,8 +9,10 @@ import { FindMyWorkOrderByIdUseCase } from '@application/use-cases/me/find-my-wo
 import { FindMyWorkOrdersQuotesUseCase } from '@application/use-cases/me/find-my-work-orders-quotes.use-case';
 import { FindMyQuoteByIdUseCase } from '@application/use-cases/me/find-my-quote-by-id.use-case';
 import { DecideMyQuoteUseCase } from '@application/use-cases/me/decide-my-quote.use-case';
+import { FindMyWorkOrderPaymentsUseCase } from '@application/use-cases/me/find-my-work-order-payments.use-case';
 import { CustomerAccessPolicy } from '@application/policies/customer-access.policy';
 import { IBillingQuotesGateway } from '@application/ports/output/gateways/billing/billing-quotes-gateway.interface';
+import { IBillingPaymentsGateway } from '@application/ports/output/gateways/billing/billing-payments-gateway.interface';
 
 import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IUserCustomerRepository } from '@domain/interfaces/repositories/user-customer.repository.interface';
@@ -36,6 +38,7 @@ import { MeController } from './me.controller';
         sagaInstanceRepository: ISagaInstanceRepository,
         logger: ILogger,
         billingQuotesGateway: IBillingQuotesGateway,
+        billingPaymentsGateway: IBillingPaymentsGateway,
       ) => {
         const customerAccessPolicy = new CustomerAccessPolicy(
           userCustomerRepository,
@@ -67,6 +70,11 @@ import { MeController } from './me.controller';
             sagaInstanceRepository,
             customerAccessPolicy,
           ),
+          new FindMyWorkOrderPaymentsUseCase(
+            workOrderRepository,
+            billingPaymentsGateway,
+            customerAccessPolicy,
+          ),
         );
       },
       inject: [
@@ -77,6 +85,7 @@ import { MeController } from './me.controller';
         'ISagaInstanceRepository',
         'ILogger',
         'IBillingQuotesGateway',
+        'IBillingPaymentsGateway',
       ],
     },
   ],

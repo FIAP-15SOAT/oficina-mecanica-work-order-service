@@ -15,6 +15,7 @@ import { FindMyWorkOrdersQueryDto } from '@infrastructure/http/controllers/me/dt
 
 import { createMockCustomer } from '../../../../../helpers/customer-mock.factory';
 import { readInternalQuoteFixture } from '../../../../../helpers/billing-quotes-gateway-mock.factory';
+import { readInternalWorkOrderPaymentsFixture } from '../../../../../helpers/billing-payments-gateway-mock.factory';
 import { createMockWorkOrder } from '../../../../../helpers/work-order-mock.factory';
 
 describe('MeController', () => {
@@ -36,6 +37,7 @@ describe('MeController', () => {
 
   beforeEach(() => {
     cleanController = new MeCleanController(
+      { execute: jest.fn() },
       { execute: jest.fn() },
       { execute: jest.fn() },
       { execute: jest.fn() },
@@ -144,6 +146,25 @@ describe('MeController', () => {
 
       expect(result).toBe(response);
       expect(cleanController.listWorkOrderQuotes).toHaveBeenCalledWith(
+        principal.sub,
+        workOrderStub.id,
+      );
+    });
+  });
+
+  describe('listWorkOrderPayments', () => {
+    it('should delegate to the clean controller and return its result', async () => {
+      const response = MePresenter.toPaymentListResponse(
+        readInternalWorkOrderPaymentsFixture().data,
+      );
+
+      jest.spyOn(cleanController, 'listWorkOrderPayments').mockResolvedValue(response);
+
+      const result = await httpController.listWorkOrderPayments(workOrderStub.id, principal);
+
+      expect(result).toBe(response);
+
+      expect(cleanController.listWorkOrderPayments).toHaveBeenCalledWith(
         principal.sub,
         workOrderStub.id,
       );
