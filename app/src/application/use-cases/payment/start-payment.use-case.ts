@@ -192,6 +192,9 @@ export class StartPaymentUseCase implements IStartPaymentUseCase {
       timeZone: 'America/Sao_Paulo',
     });
 
+    // The serialized URL percent-encodes quotes, so the link cannot break out of the href.
+    const checkoutLink = new URL(checkoutUrl).href;
+
     return {
       toEmail: recipient.email,
       toName: recipient.name,
@@ -201,14 +204,14 @@ export class StartPaymentUseCase implements IStartPaymentUseCase {
           `Olá ${recipient.name},\n\n` +
           `O pagamento da Ordem de Serviço ${workOrderNumber} está disponível.\n` +
           `Valor: R$ ${amount}\n` +
-          `Link para pagamento: ${checkoutUrl}\n` +
+          `Link para pagamento: ${checkoutLink}\n` +
           `Válido até ${expiresAtText}\n\n` +
           `Atenciosamente,\nEquipe da Oficina Mecânica`,
         html:
           `<p>Olá <strong>${recipient.name}</strong>,</p>` +
           `<p>O pagamento da Ordem de Serviço <strong>${workOrderNumber}</strong> está disponível.</p>` +
           `<p><strong>Valor:</strong> R$ ${amount}</p>` +
-          `<p><a href="${checkoutUrl}">Pagar agora</a> (válido até ${expiresAtText})</p>` +
+          `<p><a href="${checkoutLink}">Pagar agora</a> (válido até ${expiresAtText})</p>` +
           `<p>Atenciosamente,<br/>Equipe da Oficina Mecânica</p>`,
       },
     };

@@ -6,15 +6,9 @@ import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interf
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { InternalServicesStub, startInternalServicesStub } from '../helpers/internal-services-stub';
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
+import { findEmails } from '../helpers/mailhog.helper';
 import { receiveCommands } from '../helpers/sqs-commands.helper';
 import { waitFor } from '../helpers/wait-for.helper';
-
-interface MailhogResponse {
-  items: {
-    To: { Mailbox: string; Domain: string }[];
-    Content: { Body: string };
-  }[];
-}
 
 const CUSTOMER_EMAIL = 'payment-saga@e2e.test';
 const APPROVED_AT = new Date('2026-11-10T12:00:00.000Z');
@@ -152,18 +146,9 @@ describe('Payment saga (E2E)', () => {
   // The subject is RFC 2047 encoded and may split the work order number, so the e-mail is found by
   // its link, which is unique per payment.
   async function countPaymentEmails(paymentId: string): Promise<number> {
-    const mailhogUrl = `http://${ctx.mailhogContainer.getHost()}:${ctx.mailhogContainer.getMappedPort(8025)}`;
+    const emails = await findEmails(ctx.mailhogContainer, CUSTOMER_EMAIL);
 
-    const { items } = (await (
-      await fetch(`${mailhogUrl}/api/v2/messages`)
-    ).json()) as MailhogResponse;
-
-    // Quoted-printable folds long lines with a trailing `=`.
-    return items.filter(
-      (item) =>
-        item.To.some((to) => `${to.Mailbox}@${to.Domain}` === CUSTOMER_EMAIL) &&
-        item.Content.Body.replace(/=\r?\n/g, '').includes(checkoutUrl(paymentId)),
-    ).length;
+    return emails.filter(({ body }) => body.includes(checkoutUrl(paymentId))).length;
   }
 
   it('should hold an approved work order and release it to APPROVED when the payment is approved', async () => {

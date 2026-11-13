@@ -7,6 +7,7 @@ import {
   BillingWorkOrderBalanceGatewayResponse,
 } from '@application/ports/output/gateways/billing/billing-payments-gateway.response';
 import { InternalHttpClient } from '@infrastructure/clients/internal-http-client';
+import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
 
 @Injectable()
 export class HttpBillingPaymentsGateway implements IBillingPaymentsGateway {
@@ -26,6 +27,12 @@ export class HttpBillingPaymentsGateway implements IBillingPaymentsGateway {
       method: 'GET',
       url: `${this.baseUrl}/internal/work-orders/${workOrderId}/balance`,
     });
+
+    // The delivery is released when this is not above zero, so a value that is no number must
+    // never read as zero.
+    if (Number.isNaN(Number.parseFloat(String(data.balance)))) {
+      throw new ServiceIntegrationException('Serviço de destino indisponível');
+    }
 
     return data;
   }

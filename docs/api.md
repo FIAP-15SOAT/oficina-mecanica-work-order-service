@@ -178,8 +178,8 @@ Enquanto a OS está em `AWAITING_PAYMENT`, iniciar serviço, entregar e cancelar
 | Situação | Resposta |
 |---|---|
 | Saldo maior que zero | **409** `Ordem de serviço com saldo a pagar de R$ <saldo>: a entrega é liberada depois que o saldo for quitado`; a OS segue em `COMPLETED` |
-| Saldo zero | **200**, com a OS em `DELIVERED` |
-| Billing fora do ar ou sem resposta em 2 s | **503** `Serviço de destino indisponível`, sem entregar |
+| Saldo zero ou negativo (pago a mais) | **200**, com a OS em `DELIVERED` |
+| Billing fora do ar, sem resposta em 2 s ou com um saldo que não é número (nulo, ausente ou vazio) | **503** `Serviço de destino indisponível`, sem entregar |
 | OS fora de `COMPLETED` | **409** da transição recusada, sem consultar o Billing |
 
 ---

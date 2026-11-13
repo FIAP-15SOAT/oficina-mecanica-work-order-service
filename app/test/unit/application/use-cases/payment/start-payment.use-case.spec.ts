@@ -267,18 +267,25 @@ describe('StartPaymentUseCase', () => {
     });
   });
 
-  it('should skip a redelivered payment request', async () => {
+  // The work order stays APPROVED, so a settled saga must not let a redelivery hold it again.
+  it.each([
+    SagaStatus.AWAITING_PAYMENT,
+    SagaStatus.COMPENSATING,
+    SagaStatus.COMPLETED,
+    SagaStatus.COMPENSATED,
+  ])('should skip a redelivered payment request whose saga is %s', async (sagaStatus) => {
     jest.mocked(repos.sagaInstance.findByTypeAndCorrelationId).mockResolvedValue(
       createMockSagaInstance({
         type: SagaType.PAYMENT,
         correlationId: input.paymentId,
-        status: SagaStatus.AWAITING_PAYMENT,
+        status: sagaStatus,
         originStatus: WorkOrderStatus.APPROVED,
       }),
     );
 
     await useCase.execute(input);
 
+    expect(workOrder.status).toBe(WorkOrderStatus.APPROVED);
     expect(repos.workOrder.update).not.toHaveBeenCalled();
     expect(repos.sagaInstance.create).not.toHaveBeenCalled();
     expect(repos.statusHistory.create).not.toHaveBeenCalled();
@@ -289,7 +296,7 @@ describe('StartPaymentUseCase', () => {
     expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.SAGA_STEP_SKIPPED, {
       sagaType: SagaType.PAYMENT,
       paymentId: input.paymentId,
-      sagaStatus: SagaStatus.AWAITING_PAYMENT,
+      sagaStatus,
     });
   });
 
@@ -309,6 +316,22 @@ describe('StartPaymentUseCase', () => {
 
     expect(emailSender.send).toHaveBeenCalledWith(
       expect.objectContaining({ toEmail: 'second@example.com' }),
+    );
+  });
+
+  it('should encode the quotes of the checkout link in the e-mail', async () => {
+    await useCase.execute({
+      ...input,
+      checkoutUrl: 'https://pay.example.com/c/1"onmouseover="alert(1)',
+    });
+
+    const [email] = emailSender.send.mock.calls[0];
+
+    expect(email.message.html).toContain(
+      '<a href="https://pay.example.com/c/1%22onmouseover=%22alert(1)">',
+    );
+    expect(email.message.text).toContain(
+      'Link para pagamento: https://pay.example.com/c/1%22onmouseover=%22alert(1)',
     );
   });
 

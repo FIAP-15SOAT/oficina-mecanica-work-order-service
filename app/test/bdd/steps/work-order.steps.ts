@@ -2,15 +2,9 @@ import assert from 'node:assert/strict';
 import { Given, Then, When } from '@cucumber/cucumber';
 import request from 'supertest';
 
+import { findEmails } from '../../helpers/mailhog.helper';
 import { waitFor } from '../../helpers/wait-for.helper';
 import { OficinaWorld, bdd } from '../support/world';
-
-interface MailhogResponse {
-  items: {
-    To: { Mailbox: string; Domain: string }[];
-    Content: { Body: string };
-  }[];
-}
 
 const ACCESS_USER_EMAIL = 'acesso@bdd.test';
 
@@ -117,18 +111,7 @@ async function changeServiceStatus(
 // The subject is RFC 2047 encoded and may split the work order number, so the e-mail is found by
 // its link, which is unique per payment.
 async function countPaymentEmails(world: OficinaWorld): Promise<number> {
-  const { mailhogContainer } = bdd.context.ctx;
+  const emails = await findEmails(bdd.context.ctx.mailhogContainer, ACCESS_USER_EMAIL);
 
-  const mailhogUrl = `http://${mailhogContainer.getHost()}:${mailhogContainer.getMappedPort(8025)}`;
-
-  const { items } = (await (
-    await fetch(`${mailhogUrl}/api/v2/messages`)
-  ).json()) as MailhogResponse;
-
-  // Quoted-printable folds long lines with a trailing `=`.
-  return items.filter(
-    (item) =>
-      item.To.some((to) => `${to.Mailbox}@${to.Domain}` === ACCESS_USER_EMAIL) &&
-      item.Content.Body.replace(/=\r?\n/g, '').includes(world.payment.checkoutUrl),
-  ).length;
+  return emails.filter(({ body }) => body.includes(world.payment.checkoutUrl)).length;
 }

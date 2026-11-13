@@ -1,6 +1,9 @@
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
 
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+
 import { MessageEnvelope } from '@application/messaging/message-envelope';
 import { IApplyPaymentResultUseCase } from '@application/ports/input/payment/apply-payment-result.use-case.interface';
 import { IStartPaymentUseCase } from '@application/ports/input/payment/start-payment.use-case.interface';
@@ -93,6 +96,18 @@ describe('PaymentMessageHandlers', () => {
       paymentId: envelope.payload.paymentId,
       outcome: 'approved',
     });
+  });
+
+  it('should validate only the payment id of billing.payment.approved', async () => {
+    const payload = plainToInstance(PaymentApprovedPayloadDto, {
+      paymentId: randomUUID(),
+      amount: 350,
+      paidAt: 'yesterday',
+    });
+
+    const errors = await validate(payload, { forbidUnknownValues: false });
+
+    expect(errors).toEqual([]);
   });
 
   it('should apply billing.payment.failed with its reason', async () => {

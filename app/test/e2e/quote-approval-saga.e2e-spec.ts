@@ -12,15 +12,9 @@ import {
   stubPartSupply,
   stubService,
 } from '../helpers/internal-services-stub';
+import { findEmails } from '../helpers/mailhog.helper';
 import { receiveCommands } from '../helpers/sqs-commands.helper';
 import { waitFor } from '../helpers/wait-for.helper';
-
-interface MailhogResponse {
-  items: {
-    To: { Mailbox: string; Domain: string }[];
-    Content: { Headers: { Subject: string[] } };
-  }[];
-}
 
 const CUSTOMER_EMAIL = 'saga@e2e.test';
 
@@ -146,18 +140,11 @@ describe('Quote approval saga (E2E)', () => {
   }
 
   async function waitForEmail(workOrderNumber: string, subjectPart: string): Promise<void> {
-    const mailhogUrl = `http://${ctx.mailhogContainer.getHost()}:${ctx.mailhogContainer.getMappedPort(8025)}`;
-
     await waitFor(async () => {
-      const { items } = (await (
-        await fetch(`${mailhogUrl}/api/v2/messages`)
-      ).json()) as MailhogResponse;
+      const emails = await findEmails(ctx.mailhogContainer, CUSTOMER_EMAIL);
 
-      return items.some(
-        (item) =>
-          item.To.some((to) => `${to.Mailbox}@${to.Domain}` === CUSTOMER_EMAIL) &&
-          item.Content.Headers.Subject[0].includes(workOrderNumber) &&
-          item.Content.Headers.Subject[0].includes(subjectPart),
+      return emails.some(
+        ({ subject }) => subject.includes(workOrderNumber) && subject.includes(subjectPart),
       );
     }, 10_000);
   }
