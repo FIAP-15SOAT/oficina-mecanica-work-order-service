@@ -7,6 +7,7 @@ import { MessagePayloads, MessageType } from '@domain/messaging/message-catalog'
 import { MessageHandlerRegistry } from '@infrastructure/messaging/message-handler.registry';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { readInternalQuoteFixture } from '../helpers/billing-quotes-gateway-mock.factory';
+import { readInternalWorkOrderBalanceFixture } from '../helpers/billing-payments-gateway-mock.factory';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
 import {
@@ -1681,6 +1682,61 @@ describe('WorkOrder (E2E)', () => {
 
       expect(res.body.data.status).toBe('DELIVERED');
       expect(res.body.data.deliveredAt).toBeTruthy();
+    });
+  });
+
+  describe('PATCH /api/work-orders/:id — delivery checks the balance in the Billing', () => {
+    async function createCompletedWorkOrder(): Promise<{ id: string }> {
+      const customer = await createCustomer();
+      const vehicle = await createVehicle(customer.id);
+      const wo = await createWorkOrder(customer.id, vehicle.id);
+
+      await ctx.prisma.workOrder.update({ where: { id: wo.id }, data: { status: 'COMPLETED' } });
+
+      return wo;
+    }
+
+    it('should return 409 when the Billing reports a balance due', async () => {
+      const wo = await createCompletedWorkOrder();
+
+      stub.nextResponses.set(`GET /internal/work-orders/${wo.id}/balance`, {
+        status: 200,
+        body: readInternalWorkOrderBalanceFixture(),
+      });
+
+      const res = await request(httpServer)
+        .patch(`/api/work-orders/${wo.id}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ status: 'DELIVERED' })
+        .expect(409);
+
+      const stored = await ctx.prisma.workOrder.findUniqueOrThrow({ where: { id: wo.id } });
+
+      expect(res.body.message).toBe(
+        'Ordem de serviço com saldo a pagar de R$ 400.00: a entrega é liberada depois que o saldo for quitado',
+      );
+
+      expect(stored.status).toBe('COMPLETED');
+    });
+
+    it('should return 503 and keep the work order COMPLETED when the Billing fails', async () => {
+      const wo = await createCompletedWorkOrder();
+
+      stub.nextResponses.set(`GET /internal/work-orders/${wo.id}/balance`, {
+        status: 500,
+        body: { statusCode: 500, error: 'Internal Server Error', message: 'Erro interno' },
+      });
+
+      const res = await request(httpServer)
+        .patch(`/api/work-orders/${wo.id}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ status: 'DELIVERED' })
+        .expect(503);
+
+      const stored = await ctx.prisma.workOrder.findUniqueOrThrow({ where: { id: wo.id } });
+
+      expect(res.body.message).toBe('Serviço de destino indisponível');
+      expect(stored.status).toBe('COMPLETED');
     });
   });
 

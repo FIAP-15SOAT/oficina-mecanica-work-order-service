@@ -19,8 +19,15 @@ import { ICache } from '@application/ports/output/services/cache.service.interfa
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { createMockCache } from '../../../../helpers/cache-mock.factory';
 import { randomUUID } from 'node:crypto';
+import { IBillingPaymentsGateway } from '@application/ports/output/gateways/billing/billing-payments-gateway.interface';
+import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
+import {
+  createMockBillingPaymentsGateway,
+  readInternalWorkOrderBalanceFixture,
+} from '../../../../helpers/billing-payments-gateway-mock.factory';
 
 describe('UpdateWorkOrderStatusUseCase', () => {
+  let billingPaymentsGateway: jest.Mocked<IBillingPaymentsGateway>;
   let cache: jest.Mocked<ICache>;
   let useCase: UpdateWorkOrderStatusUseCase;
   let logger: jest.Mocked<ILogger>;
@@ -35,12 +42,16 @@ describe('UpdateWorkOrderStatusUseCase', () => {
     metrics = createMockMetrics();
     logger = createMockLogger();
     cache = createMockCache();
+    billingPaymentsGateway = createMockBillingPaymentsGateway();
+
     useCase = new UpdateWorkOrderStatusUseCase(
       mockUow,
       logger,
       metrics,
       mockRepos.statusHistory,
       cache,
+      mockRepos.workOrder,
+      billingPaymentsGateway,
     );
   });
 
@@ -75,19 +86,110 @@ describe('UpdateWorkOrderStatusUseCase', () => {
     expect(result.status).toBe(WorkOrderStatus.CANCELLED);
   });
 
-  it('should transition COMPLETED -> DELIVERED', async () => {
-    const wo = createMockWorkOrder({ status: WorkOrderStatus.COMPLETED });
-    const updated = createMockWorkOrder({ ...wo, status: WorkOrderStatus.DELIVERED });
+  describe('delivery', () => {
+    it('should deliver when the balance is zero', async () => {
+      const wo = createMockWorkOrder({ status: WorkOrderStatus.COMPLETED });
+      const updated = createMockWorkOrder({ ...wo, status: WorkOrderStatus.DELIVERED });
 
-    (mockRepos.workOrder.findById as jest.Mock).mockResolvedValue(wo);
-    (mockRepos.workOrder.update as jest.Mock).mockResolvedValue(updated);
-    (mockRepos.statusHistory.create as jest.Mock).mockResolvedValue({});
+      (mockRepos.workOrder.findById as jest.Mock).mockResolvedValue(wo);
+      (mockRepos.workOrder.update as jest.Mock).mockResolvedValue(updated);
+      (mockRepos.statusHistory.create as jest.Mock).mockResolvedValue({});
+      billingPaymentsGateway.getWorkOrderBalance.mockResolvedValue({
+        approvedTotal: '500.00',
+        paidTotal: '500.00',
+        balance: '0.00',
+      });
 
-    const result = await useCase.execute(wo.id, {
-      status: WorkOrderStatus.DELIVERED,
-      userId: '550e8400-e29b-41d4-a716-446655440099',
+      const result = await useCase.execute(wo.id, {
+        status: WorkOrderStatus.DELIVERED,
+        userId: '550e8400-e29b-41d4-a716-446655440099',
+      });
+
+      expect(result.status).toBe(WorkOrderStatus.DELIVERED);
+      expect(billingPaymentsGateway.getWorkOrderBalance).toHaveBeenCalledWith(wo.id);
+      expect(mockRepos.workOrder.findById).toHaveBeenCalledTimes(1);
     });
-    expect(result.status).toBe(WorkOrderStatus.DELIVERED);
+
+    it('should refuse the delivery when the Billing reports a balance due', async () => {
+      const wo = createMockWorkOrder({ status: WorkOrderStatus.COMPLETED });
+
+      jest.mocked(mockRepos.workOrder.findById).mockResolvedValue(wo);
+      billingPaymentsGateway.getWorkOrderBalance.mockResolvedValue(
+        readInternalWorkOrderBalanceFixture().data,
+      );
+
+      await expect(
+        useCase.execute(wo.id, {
+          status: WorkOrderStatus.DELIVERED,
+          userId: '550e8400-e29b-41d4-a716-446655440099',
+        }),
+      ).rejects.toThrow(
+        new ResourceConflictException(
+          'Ordem de serviço com saldo a pagar de R$ 400.00: a entrega é liberada depois que o saldo for quitado',
+        ),
+      );
+
+      expect(mockUow.executeTransaction).not.toHaveBeenCalled();
+      expect(mockRepos.workOrder.update).not.toHaveBeenCalled();
+      expect(cache.delete).not.toHaveBeenCalled();
+    });
+
+    it('should let the Billing outage through without delivering', async () => {
+      const wo = createMockWorkOrder({ status: WorkOrderStatus.COMPLETED });
+      const outage = new ServiceIntegrationException('Serviço de destino indisponível');
+
+      jest.mocked(mockRepos.workOrder.findById).mockResolvedValue(wo);
+      billingPaymentsGateway.getWorkOrderBalance.mockRejectedValue(outage);
+
+      await expect(
+        useCase.execute(wo.id, {
+          status: WorkOrderStatus.DELIVERED,
+          userId: '550e8400-e29b-41d4-a716-446655440099',
+        }),
+      ).rejects.toBe(outage);
+
+      expect(mockUow.executeTransaction).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['RECEIVED', WorkOrderStatus.RECEIVED, BusinessRuleViolationException],
+      ['AWAITING_PAYMENT', WorkOrderStatus.AWAITING_PAYMENT, BusinessRuleViolationException],
+      ['missing', null, ResourceNotFoundException],
+    ])(
+      'should not call the Billing when the work order cannot be delivered (%s)',
+      async (_, status, exception) => {
+        jest
+          .mocked(mockRepos.workOrder.findById)
+          .mockResolvedValue(status && createMockWorkOrder({ status }));
+
+        await expect(
+          useCase.execute(randomUUID(), {
+            status: WorkOrderStatus.DELIVERED,
+            userId: '550e8400-e29b-41d4-a716-446655440099',
+          }),
+        ).rejects.toThrow(exception);
+
+        expect(billingPaymentsGateway.getWorkOrderBalance).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([WorkOrderStatus.IN_DIAGNOSIS, WorkOrderStatus.CANCELLED])(
+      'should not call the Billing for other statuses (%s)',
+      async (status) => {
+        const wo = createMockWorkOrder({ status: WorkOrderStatus.RECEIVED });
+
+        jest.mocked(mockRepos.workOrder.findById).mockResolvedValue(wo);
+        jest.mocked(mockRepos.workOrder.update).mockResolvedValue(wo);
+
+        await useCase.execute(wo.id, {
+          status,
+          notes: 'Cancelado a pedido do cliente',
+          userId: '550e8400-e29b-41d4-a716-446655440099',
+        });
+
+        expect(billingPaymentsGateway.getWorkOrderBalance).not.toHaveBeenCalled();
+      },
+    );
   });
 
   it('should throw ResourceNotFoundException when work order not found', async () => {
@@ -310,10 +412,13 @@ describe('UpdateWorkOrderStatusUseCase', () => {
   });
 
   it('should not touch the cache when the write fails', async () => {
+    const workOrder = createMockWorkOrder({ status: WorkOrderStatus.RECEIVED });
+
+    jest.mocked(mockRepos.workOrder.findById).mockResolvedValue(workOrder);
     mockUow.executeTransaction.mockRejectedValueOnce(new Error('commit failed'));
 
     await expect(
-      useCase.execute(randomUUID(), {
+      useCase.execute(workOrder.id, {
         status: WorkOrderStatus.IN_DIAGNOSIS,
         userId: '550e8400-e29b-41d4-a716-446655440099',
       }),

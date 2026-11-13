@@ -5,6 +5,8 @@ import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
 import { ISagaInstanceRepository } from '@domain/interfaces/repositories/saga-instance.repository.interface';
+import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
+import { IBillingPaymentsGateway } from '@application/ports/output/gateways/billing/billing-payments-gateway.interface';
 import { UpdateWorkOrderStatusDto } from '@application/ports/input/work-order/dto/update-work-order-status.dto';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
@@ -30,71 +32,80 @@ export class UpdateWorkOrderStatusUseCase {
     private readonly metrics: IMetrics,
     private readonly statusHistoryRepository: IStatusHistoryRepository,
     private readonly cache: ICache,
+    private readonly workOrderRepository: IWorkOrderRepository,
+    private readonly billingPaymentsGateway: IBillingPaymentsGateway,
   ) {}
 
   async execute(id: string, dto: UpdateWorkOrderStatusDto): Promise<WorkOrder> {
-    const { workOrder, previousStatus, transition } = await this.unitOfWork.executeTransaction(
-      async (repos) => {
-        const workOrder = await repos.workOrder.findById(id);
+    // Read outside the transaction so the Billing call holds no database connection; the
+    // versioned update still refuses a work order another operation changed in between.
+    const workOrder = await this.workOrderRepository.findById(id);
 
-        if (!workOrder) {
-          throw new ResourceNotFoundException('Ordem de serviço não encontrada');
-        }
+    if (!workOrder) {
+      throw new ResourceNotFoundException('Ordem de serviço não encontrada');
+    }
 
-        if (!UpdateWorkOrderStatusUseCase.PATCH_STATUS_ALLOWED.has(dto.status)) {
-          throw new BusinessRuleViolationException(
-            `O status "${dto.status}" não é permitido nesta operação.`,
-          );
-        }
+    if (!UpdateWorkOrderStatusUseCase.PATCH_STATUS_ALLOWED.has(dto.status)) {
+      throw new BusinessRuleViolationException(
+        `O status "${dto.status}" não é permitido nesta operação.`,
+      );
+    }
 
-        await this.ensureNoActiveQuoteApprovalOnCancel(
-          repos.sagaInstance,
-          workOrder.id,
-          dto.status,
-        );
+    const previousStatus = workOrder.status;
+    workOrder.changeStatus(dto.status, dto.notes);
 
-        const previousStatus = workOrder.status;
-        workOrder.changeStatus(dto.status, dto.notes);
+    if (dto.status === WorkOrderStatus.DELIVERED) {
+      await this.ensureNoBalanceDue(workOrder.id);
+    }
 
-        const saved = await repos.workOrder.update(workOrder);
+    const { saved, transition } = await this.unitOfWork.executeTransaction(async (repos) => {
+      if (dto.status === WorkOrderStatus.CANCELLED) {
+        await this.ensureNoActiveQuoteApproval(repos.sagaInstance, workOrder.id);
+      }
 
-        const transition = await repos.statusHistory.create(
-          StatusHistory.create({
-            workOrderId: saved.id,
-            changedById: dto.userId,
-            previousStatus,
-            newStatus: dto.status,
-            notes: dto.notes,
-          }),
-        );
+      const saved = await repos.workOrder.update(workOrder);
 
-        return { workOrder: saved, previousStatus, transition };
-      },
-    );
+      const transition = await repos.statusHistory.create(
+        StatusHistory.create({
+          workOrderId: saved.id,
+          changedById: dto.userId,
+          previousStatus,
+          newStatus: dto.status,
+          notes: dto.notes,
+        }),
+      );
 
-    await this.cache.delete([workOrderCacheKey(workOrder.id)]);
+      return { saved, transition };
+    });
+
+    await this.cache.delete([workOrderCacheKey(saved.id)]);
 
     this.logger.event(BUSINESS_EVENTS.WORK_ORDER_STATUS_UPDATED, {
-      workOrderId: workOrder.id,
-      workOrderNumber: workOrder.number.toString(),
+      workOrderId: saved.id,
+      workOrderNumber: saved.number.toString(),
       previousWorkOrderStatus: previousStatus,
-      currentWorkOrderStatus: workOrder.status,
+      currentWorkOrderStatus: saved.status,
     });
 
     await recordWorkOrderTransition(this.metrics, this.statusHistoryRepository, transition);
 
-    return workOrder;
+    return saved;
   }
 
-  private async ensureNoActiveQuoteApprovalOnCancel(
+  private async ensureNoBalanceDue(workOrderId: string): Promise<void> {
+    const { balance } = await this.billingPaymentsGateway.getWorkOrderBalance(workOrderId);
+
+    if (Number(balance) > 0) {
+      throw new ResourceConflictException(
+        `Ordem de serviço com saldo a pagar de R$ ${balance}: a entrega é liberada depois que o saldo for quitado`,
+      );
+    }
+  }
+
+  private async ensureNoActiveQuoteApproval(
     sagaInstanceRepository: ISagaInstanceRepository,
     workOrderId: string,
-    status: WorkOrderStatus,
   ): Promise<void> {
-    if (status !== WorkOrderStatus.CANCELLED) {
-      return;
-    }
-
     const hasActiveQuoteApproval = await sagaInstanceRepository.hasActiveByWorkOrderId(workOrderId);
 
     if (hasActiveQuoteApproval) {

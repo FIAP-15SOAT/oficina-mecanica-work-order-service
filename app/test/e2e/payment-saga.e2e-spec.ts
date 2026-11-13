@@ -4,6 +4,7 @@ import request from 'supertest';
 import { GetQueueUrlCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
+import { InternalServicesStub, startInternalServicesStub } from '../helpers/internal-services-stub';
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
 import { receiveCommands } from '../helpers/sqs-commands.helper';
 import { waitFor } from '../helpers/wait-for.helper';
@@ -26,6 +27,7 @@ const checkoutUrl = (paymentId: string): string =>
 // which the work order queue filter delivers back to it; the commands are read from the billing
 // queue, which has no consumer here.
 describe('Payment saga (E2E)', () => {
+  let stub: InternalServicesStub;
   let ctx: TestContext;
   let httpServer: Server;
   let adminAuth: AuthTokens;
@@ -36,7 +38,8 @@ describe('Payment saga (E2E)', () => {
   let vehicleId: string;
 
   beforeAll(async () => {
-    ctx = await setupTestApp({ withMessaging: true });
+    stub = await startInternalServicesStub();
+    ctx = await setupTestApp({ withMessaging: true, internalServicesUrl: stub.url });
     httpServer = ctx.httpServer;
     unitOfWork = ctx.app.get<IUnitOfWork>('IUnitOfWork');
     sqs = ctx.app.get(SQSClient);
@@ -70,6 +73,7 @@ describe('Payment saga (E2E)', () => {
 
   afterAll(async () => {
     await teardownTestApp(ctx);
+    await stub.close();
   });
 
   // The approval and the execution are covered by their own suites; the payment only needs the

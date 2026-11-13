@@ -10,6 +10,7 @@ import { FindWorkOrderStatusHistoryUseCase } from '@application/use-cases/work-o
 import { FindCatalogItemsUseCase } from '@application/use-cases/catalog/find-catalog-items.use-case';
 import { IInventoryCatalogGateway } from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.interface';
 import { IBillingQuotesGateway } from '@application/ports/output/gateways/billing/billing-quotes-gateway.interface';
+import { IBillingPaymentsGateway } from '@application/ports/output/gateways/billing/billing-payments-gateway.interface';
 
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
 import { ICustomerRepository } from '@domain/interfaces/repositories/customer.repository.interface';
@@ -41,6 +42,7 @@ import { WorkOrderController } from './work-order.controller';
         customerRepository: ICustomerRepository,
         vehicleRepository: IVehicleRepository,
         billingQuotesGateway: IBillingQuotesGateway,
+        billingPaymentsGateway: IBillingPaymentsGateway,
       ) =>
         new WorkOrderCleanController(
           new CreateWorkOrderUseCase(
@@ -61,6 +63,8 @@ import { WorkOrderController } from './work-order.controller';
             metrics,
             statusHistoryRepository,
             cache,
+            workOrderRepository,
+            billingPaymentsGateway,
           ),
           new UpdateWorkOrderServiceStatusUseCase(
             unitOfWork,
@@ -84,6 +88,7 @@ import { WorkOrderController } from './work-order.controller';
         'ICustomerRepository',
         'IVehicleRepository',
         'IBillingQuotesGateway',
+        'IBillingPaymentsGateway',
       ],
     },
   ],

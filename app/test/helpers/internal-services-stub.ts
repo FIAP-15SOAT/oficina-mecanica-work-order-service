@@ -2,6 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
+import {
+  readInternalWorkOrderBalanceFixture,
+  readInternalWorkOrderPaymentsFixture,
+} from './billing-payments-gateway-mock.factory';
 import { readInternalQuoteSummaryFixture } from './billing-quotes-gateway-mock.factory';
 import {
   readInternalPartSupplyFixture,
@@ -79,6 +83,24 @@ function billingRoutes(quotes: Map<string, object>): Record<string, RouteHandler
     'POST /internal/quotes/:id/decisions': ({ id }, body) => decideQuote(quotes, id, body),
     'GET /internal/work-orders/:workOrderId/quotes': ({ workOrderId }) =>
       listWorkOrderQuotes(quotes, workOrderId),
+    // Settled by default: the full lifecycles deliver the work order.
+    'GET /internal/work-orders/:workOrderId/balance': () => {
+      const { approvedTotal } = readInternalWorkOrderBalanceFixture().data;
+
+      return {
+        status: 200,
+        body: { data: { approvedTotal, paidTotal: approvedTotal, balance: '0.00' } },
+      };
+    },
+    'GET /internal/work-orders/:workOrderId/payments': ({ workOrderId }) => ({
+      status: 200,
+      body: {
+        data: readInternalWorkOrderPaymentsFixture().data.map((payment) => ({
+          ...payment,
+          workOrderId,
+        })),
+      },
+    }),
   };
 }
 
@@ -121,7 +143,7 @@ function listWorkOrderQuotes(
   return { status: 200, body: { data: summaries } };
 }
 
-/** Serves the Inventory catalog and the Billing quote internal routes from in-memory maps. */
+/** Serves the Inventory catalog and the Billing quote and payment internal routes. */
 export async function startInternalServicesStub(): Promise<InternalServicesStub> {
   const services = new Map<string, object>();
   const partsSupplies = new Map<string, object>();
