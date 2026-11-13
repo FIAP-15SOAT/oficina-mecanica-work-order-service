@@ -26,5 +26,10 @@
       "@interface-adapters/*": ["./src/interface-adapters/*"],
       "@generated/*": ["./prisma/generated/*"]
     }
+  },
+  "ts-node": {
+    "transpileOnly": true,
+    "experimentalResolver": true,
+    "compilerOptions": { "rootDir": "." }
   }
 }
