@@ -24,17 +24,22 @@ Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgr
 
 ### Ordem de Serviço (OS)
 
-- **`work_order_statuses`** (`WorkOrderStatusInfo`) — tabela de referência (lookup, populada pelo seed): associa cada `WorkOrderStatus` a uma `priority` numérica (1–9), usada para ordenar a listagem de OS por status em ordem de negócio, não alfabética (ver [Ciclo de vida da Ordem de Serviço](architecture.md#ciclo-de-vida-da-ordem-de-serviço)).
+- **`work_order_statuses`** (`WorkOrderStatusInfo`) — tabela de referência (lookup, populada pelo seed): associa cada `WorkOrderStatus` a uma `priority` numérica única, de 1 a 10, usada para ordenar a listagem de OS por status em ordem de negócio, não alfabética: `RECEIVED` 1, `IN_DIAGNOSIS` 2, `AWAITING_APPROVAL` 3, `REJECTED` 4, `APPROVED` 5, `AWAITING_PAYMENT` 6, `IN_PROGRESS` 7, `COMPLETED` 8, `DELIVERED` 9 e `CANCELLED` 10 (ver [Ciclo de vida da Ordem de Serviço](architecture.md#ciclo-de-vida-da-ordem-de-serviço)). A prioridade segue a posição no fluxo, e `AWAITING_PAYMENT` entrou entre `APPROVED` e `IN_PROGRESS` empurrando os seguintes uma posição, numa migration própria (`add_awaiting_payment_priority`): o PostgreSQL não usa um valor de enum na mesma transação que o cria, e o Prisma aplica cada arquivo de migration numa transação. Como o índice único de `priority` é conferido linha a linha, a renumeração passa por uma faixa livre (`+ 100` e depois `- 99`) antes de inserir o 6. O seed (`work-order-status-info.seed.ts`) grava os mesmos valores.
 - **`work_orders`** (`WorkOrder`) — a Ordem de Serviço, aggregate root do domínio. Referencia um `Customer`, um `Vehicle`, opcionalmente um `User` atribuído (mecânico), e seu `status` é FK para `work_order_statuses`. Concorrência otimista via `version`.
 - **`work_order_services`** / **`work_order_part_supplies`** (`WorkOrderService` / `WorkOrderPartSupply`) — itens de linha da OS (serviços e peças/insumos aplicados), com chave primária composta `(work_order_id, service_id | part_supply_id)` em vez de surrogate key. Apagados em cascata com a OS. `service_id` e `part_supply_id` são referências simples, sem FK: o catálogo é do Inventory, e o item guarda só o id, a quantidade e o preço.
-- **`status_history`** (`StatusHistory`) — histórico de transições de status de uma OS, com o usuário que efetuou a mudança (`changed_by_id`, opcional). A confirmação da compensação da Saga de aprovação grava uma entrada que não muda o status (`AWAITING_APPROVAL → AWAITING_APPROVAL`, ou `CANCELLED → CANCELLED` quando a OS foi cancelada antes de a Saga começar), sem autor e com a nota do motivo.
+- **`status_history`** (`StatusHistory`) — histórico de transições de status de uma OS, com o usuário que efetuou a mudança (`changed_by_id`, opcional). A confirmação da compensação da Saga de aprovação grava uma entrada que não muda o status (`AWAITING_APPROVAL → AWAITING_APPROVAL`, ou `CANCELLED → CANCELLED` quando a OS foi cancelada antes de a Saga começar), sem autor e com a nota do motivo. As entradas do bloqueio e da volta da Saga de cobrança também ficam sem autor, com a nota que identifica a cobrança e o desfecho.
 
-### Saga de aprovação
+### Sagas
 
-- **`saga_instances`** (`SagaInstance`) — o estado de cada Saga que o serviço orquestra (ver [Aprovação de orçamento com reserva de estoque](architecture.md#aprovação-de-orçamento-com-reserva-de-estoque)). Hoje só existe o tipo `QUOTE_APPROVAL`, com `correlation_id` igual ao id do orçamento aprovado, guardado no Billing, o serviço da solução dono dos orçamentos e dos pagamentos (ver [Orçamentos no Billing](architecture.md#orçamentos-no-billing)), e `work_order_id` igual à OS dele. `status` vai de `RESERVING_STOCK` a `COMPLETED` (reserva confirmada) ou a `COMPENSATING` (aprovação desfeita sendo revertida no Billing) e, confirmada a reversão, a `COMPENSATED`. A aprovação sem peças cria a linha já `COMPLETED`. `failure_reason` diz por que a Saga foi compensada: `INSUFFICIENT_STOCK` (o Inventory recusou a reserva) ou `WORK_ORDER_NOT_AWAITING` (a OS já não aguardava aprovação quando a Saga começou). A migration `add_saga_compensation` acrescentou esses dois valores, `COMPENSATING` e `WORK_ORDER_NOT_AWAITING`, aos enums que já existiam.
-  - **Única por orçamento.** A chave única `(type, correlation_id)` impede duas Sagas para o mesmo orçamento; aprovar de novo um orçamento compensado por falta de estoque reabre a mesma linha.
+- **`saga_instances`** (`SagaInstance`) — o estado de cada Saga que o serviço orquestra e que espera a resposta de outro serviço. São dois tipos (`type`), e o `correlation_id` aponta para um registro do Billing, o serviço da solução dono dos orçamentos e dos pagamentos (ver [Orçamentos no Billing](architecture.md#orçamentos-no-billing)); `work_order_id` é a OS dele. A Saga de abertura não tem linha: começa e termina dentro de uma requisição.
+  - **`QUOTE_APPROVAL`** (ver [Aprovação de orçamento com reserva de estoque](architecture.md#aprovação-de-orçamento-com-reserva-de-estoque)): `correlation_id` é o id do orçamento aprovado. `status` vai de `RESERVING_STOCK` a `COMPLETED` (reserva confirmada) ou a `COMPENSATING` (aprovação desfeita sendo revertida no Billing) e, confirmada a reversão, a `COMPENSATED`. A aprovação sem peças cria a linha já `COMPLETED`. `failure_reason` é `INSUFFICIENT_STOCK` (o Inventory recusou a reserva) ou `WORK_ORDER_NOT_AWAITING` (a OS já não aguardava aprovação quando a Saga começou).
+  - **`PAYMENT`** (ver [Saga de cobrança](architecture.md#saga-de-cobrança)): `correlation_id` é o id da cobrança. `status` começa em `AWAITING_PAYMENT` (a OS bloqueada à espera do pagamento) e vai a `COMPLETED` (pago) ou a `COMPENSATED` (expirada, recusada ou cancelada), ou começa em `COMPENSATING` (a OS não podia ser cobrada e o cancelamento foi pedido ao Billing) e vai a `COMPENSATED` ou, se o cliente pagou antes do cancelamento, a `COMPLETED`. `failure_reason` é `WORK_ORDER_NOT_PAYABLE`, `PAYMENT_EXPIRED`, `PAYMENT_REJECTED` ou `PAYMENT_CANCELLED`.
+  - **`origin_status`** (`WorkOrderStatus`, nula) guarda o status da OS antes do bloqueio da cobrança (`APPROVED` ou `COMPLETED`), para onde ela volta. Fica nula nas Sagas `QUOTE_APPROVAL` e na Saga `PAYMENT` criada já em compensação. É uma coluna tipada, e não um `jsonb` de dados da Saga, porque é o único dado próprio de um tipo.
+  - **Datas.** `created_at` e `updated_at` saem do relógio da aplicação (a criação carimbada pela entidade, a atualização pelo `@updatedAt` do Prisma), porque a duração da Saga, medida na métrica `oficina.saga.duration`, é a diferença entre as duas, e as duas precisam vir do mesmo relógio.
+  - **Única por registro do Billing.** A chave única `(type, correlation_id)` impede duas Sagas para o mesmo orçamento ou a mesma cobrança, e é ela que torna as mensagens repetidas inofensivas; aprovar de novo um orçamento compensado por falta de estoque reabre a mesma linha.
   - **Sem `version`.** Toda escrita na Saga vai numa transação que também grava com versão a OS, e a fila FIFO entrega as mensagens do Billing e do Inventory em ordem por OS.
   - O índice em `work_order_id` atende a consulta que barra o cancelamento da OS e a decisão do cliente enquanto a OS tem uma Saga ativa (`RESERVING_STOCK` ou `COMPENSATING`). Apagada em cascata com a OS.
+  - **Migrations.** `add_saga_compensation` acrescentou `COMPENSATING` e `WORK_ORDER_NOT_AWAITING` aos enums da Saga; `add_payment_saga` acrescentou `PAYMENT`, `AWAITING_PAYMENT`, os quatro motivos da cobrança, o `AWAITING_PAYMENT` da OS e a coluna `origin_status`. As duas só acrescentam valores e uma coluna nula, compatíveis com a versão anterior do serviço.
 
 ### Mensageria
 
@@ -49,7 +54,19 @@ Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgr
 
 ## Enums
 
-`UserRole`, `CustomerType`, `WorkOrderStatus`, `WorkOrderServiceStatus`, `SagaType`, `SagaStatus` e `SagaFailureReason`. `UserRole` **não** ganhou um valor `CUSTOMER` — o acesso externo não é modelado como papel interno (ver [ADR 0004](adr/0004-autenticacao-de-clientes.md)).
+Sete enums:
+
+| Enum | Valores |
+|---|---|
+| `UserRole` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
+| `CustomerType` | `INDIVIDUAL`, `COMPANY` |
+| `WorkOrderStatus` | `RECEIVED`, `IN_DIAGNOSIS`, `AWAITING_APPROVAL`, `APPROVED`, `REJECTED`, `AWAITING_PAYMENT`, `IN_PROGRESS`, `COMPLETED`, `DELIVERED`, `CANCELLED` |
+| `WorkOrderServiceStatus` | `PENDING`, `IN_PROGRESS`, `COMPLETED` |
+| `SagaType` | `QUOTE_APPROVAL`, `PAYMENT` |
+| `SagaStatus` | `RESERVING_STOCK`, `AWAITING_PAYMENT`, `COMPENSATING`, `COMPLETED`, `COMPENSATED` |
+| `SagaFailureReason` | `INSUFFICIENT_STOCK`, `WORK_ORDER_NOT_AWAITING`, `WORK_ORDER_NOT_PAYABLE`, `PAYMENT_EXPIRED`, `PAYMENT_REJECTED`, `PAYMENT_CANCELLED` |
+
+`UserRole` **não** ganhou um valor `CUSTOMER` — o acesso externo não é modelado como papel interno (ver [ADR 0004](adr/0004-autenticacao-de-clientes.md)).
 
 ## Convenções de modelagem
 
@@ -57,7 +74,7 @@ Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgr
 - **Timestamps**: `created_at` / `updated_at` em todas as entidades não-imutáveis (`Address` e `StatusHistory` guardam apenas `created_at`).
 - **Concorrência otimista**: coluna `version Int @default(1)` em `WorkOrder`.
 - **Cascade deletes** para itens dependentes (`WorkOrderService`, `WorkOrderPartSupply`, `StatusHistory`, `SagaInstance`, `Address`).
-- **Referências a outro serviço sem FK**: o id de um serviço ou peça do Inventory nos itens e o id do orçamento do Billing em `saga_instances.correlation_id` ficam sem chave estrangeira, porque a linha está em outro banco.
+- **Referências a outro serviço sem FK**: o id de um serviço ou peça do Inventory nos itens e o id do orçamento ou da cobrança do Billing em `saga_instances.correlation_id` ficam sem chave estrangeira, porque a linha está em outro banco.
 - **Unicidade**: `User.email`, `User.cpf`, `Customer.email`, `Customer.document`, `Vehicle.plate`, `WorkOrder.number`, `SagaInstance (type, correlation_id)`.
 - **Identidades compostas**: `WorkOrderService` e `WorkOrderPartSupply` usam chave primária composta `(parentId, itemId)` em vez de surrogate key.
 - **Índices secundários** por colunas usadas em filtros (`status`, `customer_id`, `vehicle_id`, `assigned_user_id`, `part_supply_id`, `work_order_id`, etc.) e índice composto `(status, created_at)` em `work_orders` para listagens ordenadas.
@@ -87,4 +104,5 @@ descartáveis e uma URL própria. Detalhes e alternativas estão no
 - [ADR 0010 — Concorrência otimista via coluna `version`](adr/0010-concorrencia-otimista-via-version.md)
 - [ADR 0023 — Catálogo e estoque no Inventory, com reserva pela Saga de aprovação](adr/0023-catalogo-e-estoque-no-inventory-com-reserva-pela-saga.md)
 - [ADR 0024 — Saga de abertura com orçamento inicial no Billing](adr/0024-saga-de-abertura-com-orcamento-inicial-no-billing.md)
+- [ADR 0025 — Sagas orquestradas no work-order](adr/0025-sagas-orquestradas-no-work-order.md)
 - [`oficina-mecanica-infra-database-work-order` — ADRs de dados gerenciados (RDS e ElastiCache)](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/tree/main/docs/adr)

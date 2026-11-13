@@ -4,6 +4,8 @@
 
 Aceito — 2026-09-07
 
+Emendado pelo [ADR 0025](0025-sagas-orquestradas-no-work-order.md): com os orçamentos, os pagamentos e o estoque em outros serviços, cada um com o próprio banco, a alternativa "Padrão Saga" deixou de ser descartada. As escritas que cruzam serviços são Sagas orquestradas pelo work-order, e a Unit of Work deste ADR continua sendo a transação de cada passo, com o outbox.
+
 ## Contexto
 
 Vários casos de uso do domínio precisam alterar mais de um agregado atomicamente: aprovar um orçamento reserva estoque, materializa itens na ordem de serviço, transiciona a OS para `APPROVED`, rejeita os demais orçamentos pendentes da mesma OS e registra histórico — cinco escritas que precisam **todas** acontecer, ou **nenhuma**. Como a camada de domínio e aplicação são livres de framework e ORM (ver [ADR 0009](0009-clean-architecture-ddd-em-camadas.md)), os casos de uso não podem depender diretamente da API de transação do Prisma — precisam de uma abstração de domínio para "isto é uma unidade atômica de trabalho".

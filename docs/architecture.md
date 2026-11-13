@@ -16,7 +16,8 @@ Clean Architecture + DDD do backend da Oficina Mecânica — camadas estritas, e
 - [Saga de abertura](#saga-de-abertura)
 - [Aprovação de orçamento com reserva de estoque](#aprovação-de-orçamento-com-reserva-de-estoque)
 - [Fluxo do orçamento, do envio à aprovação](#fluxo-do-orçamento-do-envio-à-aprovação)
-- [Orçamentos na área do Cliente da Oficina](#orçamentos-na-área-do-cliente-da-oficina)
+- [Saga de cobrança](#saga-de-cobrança)
+- [Orçamentos e cobranças na área do Cliente da Oficina](#orçamentos-e-cobranças-na-área-do-cliente-da-oficina)
 - [Mensageria, cache e chamadas internas](#mensageria-cache-e-chamadas-internas)
 - [Exceções por Camada](#exceções-por-camada)
 - [Observabilidade](#observabilidade)
@@ -45,6 +46,9 @@ app/src/
 │   ├── constants/                   # Regex compartilhadas (placa, telefone, e-mail, senha)
 │   │                                # + limites de validação por agregado
 │   ├── validators/                  # DocumentValidator (CPF/CNPJ com dígito verificador)
+│   ├── services/                    # CustomerEmailRecipients — destinatários dos e-mails
+│   │                                # ao cliente (usuários vinculados ativos ou, sem
+│   │                                # nenhum, o e-mail do cliente)
 │   ├── messaging/                   # Catálogo de mensagens por escopo (inventory, billing,
 │   │                                # notification) + message-catalog (OutboxMessage: união
 │   │                                # discriminada por `type`)
@@ -63,14 +67,17 @@ app/src/
 │   │                                # (inventory/: IInventoryCatalogGateway, catálogo
 │   │                                # de serviços e peças lido no Inventory;
 │   │                                # billing/: IBillingQuotesGateway, orçamentos
-│   │                                # lidos, criados e decididos no Billing)
+│   │                                # lidos, criados e decididos no Billing, e
+│   │                                # IBillingPaymentsGateway, saldo e cobranças da OS)
 │   ├── auth/                        # Principal autenticado que os controllers passam aos casos de uso
 │   ├── messaging/                   # MessageEnvelope + MessageHandler (contrato dos handlers)
 │   ├── keys/                        # Chaves de cache (work-order:work-order:<id>)
 │   ├── mappers/                     # WorkOrderCacheMapper (snapshot versionado da OS no cache)
 │   ├── metrics/                     # IMetrics é a porta; aqui ficam o catálogo tipado das
-│   │                                # métricas de negócio e o cálculo puro de permanência
-│   │                                # por status e dos dois totais
+│   │                                # métricas de negócio, o cálculo puro de permanência
+│   │                                # por status e dos dois totais, e os sinais das
+│   │                                # transições da OS (work-order-metrics) e das Sagas
+│   │                                # (saga-metrics)
 │   ├── logging/                     # LogEventDefinition + catálogo tipado e fechado
 │   │                                # de eventos de NEGÓCIO (nomes lógicos, sem chave física)
 │   ├── policies/                    # CustomerAccessPolicy — autorização por vínculo,
@@ -85,7 +92,8 @@ app/src/
 │   │   │                            # UpdateCustomerStatus
 │   │   ├── me/                      # ChangeOwnPassword, FindAllMyWorkOrders,
 │   │   │                            # FindMyWorkOrderById, FindMyWorkOrdersQuotes,
-│   │   │                            # FindMyQuoteById, DecideMyQuote — usuário externo
+│   │   │                            # FindMyQuoteById, DecideMyQuote,
+│   │   │                            # FindMyWorkOrderPayments — usuário externo
 │   │   │                            # autenticado (identidade via FindUserByIdUseCase,
 │   │   │                            # reaproveitado de user/)
 │   │   ├── vehicle/                 # CRUD + busca por cliente
@@ -96,9 +104,12 @@ app/src/
 │   │   │                            # status, status de serviços, histórico e
 │   │   │                            # ApplySentQuote / ApplyRejectedQuote (mensagens
 │   │   │                            # de envio e rejeição do Billing)
-│   │   └── quote-approval/          # Saga de aprovação: StartQuoteApproval,
-│   │                                # CompleteQuoteApproval, CompensateQuoteApproval
-│   │                                # e ConfirmQuoteApprovalReversal
+│   │   ├── quote-approval/          # Saga de aprovação: StartQuoteApproval,
+│   │   │                            # CompleteQuoteApproval, CompensateQuoteApproval
+│   │   │                            # e ConfirmQuoteApprovalReversal
+│   │   └── payment/                 # Saga de cobrança: StartPayment (pedido de
+│   │                                # cobrança) e ApplyPaymentResult (pagamento
+│   │                                # aprovado ou falho)
 │   ├── exceptions/                  # ResourceNotFoundException, ResourceConflictException,
 │   │                                # UnauthorizedAccessException, ServiceRequestRejectedException
 │   └── utils/                       # PaginationUtil (sanitização e cálculo de páginas)
@@ -125,7 +136,8 @@ app/src/
 │   ├── gateways/                    # Adaptadores das portas de gateway, sobre o
 │   │                                # InternalHttpClient: inventory/
 │   │                                # HttpInventoryCatalogGateway e billing/
-│   │                                # HttpBillingQuotesGateway
+│   │                                # HttpBillingQuotesGateway e
+│   │                                # HttpBillingPaymentsGateway
 │   ├── messaging/                   # MessagingModule (@Global: SNSClient, SQSClient),
 │   │                                # messaging-clients (clientes SNS/SQS com prazo por pedido),
 │   │                                # OutboxRelayService (relay do outbox → SNS FIFO),
@@ -133,7 +145,8 @@ app/src/
 │   │                                # MessageHandlerRegistry, MessageEnvelopeDto,
 │   │                                # messaging-log-bindings (campos messaging.* das linhas),
 │   │                                # handlers/ (quote/: envio e rejeição do Billing;
-│   │                                # quote-approval/: passos da Saga de aprovação)
+│   │                                # quote-approval/: passos da Saga de aprovação;
+│   │                                # payment/: passos da Saga de cobrança)
 │   ├── cache/                       # CacheModule (@Global, token 'ICache') +
 │   │                                # ValkeyCacheAdapter + valkey-client (ioredis)
 │   ├── clients/                     # ClientsModule + InternalHttpClient (@nestjs/axios;
@@ -206,10 +219,10 @@ app/test/
 ├── helpers/                         # Mock factories reutilizáveis (incluindo
 │                                    # UnitOfWorkMockFactory) e helpers de E2E
 │                                    # (auth, db cleanup, test app bootstrap)
-├── unit/                            # 188 suites de testes unitários (espelham src/)
-│   ├── domain/                      # entities/, value-objects/, validators/
+├── unit/                            # 195 suites de testes unitários (espelham src/)
+│   ├── domain/                      # entities/, services/, value-objects/, validators/
 │   ├── application/use-cases/       # auth, catalog, customer, customer-access, me,
-│   │                                # quote-approval, service, user, vehicle,
+│   │                                # payment, quote-approval, service, user, vehicle,
 │   │                                # work-order
 │   ├── interface-adapters/          # Clean Controllers + Presenters por domínio
 │   └── infrastructure/              # http/ (controllers, filters, interceptors, pipes,
@@ -218,7 +231,12 @@ app/test/
 │                                    # serviço (internal-work-order.json) e cópias
 │                                    # das do Inventory (inventory/) e do Billing
 │                                    # (billing/)
-└── e2e/                             # 15 suites de testes E2E (Testcontainers: PostgreSQL,
+├── bdd/                             # Testes de aceitação em Gherkin pt-BR (Cucumber):
+│                                    # features/ (fluxo completo e compensações),
+│                                    # steps/ (passos por participante) e support/
+│                                    # (World por cenário e serviço real subindo uma
+│                                    # vez por execução)
+└── e2e/                             # 16 suites de testes E2E (Testcontainers: PostgreSQL,
     │                                #   Valkey e LocalStack reais)
     ├── all-exceptions.filter.e2e-spec.ts
     ├── auth.e2e-spec.ts
@@ -227,9 +245,13 @@ app/test/
     ├── health.e2e-spec.ts
     ├── internal.e2e-spec.ts           # rotas /internal contra as fixtures
     ├── logging.e2e-spec.ts
-    ├── me.e2e-spec.ts                 # /api/me/*: identidade externa, senha, OS e
-    │                                  # orçamentos vinculados, decisão de orçamento
+    ├── me.e2e-spec.ts                 # /api/me/*: identidade externa, senha, OS,
+    │                                  # orçamentos e cobranças vinculados, decisão
+    │                                  # de orçamento
     ├── messaging.e2e-spec.ts          # outbox → SNS → SQS → handler, lock do relay
+    ├── payment-saga.e2e-spec.ts       # Saga de cobrança pelo LocalStack: pagamento
+    │                                  # aprovado, cobrança expirada e cobrança com a
+    │                                  # OS já em execução
     ├── quote-approval-saga.e2e-spec.ts # Sagas de abertura e de aprovação e eventos de
     │                                  # orçamento pelo LocalStack, com stub do Billing
     ├── service.e2e-spec.ts            # métricas por serviço
@@ -255,14 +277,14 @@ app/prisma/
 
 ## Modelos do banco de dados
 
-13 modelos, cobrindo identidade/acesso, veículos, Ordem de Serviço, o estado da Saga de aprovação e o outbox da mensageria. Diagrama entidade-relacionamento (com os tipos reais do Postgres), explicação tabela a tabela, enums e convenções de modelagem: ver [`docs/database.md`](database.md).
+13 modelos, cobrindo identidade/acesso, veículos, Ordem de Serviço, o estado das Sagas de aprovação e de cobrança e o outbox da mensageria. Diagrama entidade-relacionamento (com os tipos reais do Postgres), explicação tabela a tabela, enums e convenções de modelagem: ver [`docs/database.md`](database.md).
 
 ## DDD — Aggregate Roots, Entidades e Value Objects
 
 O domínio é modelado seguindo princípios de DDD:
 
 - **Aggregate Root** — `WorkOrder` é a raiz de agregado. Toda mutação de itens (serviços, peças/insumos), transições de status e cálculos de totais ocorrem **através** da raiz, que protege os invariantes do agregado.
-  - `WorkOrder` encapsula seus `WorkOrderService[]` e `WorkOrderPartSupply[]`, controla as transições de status (state machine), recalcula `totalAmount`, valida o mecânico atribuído (apenas usuários ativos com role `MECHANIC`) e aplica os itens do orçamento aprovado no Billing (`applyApprovedItems`). Os serviços iniciam/finalizam pela raiz (`startServiceItem` / `completeServiceItem`), que promove a OS para `IN_PROGRESS` no primeiro `start` e para `COMPLETED` quando todos os serviços estão concluídos.
+  - `WorkOrder` encapsula seus `WorkOrderService[]` e `WorkOrderPartSupply[]`, controla as transições de status (state machine), recalcula `totalAmount`, valida o mecânico atribuído (apenas usuários ativos com role `MECHANIC`) e aplica os itens do orçamento aprovado no Billing (`applyApprovedItems`). Os serviços iniciam/finalizam pela raiz (`startServiceItem` / `completeServiceItem`), que promove a OS para `IN_PROGRESS` no primeiro `start` e para `COMPLETED` quando todos os serviços estão concluídos. O bloqueio pela cobrança também passa por ela: `holdForPayment()` leva a OS a `AWAITING_PAYMENT` e `releasePaymentHold(origem)` a devolve ao status de antes, sem mexer nas datas de aprovação, início, conclusão e entrega (ver [Saga de cobrança](#saga-de-cobrança)).
 - **Entidades** — `Customer`, `Vehicle`, `User`, `UserCustomer`, `PasswordResetCode`, `StatusHistory`, `SagaInstance`, `WorkOrderService`, `WorkOrderPartSupply`. Possuem identidade própria, estado mutável e validações de invariantes nos próprios métodos (`changeRole`, `changePassword`, `complete`, `compensate`, etc.). Serviços e peças não são entidades deste serviço: os itens guardam só o id, a quantidade e o preço, e o catálogo é do Inventory. Orçamentos também não: são do Billing (ver [Orçamentos no Billing](#orçamentos-no-billing)).
 - **Value Objects** — imutáveis, sem identidade, validados na criação:
   - `Document` (CPF ou CNPJ com dígito verificador), `Email`, `Phone`, `Plate` (placa antiga `ABC-1234` ou Mercosul `ABC1D23` — sanitizada para maiúsculas e sem hífen), `ZipCode`, `Address`, `LineItemPrice` (quantidade × preço unitário com cálculo de total), `WorkOrderNumber` (número da OS validado e normalizado com zero-padding para o comprimento mínimo).
@@ -325,9 +347,9 @@ Operações que tocam múltiplos repositórios são executadas dentro de uma tra
 Casos de uso transacionais incluem:
 
 - **Criação de OS** — cria a OS + registra `StatusHistory` inicial. Com itens, o orçamento inicial é criado no Billing **antes** da transação (ver [Saga de abertura](#saga-de-abertura)): nenhuma chamada HTTP fica dentro dela.
-- **Atualização de status de OS** (`PATCH /work-orders/:id`) — atualiza OS + registra histórico.
+- **Atualização de status de OS** (`PATCH /work-orders/:id`) — atualiza OS + registra histórico. Na entrega, o saldo é lido no Billing **antes** da transação (ver [Entrega com saldo zero](#entrega-com-saldo-zero)).
 - **Atualização de status de serviço da OS** — atualiza item, eventualmente promove OS para `IN_PROGRESS` / `COMPLETED` e registra histórico. Na passagem a `IN_PROGRESS` de uma OS com peças, grava no outbox o comando `inventory.stock.consume`, que pede ao Inventory a baixa do estoque reservado.
-- **Passos da Saga de aprovação** — cada mensagem da Saga (ver [Aprovação de orçamento com reserva de estoque](#aprovação-de-orçamento-com-reserva-de-estoque)) é tratada numa transação que grava a Saga e, conforme o passo, a OS, o histórico e o comando no outbox.
+- **Passos das Sagas de aprovação e de cobrança** — cada mensagem de uma Saga (ver [Aprovação de orçamento com reserva de estoque](#aprovação-de-orçamento-com-reserva-de-estoque) e [Saga de cobrança](#saga-de-cobrança)) é tratada numa transação que grava a Saga e, conforme o passo, a OS, o histórico e o comando no outbox.
 - **Envio e rejeição de orçamento** — as mensagens `billing.quote.sent` e `billing.quote.rejected` movem a OS e registram o histórico numa transação; o e-mail do envio sai depois do commit (ver [Fluxo do orçamento, do envio à aprovação](#fluxo-do-orçamento-do-envio-à-aprovação)).
 
 ## Ciclo de vida da Ordem de Serviço
@@ -342,9 +364,10 @@ Transições permitidas (state machine validada no agregado `WorkOrder`):
 | `IN_DIAGNOSIS` | `AWAITING_APPROVAL`, `CANCELLED` |
 | `AWAITING_APPROVAL` | `APPROVED`, `REJECTED`, `CANCELLED` |
 | `REJECTED` | `AWAITING_APPROVAL` |
-| `APPROVED` | `IN_PROGRESS` |
+| `APPROVED` | `IN_PROGRESS`, `AWAITING_PAYMENT` |
+| `AWAITING_PAYMENT` | `APPROVED`, `COMPLETED` (só o status de origem guardado na Saga de cobrança) |
 | `IN_PROGRESS` | `COMPLETED` |
-| `COMPLETED` | `DELIVERED` |
+| `COMPLETED` | `DELIVERED`, `AWAITING_PAYMENT` |
 | `DELIVERED` | (terminal) |
 | `CANCELLED` | (terminal) |
 
@@ -352,11 +375,13 @@ Regras adicionais:
 
 - `CANCELLED` exige `notes` no payload.
 - Atualização de campos editáveis (`problemDescription`, `internalNotes`, `mileageAtService`, mecânico) só é permitida em `RECEIVED` ou `IN_DIAGNOSIS`.
-- O endpoint `PATCH /work-orders/:id` aceita apenas as transições "operacionais" para `IN_DIAGNOSIS`, `CANCELLED` e `DELIVERED` (validado por `WorkOrder.assertAllowedPatchStatus`). As demais (`AWAITING_APPROVAL`, `APPROVED`, `REJECTED`, `IN_PROGRESS`, `COMPLETED`) são disparadas como efeito colateral das mensagens de orçamento do Billing e dos status de serviço.
-- Timestamps `approvedAt`, `rejectedAt`, `startedAt`, `finishedAt` e `deliveredAt` são preenchidos automaticamente pelo agregado quando o status correspondente é atingido.
+- O endpoint `PATCH /work-orders/:id` aceita apenas as transições "operacionais" para `IN_DIAGNOSIS`, `CANCELLED` e `DELIVERED`: o DTO da rota (`@IsEnum`) recusa qualquer outro status com **400**, e o `UpdateWorkOrderStatusUseCase` repete a mesma lista para quem o chama fora da rota. As demais (`AWAITING_APPROVAL`, `APPROVED`, `REJECTED`, `AWAITING_PAYMENT`, `IN_PROGRESS`, `COMPLETED`) são disparadas como efeito colateral das mensagens do Billing e dos status de serviço.
+- **`AWAITING_PAYMENT` só entra e sai pela Saga de cobrança** (`holdForPayment()` e `releasePaymentHold(origem)`). Nesse status, iniciar serviço, entregar e cancelar respondem **409** `Ordem de serviço aguardando pagamento: execução, entrega e cancelamento voltam a valer quando a cobrança for paga, expirar ou for cancelada`; concluir serviço responde o 409 da regra do item, porque nenhum item está em execução (a OS chega de `APPROVED`, com os itens pendentes, ou de `COMPLETED`, com os itens concluídos).
+- A entrega (`COMPLETED` → `DELIVERED`) exige saldo zero no Billing (ver [Entrega com saldo zero](#entrega-com-saldo-zero)).
+- Timestamps `approvedAt`, `rejectedAt`, `startedAt`, `finishedAt` e `deliveredAt` são preenchidos automaticamente pelo agregado quando o status correspondente é atingido. O bloqueio e a volta da cobrança não os mexem: a OS que volta a `APPROVED` mantém a data da aprovação do orçamento, e a que volta a `COMPLETED`, a da conclusão.
 - Apenas mecânicos **ativos** podem ser atribuídos como `assignedUser` (validado tanto na criação quanto na atualização).
 - O número da OS é gerado por uma sequence PostgreSQL (`work_order_number_seq`) e formatado com 6 dígitos zero-padded (`000001`, `000002`, …).
-- A listagem (`GET /work-orders`) aceita ordenação (`sort`) por `status` e/ou `createdAt`. Ao ordenar por `status`, a ordem segue a `priority` definida na tabela de referência `WorkOrderStatusInfo` (`RECEIVED` → … → `CANCELLED`), não a ordem alfabética. Padrão: `status:desc,createdAt:asc`.
+- A listagem (`GET /work-orders`) aceita ordenação (`sort`) por `status` e/ou `createdAt`. Ao ordenar por `status`, a ordem segue a `priority` definida na tabela de referência `WorkOrderStatusInfo`, não a ordem alfabética: `RECEIVED` 1, `IN_DIAGNOSIS` 2, `AWAITING_APPROVAL` 3, `REJECTED` 4, `APPROVED` 5, `AWAITING_PAYMENT` 6, `IN_PROGRESS` 7, `COMPLETED` 8, `DELIVERED` 9 e `CANCELLED` 10. Padrão: `status:desc,createdAt:asc`, sem as OS em `COMPLETED`, `DELIVERED` e `CANCELLED`; uma OS aguardando o pagamento aparece entre as em execução e as aprovadas, venha ela de `APPROVED` ou de `COMPLETED`.
 
 ## Orçamentos no Billing
 
@@ -365,11 +390,13 @@ Os orçamentos são do **Billing**, o serviço da solução dono dos orçamentos
 - abre a OS com o orçamento inicial criado no Billing ([Saga de abertura](#saga-de-abertura));
 - reage às mensagens que o Billing publica quando um orçamento é enviado, rejeitado ou aprovado, movendo a OS ([Fluxo do orçamento, do envio à aprovação](#fluxo-do-orçamento-do-envio-à-aprovação));
 - orquestra a aprovação, que reserva o estoque no Inventory e, se a reserva falhar, pede ao Billing que desfaça a aprovação ([Aprovação de orçamento com reserva de estoque](#aprovação-de-orçamento-com-reserva-de-estoque));
-- serve os orçamentos na área do Cliente da Oficina, lendo-os no Billing e repassando a decisão a ele ([Orçamentos na área do Cliente da Oficina](#orçamentos-na-área-do-cliente-da-oficina)).
+- bloqueia a OS enquanto o cliente paga uma cobrança criada no Billing e pede o cancelamento dela quando a OS já não pode ser cobrada ([Saga de cobrança](#saga-de-cobrança));
+- confere o saldo no Billing antes de entregar a OS ([Entrega com saldo zero](#entrega-com-saldo-zero));
+- serve os orçamentos e as cobranças na área do Cliente da Oficina, lendo-os no Billing e repassando a decisão do orçamento a ele ([Orçamentos e cobranças na área do Cliente da Oficina](#orçamentos-e-cobranças-na-área-do-cliente-da-oficina)).
 
-Do orçamento, a OS guarda só os itens aprovados (id, quantidade e preço), materializados quando ela vai a `APPROVED`.
+Do orçamento, a OS guarda só os itens aprovados (id, quantidade e preço), materializados quando ela vai a `APPROVED`. Das cobranças, nada: o saldo e a lista de cobranças são lidos no Billing quando alguém precisa deles.
 
-Os dois fluxos que gravam neste serviço e no Billing são **Sagas**: uma sequência de transações locais, cada uma num serviço, ligadas por chamadas ou mensagens, em que a falha de um passo dispara um passo de **compensação** que desfaz o que os anteriores gravaram.
+Os três fluxos que gravam neste serviço e no Billing são **Sagas**: uma sequência de transações locais, cada uma num serviço, ligadas por chamadas ou mensagens, em que a falha de um passo dispara um passo de **compensação** que desfaz o que os anteriores gravaram. Este serviço orquestra as três: a de abertura, a de aprovação e a de cobrança. A decisão e as alternativas descartadas estão no [ADR 0025](adr/0025-sagas-orquestradas-no-work-order.md).
 
 ## Saga de abertura
 
@@ -388,7 +415,7 @@ A decisão e as alternativas descartadas estão no [ADR 0024](adr/0024-saga-de-a
 
 ## Aprovação de orçamento com reserva de estoque
 
-A aprovação é síncrona no Billing: pela rota do funcionário ou pela decisão do cliente repassada por este serviço, o Billing responde `200`, marca o orçamento `APPROVED`, rejeita os outros orçamentos `PENDING` e `SENT` da OS e grava no outbox dele a mensagem `billing.quote.approved`, com os itens (ids, quantidades e preços) e o total. A OS só pode ir a `APPROVED` com as peças reservadas no Inventory, e a reserva pode falhar depois de o Billing gravar a aprovação. Por isso a aprovação é a **Saga de aprovação**, orquestrada por este serviço, com o estado em `saga_instances`: uma linha `QUOTE_APPROVAL` por orçamento, com `correlation_id` igual ao id dele, única junto com o tipo (ver [Banco de Dados](database.md#saga-de-aprovação)).
+A aprovação é síncrona no Billing: pela rota do funcionário ou pela decisão do cliente repassada por este serviço, o Billing responde `200`, marca o orçamento `APPROVED`, rejeita os outros orçamentos `PENDING` e `SENT` da OS e grava no outbox dele a mensagem `billing.quote.approved`, com os itens (ids, quantidades e preços) e o total. A OS só pode ir a `APPROVED` com as peças reservadas no Inventory, e a reserva pode falhar depois de o Billing gravar a aprovação. Por isso a aprovação é a **Saga de aprovação**, orquestrada por este serviço, com o estado em `saga_instances`: uma linha `QUOTE_APPROVAL` por orçamento, com `correlation_id` igual ao id dele, única junto com o tipo (ver [Banco de Dados](database.md#sagas)).
 
 Cada mensagem é tratada por um caso de uso de `application/use-cases/quote-approval/` (portas em `application/ports/input/quote-approval/`), registrado no `QuoteApprovalMessageHandlers` de `infrastructure/messaging/handlers/quote-approval/`. Cada passo roda numa transação que grava a Saga e, conforme o passo, a OS com a `version` (o que ordena as mensagens dela no outbox), o histórico e o comando no outbox:
 
@@ -401,7 +428,7 @@ Cada mensagem é tratada por um caso de uso de `application/use-cases/quote-appr
 | `inventory.stock.reserved` | Saga em `RESERVING_STOCK` | Lê o orçamento aprovado no Billing (`GET /internal/quotes/:id`, 5 s), leva a OS a `APPROVED` com os itens e o total dele, grava o histórico com o autor `decidedBy` e marca a Saga `COMPLETED` | `CompleteQuoteApprovalUseCase` |
 | `inventory.stock.reservation_failed` | Saga em `RESERVING_STOCK` | Saga vai a `COMPENSATING` com `failure_reason = INSUFFICIENT_STOCK` e manda `billing.quote.revert_approval` (`revertTo = 'SENT'`) | `CompensateQuoteApprovalUseCase` |
 | `billing.quote.approval_reverted` | Saga em `COMPENSATING` | Saga vai a `COMPENSATED`; o histórico da OS ganha uma entrada com o mesmo status de entrada e saída e a nota do motivo; com falta de estoque, e-mail ao cliente depois do commit | `ConfirmQuoteApprovalReversalUseCase` |
-| Qualquer mensagem acima | Outra combinação (mensagem repetida ou fora de hora) | Registra `quote_approval.step_skipped` e confirma a mensagem, sem efeito | — |
+| Qualquer mensagem acima | Outra combinação (mensagem repetida ou fora de hora) | Registra `saga.step_skipped` e confirma a mensagem, sem efeito | — |
 
 - **Idempotência:** a unicidade de `(QUOTE_APPROVAL, quoteId)` é o que torna `billing.quote.approved` idempotente. Uma reentrega depois de a OS ir a `APPROVED` encontra a Saga `COMPLETED` e é ignorada; sem a linha, ela veria a OS fora de `AWAITING_APPROVAL` e reverteria um orçamento válido. Por isso a aprovação sem peças também grava a Saga. A única linha reaberta é a compensada por falta de estoque: o orçamento voltou a `SENT`, então um novo `billing.quote.approved` é uma nova aprovação.
 - **Billing fora do ar na reserva confirmada:** a leitura do orçamento falha, o handler lança e a mensagem volta à fila, até ir para a DLQ (fila de mensagens mortas, de onde volta por redrive) na quinta entrega.
@@ -491,15 +518,70 @@ Agora:
 - os itens aprovados são lidos no Billing na conclusão da reserva, porque a resposta do Inventory só traz o id do orçamento;
 - a área do cliente lê os orçamentos no Billing e repassa a decisão a ele.
 
-## Orçamentos na área do Cliente da Oficina
+## Saga de cobrança
 
-O Cliente da Oficina se autentica por CPF e senha numa função serverless externa (ver [ADR 0004](./adr/0004-autenticacao-de-clientes.md)) e, com o token, consulta e decide os orçamentos das OS vinculadas a ele. Os orçamentos vêm do Billing pelo `IBillingQuotesGateway`, e a autorização por vínculo (`CustomerAccessPolicy`, ver [seção acima](#identidade-externa-autenticação-e-autorização-por-vínculo)) fica aqui, porque o vínculo entre usuário e cliente é deste serviço:
+O pagamento é do Billing. O funcionário cria uma **cobrança** de uma OS em `APPROVED` (um sinal, antes da execução) ou em `COMPLETED` (o restante, antes da entrega) pela rota `POST /api/payments` do Billing. O Billing cria a ordem de pagamento no Mercado Pago, o provedor de pagamento da solução, grava a cobrança `PENDING` e publica `billing.payment.requested`, com o id da cobrança (`paymentId`), o valor, o link do Checkout Pro (a página de pagamento do Mercado Pago, que não pede login) e a validade do link. Este serviço reage bloqueando a OS em `AWAITING_PAYMENT` até o pagamento terminar.
+
+**Por que é uma Saga.** A cobrança grava em dois serviços: o Billing grava a cobrança e a ordem no Mercado Pago, e este serviço grava o bloqueio da OS. O passo daqui pode falhar depois de o Billing gravar: entre a criação da cobrança e a chegada da mensagem, outro funcionário pode ter iniciado a execução, e uma OS em `IN_PROGRESS` não pode mais ir a `AWAITING_PAYMENT`. Sem compensação, a cobrança ficaria pendente, o cliente não receberia o link (o e-mail sai deste serviço) e o sinal, que deveria segurar a execução, não seguraria nada. A compensação cancela a cobrança no Billing. Quando é o pagamento que não acontece (o link expirou, o Mercado Pago recusou ou o funcionário cancelou a cobrança), a compensação é devolver a OS ao status de antes do bloqueio.
+
+O estado fica em `saga_instances`, numa linha `PAYMENT` por cobrança, com `correlation_id` igual ao `paymentId`, única junto com o tipo, e `origin_status` com o status da OS antes do bloqueio (`APPROVED` ou `COMPLETED`), para onde ela volta (ver [Banco de Dados](database.md#sagas)). A origem é guardada porque nenhuma outra fonte a informa: o Billing não sabe de onde a OS veio, e o histórico da OS pode ganhar outras entradas.
+
+Cada mensagem é tratada por um caso de uso de `application/use-cases/payment/` (portas em `application/ports/input/payment/`), registrado no `PaymentMessageHandlers` de `infrastructure/messaging/handlers/payment/`. Cada passo roda numa transação que grava a Saga e, conforme o passo, a OS com a `version`, o histórico e o comando no outbox:
+
+| Mensagem que chega | Situação | O que o work-order faz | Caso de uso |
+|---|---|---|---|
+| `billing.payment.requested` | OS em `APPROVED` ou `COMPLETED` | Cria a Saga em `AWAITING_PAYMENT` com o status de origem, leva a OS a `AWAITING_PAYMENT` e grava o histórico; depois do commit, manda o e-mail com o link | `StartPaymentUseCase` |
+| `billing.payment.requested` | OS em outro status (execução iniciada no intervalo, por exemplo) | Cria a Saga em `COMPENSATING` com `failure_reason = WORK_ORDER_NOT_PAYABLE` e manda `billing.payment.cancel` (`{ paymentId, reason: 'WORK_ORDER_NOT_PAYABLE' }`); a OS não muda e nenhum e-mail sai | `StartPaymentUseCase` |
+| `billing.payment.approved` | Saga em `AWAITING_PAYMENT` | Devolve a OS à origem, grava o histórico e marca a Saga `COMPLETED` | `ApplyPaymentResultUseCase` |
+| `billing.payment.failed` | Saga em `AWAITING_PAYMENT` | Devolve a OS à origem, grava o histórico e marca a Saga `COMPENSATED` com o motivo pelo `reason` da mensagem: `EXPIRED` → `PAYMENT_EXPIRED`, `REJECTED` → `PAYMENT_REJECTED`, `CANCELLED` → `PAYMENT_CANCELLED` | `ApplyPaymentResultUseCase` |
+| `billing.payment.failed` | Saga em `COMPENSATING` | Marca a Saga `COMPENSATED`, mantendo o motivo `WORK_ORDER_NOT_PAYABLE`; a OS não muda | `ApplyPaymentResultUseCase` |
+| `billing.payment.approved` | Saga em `COMPENSATING` (o cliente pagou antes de o cancelamento chegar ao Mercado Pago) | Marca a Saga `COMPLETED`, mantendo o motivo; a OS não muda, e o valor pago entra no saldo do Billing | `ApplyPaymentResultUseCase` |
+| Qualquer mensagem acima | Outra combinação (mensagem repetida, cobrança sem Saga ou Saga já encerrada) | Registra `saga.step_skipped` e confirma a mensagem, sem efeito | — |
+
+- **Idempotência:** a unicidade de `(PAYMENT, paymentId)` torna `billing.payment.requested` idempotente. Uma reentrega encontra a Saga, em qualquer status, e é ignorada: não bloqueia de novo nem manda outro e-mail, mesmo que a OS já tenha voltado à origem. Um resultado repetido encontra a Saga encerrada e também é ignorado.
+- **Envelope:** `billing.payment.requested` sem o id da OS no envelope é recusado (`Mensagem sem a ordem de serviço no envelope`) e vai para a DLQ. `billing.payment.approved` e `billing.payment.failed` não precisam dele: a Saga é encontrada pelo `paymentId`.
+- **Histórico:** a mensagem não diz quem criou a cobrança, então as entradas do bloqueio e da volta ficam sem autor, com uma nota que identifica a cobrança e o desfecho: `Aguardando o pagamento da cobrança <paymentId>` no bloqueio, e `Cobrança <paymentId> paga`, `expirada`, `recusada` ou `cancelada` na volta.
+- **E-mail do link:** vai aos mesmos destinatários do e-mail do orçamento (`CustomerEmailRecipients`, em `domain/services/`): os usuários ativos vinculados ao cliente ou, sem nenhum, o e-mail do cliente. O assunto é `Pagamento da Ordem de Serviço <número>`, e o texto traz o valor, o link e a validade no fuso de São Paulo. Uma falha no envio só vai para o log do mailer e não desfaz o bloqueio.
+- **Ordem das mensagens:** a compensação grava a OS com a `version` mesmo sem mudá-la, antes de gravar `billing.payment.cancel` no outbox, pelo mesmo motivo da Saga de aprovação (ver [Por que a compensação grava a OS sem mudá-la](#por-que-a-compensação-grava-a-os-sem-mudá-la)).
+- **Cache:** o bloqueio e a volta apagam a chave da OS no cache depois do commit; o pedido e o fim da compensação não mudam a OS e não apagam nada.
+
+**Sinal e restante** usam a mesma Saga, uma linha por cobrança:
+
+| Cobrança | Caminho da OS |
+|---|---|
+| Sinal | `APPROVED` → `AWAITING_PAYMENT` → paga → `APPROVED` → execução |
+| Restante | `COMPLETED` → `AWAITING_PAYMENT` → paga → `COMPLETED` → entrega com saldo zero |
+| Cobrança total, sem sinal | Uma só cobrança, criada com a OS em `APPROVED` ou em `COMPLETED` |
+
+**Cancelar a cobrança.** Uma OS parada em `AWAITING_PAYMENT` (o cliente não pagou, ou o aviso do Mercado Pago não chegou) volta quando o funcionário cancela a cobrança no Billing (`POST /api/payments/:id/cancellations`): o Billing publica `billing.payment.failed` com `CANCELLED`, e a OS volta à origem. Iniciar a execução, entregar e cancelar a OS ficam bloqueados enquanto ela aguarda o pagamento, com a mensagem de [Ciclo de vida da Ordem de Serviço](#ciclo-de-vida-da-ordem-de-serviço).
+
+**Histórico e métricas.** A volta de `AWAITING_PAYMENT` grava outra entrada no status de origem. A permanência em `AWAITING_PAYMENT` é medida como a de qualquer status com saída, e o total "diagnóstico até conclusão" só é medido na primeira entrada em `COMPLETED`, para que a volta da cobrança do restante não o registre de novo, maior (ver [Observabilidade](observability.md#métricas-de-negócio)).
+
+### Entrega com saldo zero
+
+O `UpdateWorkOrderStatusUseCase`, ao receber `DELIVERED`, lê a OS antes de abrir a transação. Só se ela pode ir a `DELIVERED` (está em `COMPLETED`), ele consulta o saldo no Billing pelo `IBillingPaymentsGateway` (`GET /internal/work-orders/:workOrderId/balance`, prazo padrão de 2 s), que devolve o total aprovado, o total pago e o saldo, como texto decimal (`"400.00"`):
+
+| Situação | Resposta |
+|---|---|
+| Saldo maior que zero | **409** `Ordem de serviço com saldo a pagar de R$ <saldo>: a entrega é liberada depois que o saldo for quitado`; a OS segue em `COMPLETED` |
+| Saldo zero | A OS vai a `DELIVERED` |
+| Billing fora do ar ou sem resposta em 2 s | **503** `Serviço de destino indisponível`, sem entregar |
+| OS fora de `COMPLETED` | O **409** da transição recusada, sem consultar o Billing |
+
+A consulta fica fora da transação para não segurar uma conexão do banco durante a chamada HTTP. Ler a OS antes evita que uma OS em `RECEIVED`, por exemplo, receba "saldo a pagar" (ou 503 com o Billing fora) no lugar do 409 da transição.
+
+Diagrama de sequência da cobrança paga, da cobrança com a OS já em execução e da cobrança expirada: ver [`docs/sequence-diagrams.md`](sequence-diagrams.md#saga-de-cobrança).
+
+## Orçamentos e cobranças na área do Cliente da Oficina
+
+O Cliente da Oficina se autentica por CPF e senha numa função serverless externa (ver [ADR 0004](./adr/0004-autenticacao-de-clientes.md)) e, com o token, consulta e decide os orçamentos das OS vinculadas a ele e consulta as cobranças delas. Os orçamentos vêm do Billing pelo `IBillingQuotesGateway` e as cobranças pelo `IBillingPaymentsGateway`, e a autorização por vínculo (`CustomerAccessPolicy`, ver [seção acima](#identidade-externa-autenticação-e-autorização-por-vínculo)) fica aqui, porque o vínculo entre usuário e cliente é deste serviço:
 
 - **`GET /api/me/work-orders/:id/quotes`** (`FindMyWorkOrdersQuotesUseCase`) confere o vínculo com a OS e então lista os orçamentos dela no Billing (`GET /internal/work-orders/:workOrderId/quotes`, prazo padrão de 2 s: a listagem só devolve resumos, sem consultar o Inventory).
 - **`GET /api/me/quotes/:id`** (`FindMyQuoteByIdUseCase`) lê antes o orçamento no Billing (`GET /internal/quotes/:id`, 5 s, porque o detalhe do Billing lê o catálogo no Inventory), já que só o Billing sabe a qual OS ele pertence, e então confere o vínculo.
 - **`POST /api/me/quotes/:id/decisions`** (`DecideMyQuoteUseCase`) lê o orçamento da mesma forma, confere o vínculo, a OS em `AWAITING_APPROVAL` e a ausência de Saga ativa, e só então repassa a decisão (`POST /internal/quotes/:id/decisions`, 5 s, porque o Billing lê o catálogo antes de decidir), com o usuário autenticado como autor. Uma decisão recusada aqui nunca chega ao Billing.
+- **`GET /api/me/work-orders/:id/payments`** (`FindMyWorkOrderPaymentsUseCase`) confere o vínculo com a OS e então lista as cobranças dela no Billing (`GET /internal/work-orders/:workOrderId/payments`, 2 s). Cada cobrança sai com valor, status, link de pagamento, validade e datas; os ids internos do Billing (`checkoutId`, `workOrderId`) não saem.
 
-Sem vínculo, a resposta é **404**, e nada do orçamento é devolvido nem repassado. As respostas de cada desfecho estão em [Referência da API › Minha Conta](api.md#endpoints-disponíveis).
+Sem vínculo, a resposta é **404**, e nada do orçamento ou da cobrança é devolvido nem repassado; o Billing nem é consultado. As respostas de cada desfecho estão em [Referência da API › Minha Conta](api.md#endpoints-disponíveis).
 
 ## Mensageria, cache e chamadas internas
 
@@ -525,7 +607,7 @@ Para cada mensagem, o consumidor:
 
 1. extrai o contexto W3C dos atributos e abre um span `CONSUMER` (`process work-order.fifo`), a única instrumentação manual da aplicação (ver [Observabilidade](observability.md#consumo-de-mensagens));
 2. valida o envelope (`MessageEnvelopeDto`, class-validator) e o payload, pela classe que todo handler declara ao se registrar. A classe é obrigatória: o payload vem de outro serviço, e o tipo TypeScript do catálogo não é conferido em execução. Uma classe sem campos declara payload vazio (`inventory.stock.consume`). A mensagem de erro leva só os nomes das propriedades, nunca valores;
-3. procura o handler pelo `type` no `MessageHandlerRegistry`, que os módulos preenchem no `onModuleInit`, e o chama. Hoje são dois grupos, cada um com as classes de payload em `dto/`: o `QuoteMessageHandlers` (`handlers/quote/`, composto pelo `QuoteMessagingModule`) trata `billing.quote.sent` e `billing.quote.rejected`, e o `QuoteApprovalMessageHandlers` (`handlers/quote-approval/`, composto pelo `QuoteApprovalMessagingModule`) trata os passos da Saga de aprovação: `billing.quote.approved`, `inventory.stock.reserved`, `inventory.stock.reservation_failed` e `billing.quote.approval_reverted`. Uma mensagem de orçamento sem o id da OS no envelope é recusada (`Mensagem sem a ordem de serviço no envelope`) e vai para a DLQ. Os valores em dinheiro dos payloads chegam como texto com duas casas decimais e são conferidos por esse formato antes de virar número.
+3. procura o handler pelo `type` no `MessageHandlerRegistry`, que os módulos preenchem no `onModuleInit`, e o chama. Hoje são três grupos, cada um com as classes de payload em `dto/`: o `QuoteMessageHandlers` (`handlers/quote/`, composto pelo `QuoteMessagingModule`) trata `billing.quote.sent` e `billing.quote.rejected`; o `QuoteApprovalMessageHandlers` (`handlers/quote-approval/`, composto pelo `QuoteApprovalMessagingModule`) trata os passos da Saga de aprovação: `billing.quote.approved`, `inventory.stock.reserved`, `inventory.stock.reservation_failed` e `billing.quote.approval_reverted`; e o `PaymentMessageHandlers` (`handlers/payment/`, composto pelo `PaymentMessagingModule`) trata os passos da Saga de cobrança: `billing.payment.requested`, `billing.payment.approved` e `billing.payment.failed`. Uma mensagem de orçamento ou um pedido de cobrança sem o id da OS no envelope é recusado (`Mensagem sem a ordem de serviço no envelope`) e vai para a DLQ. Os valores em dinheiro dos payloads chegam como texto com duas casas decimais e são conferidos por esse formato antes de virar número; o link de pagamento precisa ser uma URL `http` ou `https`, e as datas, ISO 8601.
 
 Toda linha de log desse processamento carrega `messaging.*`, `oficina.messaging.message.type`, `oficina.work_order.id` e `request.id` igual ao `messageId`, então as linhas de uma mensagem se correlacionam como as de uma requisição.
 
@@ -541,8 +623,8 @@ O detalhe da OS (`GET /api/work-orders/:id` e `GET /internal/work-orders/:id`) u
 
 - **Chave e validade:** `work-order:work-order:<id>` (`workOrderCacheKey`), com TTL de `CACHE_TTL_SECONDS` (padrão 43.200 s, 12 h). Um valor que não seja inteiro maior que zero impede o boot: com ele, toda gravação no cache falharia.
 - **Valor:** um snapshot JSON da OS montado pelo `WorkOrderCacheMapper`, com `cacheVersion`. O snapshot não leva o usuário atribuído: na leitura do cache, o caso de uso busca o usuário por id, então o hash de senha não vai ao cache e o nome do mecânico não fica velho. Valor que não se lê (JSON inválido, campo que o domínio rejeita ou `cacheVersion` diferente do atual) conta como falta e é relido do banco e regravado. Assim, um valor gravado por outra versão do código não responde 500 depois de um deploy.
-- **Invalidação depois da escrita:** os casos de uso que escrevem na OS (`UpdateWorkOrder`, `UpdateWorkOrderStatus`, `UpdateWorkOrderServiceStatus`, `ApplySentQuote`, `ApplyRejectedQuote`, `StartQuoteApproval` e `CompleteQuoteApproval`), no cliente (`UpdateCustomer` e `UpdateCustomerStatus`) e no veículo (`UpdateVehicle`) apagam as chaves afetadas **depois** da escrita: os que usam transação (`UpdateWorkOrderStatus`, `UpdateWorkOrderServiceStatus` e os de orçamento e da Saga, só quando o status da OS mudou) depois do commit, com o resultado devolvido do callback, como os eventos de negócio; os demais (`UpdateWorkOrder`, cliente e veículo) logo depois do `update` no repositório. Cliente e veículo buscam as próprias OS para saber quais chaves apagar, e fazem essa leitura **antes** da escrita: se ela falhar, a requisição falha sem ter gravado nada, em vez de responder erro depois de uma escrita confirmada. A exclusão de cliente e de veículo não invalida nada: ela só acontece quando nenhuma OS os referencia.
-- **Itens de catálogo:** o snapshot guarda os itens só com id, quantidade, preço e status. Os dados de exibição (nome, descrição, SKU, unidade, categoria) não vão ao cache: o Clean Controller os lê no Inventory a cada leitura, com ou sem acerto no cache, então uma mudança no catálogo aparece na leitura seguinte. A compensação da Saga não apaga a chave, porque não muda campo nem item da OS (só incrementa a `version`, que nenhuma resposta mostra).
+- **Invalidação depois da escrita:** os casos de uso que escrevem na OS (`UpdateWorkOrder`, `UpdateWorkOrderStatus`, `UpdateWorkOrderServiceStatus`, `ApplySentQuote`, `ApplyRejectedQuote`, `StartQuoteApproval`, `CompleteQuoteApproval`, `StartPayment` e `ApplyPaymentResult`), no cliente (`UpdateCustomer` e `UpdateCustomerStatus`) e no veículo (`UpdateVehicle`) apagam as chaves afetadas **depois** da escrita: os que usam transação (`UpdateWorkOrderStatus`, `UpdateWorkOrderServiceStatus` e os de orçamento e das Sagas, só quando o status da OS mudou) depois do commit, com o resultado devolvido do callback, como os eventos de negócio; os demais (`UpdateWorkOrder`, cliente e veículo) logo depois do `update` no repositório. Cliente e veículo buscam as próprias OS para saber quais chaves apagar, e fazem essa leitura **antes** da escrita: se ela falhar, a requisição falha sem ter gravado nada, em vez de responder erro depois de uma escrita confirmada. A exclusão de cliente e de veículo não invalida nada: ela só acontece quando nenhuma OS os referencia.
+- **Itens de catálogo:** o snapshot guarda os itens só com id, quantidade, preço e status. Os dados de exibição (nome, descrição, SKU, unidade, categoria) não vão ao cache: o Clean Controller os lê no Inventory a cada leitura, com ou sem acerto no cache, então uma mudança no catálogo aparece na leitura seguinte. A compensação das Sagas que não muda a OS não apaga a chave, porque não muda campo nem item dela (só incrementa a `version`, que nenhuma resposta mostra).
 - **Cache fora do ar vira leitura no banco**, nunca erro nem fila de espera: o cliente roda com `enableOfflineQueue: false`, `maxRetriesPerRequest: 1` e `commandTimeout` de 500 ms, para que um Valkey que aceita TCP e não responde também caia para o banco. Falha de leitura ou gravação registra `cache.unavailable` (`warn`) e a leitura conta como falta; falha de exclusão registra `cache.invalidation_failed` (`error`), e a chave expira pelo TTL.
 
 A área do Cliente da Oficina (`/api/me/*`) não usa o cache.
@@ -563,7 +645,7 @@ Para chamar outro serviço, o caso de uso usa o gateway do dono (`application/po
 - usa prazo de 2 s por padrão (`timeoutMs` muda o prazo de uma chamada), sem retentativa e sem seguir redirecionamento;
 - converte o 4xx do serviço chamado em `ServiceRequestRejectedException`, que o filtro responde com o mesmo status e a mensagem do dono; timeout, falha de conexão e 5xx viram `ServiceIntegrationException` (503).
 
-São dois gateways. O do catálogo do Inventory é o `IInventoryCatalogGateway` (`application/ports/output/gateways/inventory/`), implementado pelo `HttpInventoryCatalogGateway` (`infrastructure/gateways/inventory/`) com o endereço de `INVENTORY_SERVICE_URL`. Ele busca cada serviço ou peça por `GET /internal/services/:id` e `GET /internal/parts-supplies/:id` do Inventory, em paralelo, trata o `404` como item ausente e qualquer outra falha como `503`. Quem o usa: as métricas por serviço e o `FindCatalogItemsUseCase`, que os Clean Controllers chamam para os dados de exibição dos itens da OS (ver [Dados de exibição dos itens](api.md#dados-de-exibição-dos-itens)). As fixtures das duas rotas do Inventory ficam copiadas em `app/test/contracts/inventory/`.
+São três gateways. O do catálogo do Inventory é o `IInventoryCatalogGateway` (`application/ports/output/gateways/inventory/`), implementado pelo `HttpInventoryCatalogGateway` (`infrastructure/gateways/inventory/`) com o endereço de `INVENTORY_SERVICE_URL`. Ele busca cada serviço ou peça por `GET /internal/services/:id` e `GET /internal/parts-supplies/:id` do Inventory, em paralelo, trata o `404` como item ausente e qualquer outra falha como `503`. Quem o usa: as métricas por serviço e o `FindCatalogItemsUseCase`, que os Clean Controllers chamam para os dados de exibição dos itens da OS (ver [Dados de exibição dos itens](api.md#dados-de-exibição-dos-itens)). As fixtures das duas rotas do Inventory ficam copiadas em `app/test/contracts/inventory/`.
 
 O dos orçamentos do Billing é o `IBillingQuotesGateway` (`application/ports/output/gateways/billing/`), implementado pelo `HttpBillingQuotesGateway` (`infrastructure/gateways/billing/`) com o endereço de `BILLING_SERVICE_URL`:
 
@@ -575,7 +657,16 @@ O dos orçamentos do Billing é o `IBillingQuotesGateway` (`application/ports/ou
 | `listWorkOrderQuotes` | `GET /internal/work-orders/:workOrderId/quotes` | 2 s | Listagem na área do cliente |
 | `decide` | `POST /internal/quotes/:id/decisions` | 5 s | Decisão na área do cliente |
 
-As chamadas com 5 s são as que o Billing só responde depois de ler o catálogo no Inventory: uma cadeia de dois saltos, em que o prazo de fora precisa caber o de dentro. As fixtures das respostas do Billing ficam copiadas em `app/test/contracts/billing/`.
+As chamadas com 5 s são as que o Billing só responde depois de ler o catálogo no Inventory: uma cadeia de dois saltos, em que o prazo de fora precisa caber o de dentro.
+
+O do saldo e das cobranças do Billing é o `IBillingPaymentsGateway` (mesma pasta), implementado pelo `HttpBillingPaymentsGateway`, com o mesmo `BILLING_SERVICE_URL`:
+
+| Método | Rota do Billing | Prazo | Quem usa |
+|---|---|---|---|
+| `getWorkOrderBalance` | `GET /internal/work-orders/:workOrderId/balance` | 2 s | Entrega da OS ([Entrega com saldo zero](#entrega-com-saldo-zero)) |
+| `listWorkOrderPayments` | `GET /internal/work-orders/:workOrderId/payments` | 2 s | Cobranças na área do cliente |
+
+As fixtures das respostas do Billing ficam copiadas em `app/test/contracts/billing/`.
 
 ## Exceções por Camada
 
@@ -628,7 +719,7 @@ Decisões arquiteturais relevantes são registradas em [`docs/adr/`](./adr) no f
 - [ADR 0008 — Autoscaling via HPA de pods, não autoscaling de cluster](./adr/0008-autoscaling-via-hpa.md)
 - [ADR 0009 — Clean Architecture e DDD em camadas, com fronteira livre de framework](./adr/0009-clean-architecture-ddd-em-camadas.md)
 - [ADR 0010 — Concorrência otimista via coluna `version`](./adr/0010-concorrencia-otimista-via-version.md)
-- [ADR 0011 — Unit of Work para transações multi-repositório](./adr/0011-unit-of-work-transacoes-multi-repositorio.md)
+- [ADR 0011 — Unit of Work para transações multi-repositório](./adr/0011-unit-of-work-transacoes-multi-repositorio.md) *(emendado pelo 0025)*
 - [ADR 0012 — Hierarquia de exceções por camada, com Exception Filters dedicados](./adr/0012-hierarquia-de-excecoes-por-camada.md)
 - [ADR 0013 — Autenticação interna via JWT stateless (access + refresh)](./adr/0013-autenticacao-interna-jwt-stateless.md) *(substituído pelo 0022)*
 - [ADR 0014 — Pipelines de CI, CD, SAST e DAST separados](./adr/0014-pipelines-ci-cd-sast-dast-separados.md)
@@ -642,6 +733,7 @@ Decisões arquiteturais relevantes são registradas em [`docs/adr/`](./adr) no f
 - [ADR 0022 — Token de funcionário em RS256 com chave pública por configuração](./adr/0022-token-de-funcionario-em-rs256.md)
 - [ADR 0023 — Catálogo e estoque no Inventory, com reserva pela Saga de aprovação](./adr/0023-catalogo-e-estoque-no-inventory-com-reserva-pela-saga.md) *(a aprovação e a compensação passaram ao Billing, ver o 0024)*
 - [ADR 0024 — Saga de abertura com orçamento inicial no Billing](./adr/0024-saga-de-abertura-com-orcamento-inicial-no-billing.md)
+- [ADR 0025 — Sagas orquestradas no work-order](./adr/0025-sagas-orquestradas-no-work-order.md)
 
 ## Modelo C4
 

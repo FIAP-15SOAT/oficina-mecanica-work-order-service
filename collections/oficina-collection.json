@@ -3872,6 +3872,131 @@
           "response": []
         },
         {
+          "name": "TC-WO-32 — Criar a cobrança do sinal (Billing)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+                  "pm.test('Cobrança pendente com o link de pagamento', () => {",
+                  "    const res = pm.response.json();",
+                  "    pm.expect(res.data.status).to.equal('PENDING');",
+                  "    pm.expect(res.data.checkoutUrl).to.be.a('string').and.not.empty;",
+                  "    pm.environment.set('paymentId', res.data.id);",
+                  "});",
+                  "",
+                  "// The work order only becomes AWAITING_PAYMENT after it consumes billing.payment.requested.",
+                  "const maxAttempts = 15;",
+                  "",
+                  "function waitForWorkOrderAwaitingPayment(attempt) {",
+                  "    pm.sendRequest({",
+                  "        url: pm.environment.get('baseUrl') + '/api/work-orders/' + pm.environment.get('workOrderId'),",
+                  "        method: 'GET',",
+                  "        header: { Authorization: 'Bearer ' + pm.environment.get('authToken') }",
+                  "    }, (err, res) => {",
+                  "        const status = !err && res.code === 200 ? res.json().data.status : null;",
+                  "",
+                  "        if (status === 'AWAITING_PAYMENT' || attempt >= maxAttempts) {",
+                  "            pm.test('OS aguardando pagamento depois da cobrança', () => pm.expect(status).to.equal('AWAITING_PAYMENT'));",
+                  "            return;",
+                  "        }",
+                  "",
+                  "        setTimeout(() => waitForWorkOrderAwaitingPayment(attempt + 1), 1000);",
+                  "    });",
+                  "}",
+                  "",
+                  "waitForWorkOrderAwaitingPayment(1);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"workOrderId\": \"{{workOrderId}}\", \"amount\": 10}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "payments"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "TC-WO-33 — Cancelar a cobrança do sinal (Billing)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Cobrança cancelada', () => pm.expect(pm.response.json().data.status).to.equal('CANCELLED'));",
+                  "",
+                  "// The work order returns to its origin only after it consumes billing.payment.failed.",
+                  "const maxAttempts = 15;",
+                  "",
+                  "function waitForWorkOrderApproved(attempt) {",
+                  "    pm.sendRequest({",
+                  "        url: pm.environment.get('baseUrl') + '/api/work-orders/' + pm.environment.get('workOrderId'),",
+                  "        method: 'GET',",
+                  "        header: { Authorization: 'Bearer ' + pm.environment.get('authToken') }",
+                  "    }, (err, res) => {",
+                  "        const status = !err && res.code === 200 ? res.json().data.status : null;",
+                  "",
+                  "        if (status === 'APPROVED' || attempt >= maxAttempts) {",
+                  "            pm.test('OS de volta a APPROVED depois do cancelamento', () => pm.expect(status).to.equal('APPROVED'));",
+                  "            return;",
+                  "        }",
+                  "",
+                  "        setTimeout(() => waitForWorkOrderApproved(attempt + 1), 1000);",
+                  "    });",
+                  "}",
+                  "",
+                  "waitForWorkOrderApproved(1);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/payments/{{paymentId}}/cancellations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "payments",
+                "{{paymentId}}",
+                "cancellations"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
           "name": "TC-WO-08 — Atualizar Status de Serviço na OS (IN_PROGRESS)",
           "event": [
             {
@@ -3968,13 +4093,14 @@
           "response": []
         },
         {
-          "name": "TC-WO-07 — Atualizar Status da OS (DELIVERED)",
+          "name": "TC-WO-07 — Entregar a OS com saldo a pagar (409)",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));"
+                  "pm.test('Status 409 Conflict', () => pm.response.to.have.status(409));",
+                  "pm.test('Mensagem do saldo a pagar', () => pm.expect(pm.response.json().message).to.include('saldo a pagar'));"
                 ],
                 "type": "text/javascript",
                 "packages": {},
@@ -5600,6 +5726,49 @@
               }
             }
           ]
+        },
+        {
+          "name": "TC-ME-13 — Cobranças de uma ordem de serviço vinculada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('Lista de cobranças no envelope data', () => pm.expect(pm.response.json().data).to.be.an('array'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerJwtToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/me/work-orders/{{workOrderId}}/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "me",
+                "work-orders",
+                "{{workOrderId}}",
+                "payments"
+              ]
+            }
+          },
+          "response": []
         },
         {
           "name": "TC-ME-09 — Orçamento e itens de uma ordem vinculada (sucesso)",

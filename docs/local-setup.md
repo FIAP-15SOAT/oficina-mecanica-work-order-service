@@ -162,12 +162,12 @@ Sem o Inventory de pé, a API sobe normalmente, mas as rotas que mostram ou grav
 
 ### Billing local
 
-`BILLING_SERVICE_URL` é o endereço das rotas `/internal` do Billing, o serviço da solução dono dos orçamentos e dos pagamentos ([`oficina-mecanica-billing-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service)). A API o chama para criar o orçamento inicial na abertura de uma OS com itens (e apagá-lo se a gravação da OS falhar), para ler e decidir os orçamentos na área do Cliente da Oficina e para ler o orçamento aprovado quando o Inventory confirma a reserva do estoque. Localmente, suba a stack do Billing pelo `docker compose` do repositório dele, que publica a API na porta `3002` do host.
+`BILLING_SERVICE_URL` é o endereço das rotas `/internal` do Billing, o serviço da solução dono dos orçamentos e dos pagamentos ([`oficina-mecanica-billing-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service)). A API o chama para criar o orçamento inicial na abertura de uma OS com itens (e apagá-lo se a gravação da OS falhar), para ler e decidir os orçamentos na área do Cliente da Oficina, para ler o orçamento aprovado quando o Inventory confirma a reserva do estoque, para conferir o saldo antes de entregar uma OS e para listar as cobranças na área do cliente. Localmente, suba a stack do Billing pelo `docker compose` do repositório dele, que publica a API na porta `3002` do host.
 
 - **API na máquina** (`npm run start:dev`): `http://localhost:3002`, o valor do `.env.example`.
 - **API no compose** (Quick Start): o `docker-compose.yml` sobrescreve o valor com `http://host.docker.internal:3002`, pelo mesmo `host.docker.internal` do Inventory.
 
-Sem o Billing de pé, a API sobe normalmente, mas a abertura de OS com itens e as rotas de orçamento de `/api/me` respondem 503, e uma mensagem `inventory.stock.reserved` volta à fila até o Billing responder. No cluster, o ConfigMap usa o endereço interno do Billing, `http://billing-service.billing.svc.cluster.local:3000`.
+Sem o Billing de pé, a API sobe normalmente, mas a abertura de OS com itens, a entrega e as rotas de orçamento e de cobrança de `/api/me` respondem 503, e uma mensagem `inventory.stock.reserved` volta à fila até o Billing responder. No cluster, o ConfigMap usa o endereço interno do Billing, `http://billing-service.billing.svc.cluster.local:3000`.
 
 ### Chaves do token de funcionário
 
@@ -236,6 +236,6 @@ O seed também cria dois usuários do fluxo **externo** (Cliente da Oficina, `ro
 
 Ambos com senha `Tech@2026`. Esse CPF + senha é o que se informa na [`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth) para obter um `customer-jwt` válido contra este seed.
 
-Os scripts de seed em `prisma/seeds/` são executados em ordem pelo entrypoint `prisma/seed.ts`: `work-order-status-info.seed.ts` (tabela de referência de prioridade dos status de OS), depois `user.seed.ts`, `customer.seed.ts`, `user-customer.seed.ts` (os vínculos da tabela acima), `vehicle.seed.ts` e `work-order.seed.ts`. Eles populam dados de referência para acelerar o onboarding e os testes manuais. Todos são idempotentes (`upsert`), então podem rodar a cada deploy sem duplicar registros.
+Os scripts de seed em `prisma/seeds/` são executados em ordem pelo entrypoint `prisma/seed.ts`: `work-order-status-info.seed.ts` (tabela de referência da prioridade de cada status de OS, de `RECEIVED` 1 a `CANCELLED` 10, com `AWAITING_PAYMENT` em 6, entre `APPROVED` e `IN_PROGRESS`; a migration `add_awaiting_payment_priority` grava os mesmos valores num banco que já existia), depois `user.seed.ts`, `customer.seed.ts`, `user-customer.seed.ts` (os vínculos da tabela acima), `vehicle.seed.ts` e `work-order.seed.ts`. Eles populam dados de referência para acelerar o onboarding e os testes manuais. Todos são idempotentes (`upsert`), então podem rodar a cada deploy sem duplicar registros.
 
 Usuários, clientes e veículos nascem com **UUIDs fixos**, os mesmos em todos os serviços da oficina, para que as referências entre serviços casem desde o primeiro deploy. Serviços e peças são semeados pelo Inventory, com os ids da mesma lista; as OS do seed usam esses ids nos itens. A lista canônica está em [Ids canônicos do seed](seed-ids.md).

@@ -87,21 +87,21 @@ A sensibilidade declarada é o que mascara: `subjectName`/`subjectEmail` saem ma
 O Prisma só pede o COMMIT quando o callback de `$transaction` retorna, então a última linha dentro de `executeTransaction` ainda roda *antes* do commit. O padrão é retornar um **composto**, desestruturá-lo depois do `await` e só então emitir:
 
 ```ts
-const { workOrder, workOrderStatusTransition } = await this.unitOfWork.executeTransaction(
-  (repos) => this.complete(repos, saga, quote),
-);
+const {
+  saga: completedSaga,
+  workOrder,
+  workOrderStatusTransition,
+} = await this.unitOfWork.executeTransaction((repos) => this.complete(repos, saga, quote));
 
 await this.cache.delete([workOrderCacheKey(workOrder.id)]);
 
-this.logger.event(BUSINESS_EVENTS.QUOTE_APPROVAL_COMPLETED, {
-  sagaId: saga.id,
-  quoteId,
-  workOrderId: workOrder.id,
+recordSagaTransition(this.logger, this.metrics, completedSaga, {
+  started: false,
   workOrderNumber: workOrder.number.toString(),
 });
 ```
 
-O trecho é do `CompleteQuoteApprovalUseCase`, o passo da Saga de aprovação que leva a OS a `APPROVED` quando o Inventory confirma a reserva do estoque.
+O trecho é do `CompleteQuoteApprovalUseCase`, o passo da Saga de aprovação que leva a OS a `APPROVED` quando o Inventory confirma a reserva do estoque. O `recordSagaTransition` (ver [Sinais das Sagas](#sinais-das-sagas)) emite a linha `saga.completed` e as métricas da Saga com a linha que o repositório devolveu de dentro da transação.
 
 Nenhum tipo de retorno público muda, nenhuma regra de negócio é duplicada, e um rollback lança antes do emit — então uma operação revertida nunca produz log de sucesso.
 
@@ -109,7 +109,7 @@ Nenhum tipo de retorno público muda, nenhuma regra de negócio é duplicada, e 
 
 ### A régua para dar um logger a um caso de uso
 
-*Este log responde a uma pergunta que o access log não responde?* Método, rota, status, duração e autor já estão lá — `logger.info('entrando em FindAllCustomers')` é ruído puro. O logger é injetado somente nos casos de uso que emitem eventos de segurança ou negócio declarados: autenticação e senha, concessão/revogação de acesso, os passos da Saga de aprovação (`quote_approval.*`), as mensagens de orçamento ignoradas (`quote_event.skipped`), a compensação da abertura que falhou (`work_order.opening.compensation_failed`), usuário e transições de ordem de serviço. Os demais casos de uso não recebem logger deliberadamente.
+*Este log responde a uma pergunta que o access log não responde?* Método, rota, status, duração e autor já estão lá — `logger.info('entrando em FindAllCustomers')` é ruído puro. O logger é injetado somente nos casos de uso que emitem eventos de segurança ou negócio declarados: autenticação e senha, concessão/revogação de acesso, os passos das Sagas de aprovação e de cobrança (`saga.*`), as mensagens de orçamento ignoradas (`quote_event.skipped`), a compensação da abertura que falhou (`work_order.opening.compensation_failed`), usuário e transições de ordem de serviço. Os demais casos de uso não recebem logger deliberadamente.
 
 Os passos da Saga de aprovação são donos das transições da OS e emitem o evento somente depois da confirmação transacional. A decisão do Cliente da Oficina (`DecideMyQuoteUseCase`) não emite evento próprio: ela resolve a autorização por vínculo e repassa a decisão ao Billing, o serviço dono dos orçamentos, que a registra; o access log, com `http.route`, e o `request.id`, propagado ao Billing no `x-request-id`, correlacionam as linhas.
 
@@ -273,12 +273,14 @@ Métrica técnica do consumidor:
 
 ### Métricas de negócio
 
-Uma porta `IMetrics` em `application/ports/output/services/`, no mesmo molde de `ILogger` e pelo mesmo critério — *a camada de aplicação precisa emitir esse sinal?* Para traces a resposta é não (o span vem do transporte, e por isso não existe `ITracer`); para estas métricas o requisito faz do caso de uso o emissor, e a porta tem **6 chamadores**.
+Uma porta `IMetrics` em `application/ports/output/services/`, no mesmo molde de `ILogger` e pelo mesmo critério — *a camada de aplicação precisa emitir esse sinal?* Para traces a resposta é não (o span vem do transporte, e por isso não existe `ITracer`); para estas métricas o requisito faz do caso de uso o emissor, e a porta chega a **11 casos de uso**: a abertura, a mudança de status e a execução de serviço da OS, o envio e a rejeição de orçamento, os quatro passos da Saga de aprovação e os dois da Saga de cobrança.
 
 ```
 application/ports/output/services/metrics.service.interface.ts   IMetrics — interface TS pura
 application/metrics/business-metric.catalog.ts          nome lógico, instrumento, unidade, atributos
 application/metrics/work-order-duration.ts              cálculo puro de permanência e totais
+application/metrics/work-order-metrics.ts               sinais de uma transição da OS (recordWorkOrderTransition)
+application/metrics/saga-metrics.ts                     sinais de uma transição de Saga (recordSagaTransition)
 infrastructure/telemetry/metric-registry.ts             lógico para físico, agregação, cardinalidade
 infrastructure/telemetry/otel-metrics.adapter.ts        Meter do OTel, instrumento criado uma vez
 ```
@@ -289,6 +291,11 @@ infrastructure/telemetry/otel-metrics.adapter.ts        Meter do OTel, instrumen
 | `oficina.work_order.status.duration` | Histogram | `s` | `oficina.work_order.status` |
 | `oficina.work_order.diagnosis_to_completion.duration` | Histogram | `s` | — |
 | `oficina.work_order.lead_time.duration` | Histogram | `s` | — |
+| `oficina.saga.started` | Counter | `{saga}` | `oficina.saga.type` |
+| `oficina.saga.finished` | Counter | `{saga}` | `oficina.saga.type`, `oficina.saga.outcome` |
+| `oficina.saga.duration` | Histogram | `s` | `oficina.saga.type`, `oficina.saga.outcome` |
+
+As três últimas são das Sagas e estão em [Sinais das Sagas](#sinais-das-sagas). A permanência por status vale para `AWAITING_PAYMENT` como para qualquer status com saída, e o total "diagnóstico até conclusão" (`oficina.work_order.diagnosis_to_completion.duration`) só é medido na **primeira** entrada no status que o encerra: a OS que volta de `AWAITING_PAYMENT` a `COMPLETED` grava outra entrada em `COMPLETED`, e medir de novo registraria o mesmo total duas vezes, a segunda maior.
 
 Quatro regras que o código torna difíceis de violar:
 
@@ -298,6 +305,24 @@ Quatro regras que o código torna difíceis de violar:
 4. **Os dois extremos de cada intervalo vêm do carimbo do banco**, e a leitura acontece **depois do commit**, fora da transação. `created_at` é `@default(now())`, e usar `Date.now()` do processo subtrairia relógios distintos — sob desvio pod-RDS, produziria durações negativas, que o SDK descarta em silêncio. Dentro da transação, essa leitura — que existe só para observabilidade — podia derrubar a operação de negócio junto, e sem conserto local: no PostgreSQL a transação já estaria abortada e o `COMMIT` viraria ROLLBACK silencioso, com a API respondendo sucesso. A transição corrente é localizada por **id**, nunca por posição.
 
 A agregação das durações é **exponencial**, declarada no registry: a padrão usa fronteiras que terminam em 10 000, dimensionadas para milissegundos de requisição, e permanências medidas em segundos cairiam **todas** no último balde — a média continuaria certa e os percentis não teriam significado, sem nada falhar.
+
+### Sinais das Sagas
+
+As Sagas de aprovação (`QUOTE_APPROVAL`) e de cobrança (`PAYMENT`) emitem logs e métricas por um ponto só, `recordSagaTransition` (`application/metrics/saga-metrics.ts`), chamado pelos casos de uso depois do commit, a cada mudança de status de uma Saga. A Saga de abertura não emite esses sinais: ela não tem linha em `saga_instances` e começa e termina dentro de uma requisição, que o access log já registra.
+
+| Evento (`info`) | Quando | Campos além dos comuns |
+| --- | --- | --- |
+| `saga.started` | A Saga foi criada, ou reaberta pela reaprovação de um orçamento compensado por falta de estoque | — |
+| `saga.compensation.started` | A Saga passou a `COMPENSATING` e o desfazer foi pedido ao outro serviço | `oficina.saga.failure_reason`; na falta de estoque, `oficina.stock.reservation.missing_item_count` (quantos itens faltaram) |
+| `saga.completed` | A Saga passou a `COMPLETED` | — |
+| `saga.compensated` | A Saga passou a `COMPENSATED`, com o desfazer confirmado | `oficina.saga.failure_reason` |
+| `saga.step_skipped` | Uma mensagem chegou com a Saga num status que não a espera (repetida, fora de hora ou sem Saga) e foi confirmada sem efeito | Só `oficina.saga.type`, `oficina.saga.status` (quando há Saga) e `oficina.quote.id` ou `oficina.payment.id` |
+
+Os campos comuns dos quatro primeiros são `oficina.saga.id`, `oficina.saga.type`, `oficina.saga.status`, `oficina.work_order.id`, `oficina.work_order.number` e, pelo `correlation_id` da Saga, `oficina.quote.id` (aprovação) ou `oficina.payment.id` (cobrança). O nome do evento é o mesmo nas duas Sagas, e o passo concreto sai do par tipo + status: `QUOTE_APPROVAL` com `RESERVING_STOCK` é a reserva pedida ao Inventory; `PAYMENT` com `AWAITING_PAYMENT`, a OS bloqueada à espera do pagamento. Uma Saga que já nasce em `COMPENSATING` (a OS saiu do status esperado antes da mensagem) emite `saga.started` e `saga.compensation.started` na mesma transição. Cada fato tem uma linha só: estes eventos substituíram os `quote_approval.*` que a Saga de aprovação emitia antes.
+
+As métricas acompanham os eventos: `saga.started` conta `oficina.saga.started`; `saga.completed` e `saga.compensated` contam `oficina.saga.finished`, com `oficina.saga.outcome` = `completed` ou `compensated`, e registram `oficina.saga.duration`. Os dois atributos têm cardinalidade fixa (dois tipos e dois desfechos).
+
+**A duração usa o relógio da aplicação nos dois extremos.** É `updated_at - created_at` da linha que o repositório devolve depois da gravação: `SagaInstance.create()` carimba a criação, que o repositório grava, e o `@updatedAt` do Prisma preenche a atualização com o mesmo relógio. Misturar o `now()` do banco num extremo com o relógio do pod no outro daria, sob desvio entre os dois, durações negativas, que o SDK descarta em silêncio; uma duração negativa é descartada antes, no próprio cálculo. Uma Saga reaberta conta como novo início, e a duração dela conta desde a criação da linha, não desde a reabertura.
 
 A aplicação **não cria** métrica própria de latência, contagem por rota, CPU, memória, disponibilidade ou resultado de health check. As métricas semconv que as instrumentações emitem sozinhas — `http.server.request.duration` por `http.route`, `db.client.operation.duration` e `db.client.connection.*` — são **preservadas**: são a resposta portátil para "latência das APIs" e a única visão de ocupação de pool em série temporal.
 

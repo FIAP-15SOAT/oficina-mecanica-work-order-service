@@ -115,13 +115,13 @@ Toda rota exige o header `Authorization: Bearer <token>` (access token), salvo a
 | GET | `/` | Listar (paginado; filtros: `number`, `status`, `customerId`, `vehicleId`, `assignedUserId`; ordenação: `sort`). **Por padrão, ordens em `COMPLETED`, `DELIVERED` e `CANCELLED` são omitidas**; use `?status=X` para recuperá-las. | ADMIN, MECHANIC, ATTENDANT |
 | GET | `/:id` | Buscar por ID (retorna serviços e peças/insumos da OS, com os dados de exibição lidos no Inventory) | ADMIN, MECHANIC, ATTENDANT |
 | PUT | `/:id` | Atualizar OS (apenas em `RECEIVED` / `IN_DIAGNOSIS`; `userId` extraído do JWT) | ADMIN, MECHANIC, ATTENDANT |
-| PATCH | `/:id` | Atualizar status da OS (apenas `IN_DIAGNOSIS`, `CANCELLED`, `DELIVERED`). O cancelamento responde **409** enquanto a aprovação de um orçamento está em andamento (ver [Como o orçamento muda a OS](#como-o-orçamento-muda-a-os)) | ADMIN, MECHANIC, ATTENDANT |
-| PATCH | `/:workOrderId/services/:serviceId` | Atualizar status de um serviço da OS (`IN_PROGRESS` / `COMPLETED`). O primeiro serviço iniciado leva a OS a `IN_PROGRESS` e, se ela tem peças, pede ao Inventory a baixa do estoque reservado | ADMIN, MECHANIC, ATTENDANT |
+| PATCH | `/:id` | Atualizar status da OS (apenas `IN_DIAGNOSIS`, `CANCELLED`, `DELIVERED`; qualquer outro status, `AWAITING_PAYMENT` inclusive, responde **400** na validação). O cancelamento responde **409** enquanto a aprovação de um orçamento está em andamento (ver [Como o orçamento muda a OS](#como-o-orçamento-muda-a-os)); a entrega exige saldo zero no Billing (ver [Entrega com saldo zero](#entrega-com-saldo-zero)); com a OS em `AWAITING_PAYMENT`, entrega e cancelamento respondem **409** (ver [Como a cobrança muda a OS](#como-a-cobrança-muda-a-os)) | ADMIN, MECHANIC, ATTENDANT |
+| PATCH | `/:workOrderId/services/:serviceId` | Atualizar status de um serviço da OS (`IN_PROGRESS` / `COMPLETED`). O primeiro serviço iniciado leva a OS a `IN_PROGRESS` e, se ela tem peças, pede ao Inventory a baixa do estoque reservado. Com a OS em `AWAITING_PAYMENT`, iniciar e concluir serviço respondem **409** | ADMIN, MECHANIC, ATTENDANT |
 | GET | `/:id/status-history` | Histórico de mudanças de status | ADMIN, MECHANIC, ATTENDANT |
 
-> Demais transições (`AWAITING_APPROVAL`, `APPROVED`, `REJECTED`, `IN_PROGRESS`, `COMPLETED`) são derivadas automaticamente das mensagens de orçamento publicadas pelo Billing e dos status de serviço — veja [Ciclo de vida da Ordem de Serviço](./architecture.md#ciclo-de-vida-da-ordem-de-serviço).
+> Demais transições (`AWAITING_APPROVAL`, `APPROVED`, `REJECTED`, `AWAITING_PAYMENT`, `IN_PROGRESS`, `COMPLETED`) são derivadas automaticamente das mensagens de orçamento e de cobrança publicadas pelo Billing e dos status de serviço — veja [Ciclo de vida da Ordem de Serviço](./architecture.md#ciclo-de-vida-da-ordem-de-serviço).
 
-> **Ordenação (`sort`)**: critérios no formato `campo:direção` separados por vírgula (ex.: `?sort=status:desc,createdAt:asc`). Campos permitidos: `status` e `createdAt`; direção `asc` ou `desc`. Padrão: `status:desc,createdAt:asc`. Ao ordenar por `status`, usa-se a **prioridade de negócio** da tabela `WorkOrderStatusInfo` (`RECEIVED` → … → `CANCELLED`), não a ordem alfabética.
+> **Ordenação (`sort`)**: critérios no formato `campo:direção` separados por vírgula (ex.: `?sort=status:desc,createdAt:asc`). Campos permitidos: `status` e `createdAt`; direção `asc` ou `desc`. Padrão: `status:desc,createdAt:asc`. Ao ordenar por `status`, usa-se a **prioridade de negócio** da tabela `WorkOrderStatusInfo`, não a ordem alfabética: `RECEIVED` 1, `IN_DIAGNOSIS` 2, `AWAITING_APPROVAL` 3, `REJECTED` 4, `APPROVED` 5, `AWAITING_PAYMENT` 6, `IN_PROGRESS` 7, `COMPLETED` 8, `DELIVERED` 9 e `CANCELLED` 10. A listagem padrão (sem `status`) mostra, nessa ordem, `IN_PROGRESS`, `AWAITING_PAYMENT`, `APPROVED`, `REJECTED`, `AWAITING_APPROVAL`, `IN_DIAGNOSIS` e `RECEIVED`.
 
 ---
 
@@ -156,6 +156,34 @@ Enquanto a aprovação está em andamento (reserva do estoque ou reversão no Bi
 
 ---
 
+**Cobranças** — no Billing
+
+As cobranças também são do Billing: pelo API Gateway, `/api/payments` (criação de uma cobrança de uma OS em `APPROVED` ou `COMPLETED`, consulta e cancelamento pelo funcionário) chega a ele, e a referência dessas rotas está na [API do Billing](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/blob/main/docs/api.md). O Billing cria a ordem de pagamento no Mercado Pago, o provedor de pagamento da solução, e avisa este serviço por mensagem.
+
+#### Como a cobrança muda a OS
+
+| O que acontece no Billing | Efeito na OS |
+|---|---|
+| Cobrança criada com a OS em `APPROVED` (sinal) ou `COMPLETED` (restante) | A OS vai a `AWAITING_PAYMENT` segundos depois, o histórico registra `Aguardando o pagamento da cobrança <id>` e o cliente recebe o e-mail `Pagamento da Ordem de Serviço <número>`, com o valor, o link de pagamento e a validade. Uma falha no e-mail não desfaz o bloqueio |
+| Cobrança criada, mas a OS mudou antes de a mensagem chegar (o mecânico iniciou a execução, por exemplo) | A OS não muda, nenhum e-mail sai e este serviço pede ao Billing o cancelamento da cobrança |
+| Cobrança paga | A OS volta ao status de antes (`APPROVED` ou `COMPLETED`), com as datas da aprovação e da conclusão preservadas, e o histórico registra `Cobrança <id> paga` |
+| Cobrança expirada, recusada pelo Mercado Pago ou cancelada pelo funcionário | A OS volta ao status de antes, e o histórico registra `Cobrança <id> expirada`, `recusada` ou `cancelada` |
+
+Enquanto a OS está em `AWAITING_PAYMENT`, iniciar serviço, entregar e cancelar respondem **409** `Ordem de serviço aguardando pagamento: execução, entrega e cancelamento voltam a valer quando a cobrança for paga, expirar ou for cancelada`; concluir serviço responde o **409** do item, que não está em execução. Para liberar uma OS presa nesse status, o funcionário cancela a cobrança no Billing (`POST /api/payments/:id/cancellations`). O fluxo completo está em [Saga de cobrança](architecture.md#saga-de-cobrança).
+
+#### Entrega com saldo zero
+
+`PATCH /api/work-orders/:id` com `DELIVERED` consulta o saldo da OS no Billing (`GET /internal/work-orders/:workOrderId/balance`) só quando a OS está em `COMPLETED`:
+
+| Situação | Resposta |
+|---|---|
+| Saldo maior que zero | **409** `Ordem de serviço com saldo a pagar de R$ <saldo>: a entrega é liberada depois que o saldo for quitado`; a OS segue em `COMPLETED` |
+| Saldo zero | **200**, com a OS em `DELIVERED` |
+| Billing fora do ar ou sem resposta em 2 s | **503** `Serviço de destino indisponível`, sem entregar |
+| OS fora de `COMPLETED` | **409** da transição recusada, sem consultar o Billing |
+
+---
+
 **Health** (`/api/health`)
 
 | Método | Rota | Descrição | Acesso |
@@ -184,6 +212,7 @@ Enquanto a aprovação está em andamento (reserva do estoque ou reversão no Bi
 | GET | `/work-orders/:workOrderId/quotes` | Orçamentos de uma ordem de serviço vinculada, sem itens, lidos no Billing | `customer-jwt` |
 | GET | `/quotes/:quoteId` | Orçamento e itens de uma ordem vinculada, lidos no Billing | `customer-jwt` |
 | POST | `/quotes/:quoteId/decisions` | Aprovar (`{ "action": "approve" }`) ou rejeitar (`{ "action": "reject", "reason": "..." }`) um orçamento vinculado; a decisão é repassada ao Billing | `customer-jwt` |
+| GET | `/work-orders/:workOrderId/payments` | Cobranças de uma ordem de serviço vinculada, lidas no Billing: `id`, `amount`, `status` (`PENDING`, `APPROVED`, `EXPIRED`, `CANCELLED` ou `REJECTED`), `checkoutUrl` (o link de pagamento), `expiresAt`, `createdAt` e `updatedAt`, no envelope `{ data: [...] }` | `customer-jwt` |
 
 > O token `customer-jwt` (RS256) é emitido por uma **função serverless externa** a esta aplicação, após autenticar o Cliente da Oficina por CPF + senha — a API só verifica a assinatura com `CUSTOMER_JWT_PUBLIC_KEY`. Toda rota `/api/me/*` que aponta a um recurso específico (`workOrderId`/`quoteId`) resolve a autorização **por vínculo** a cada requisição, consultando `UserCustomer` no banco — o token nunca carrega `customerId`. Um recurso inexistente e um recurso de um cliente não vinculado respondem igualmente **404** (nunca 403), para não virar oráculo de enumeração. Ver [Identidade externa, autenticação e autorização por vínculo](architecture.md#identidade-externa-autenticação-e-autorização-por-vínculo).
 
@@ -196,6 +225,8 @@ Enquanto a aprovação está em andamento (reserva do estoque ou reversão no Bi
 > | Orçamento que deixou de estar `SENT` (decisão concorrente, por exemplo) | **409** do Billing, com a mensagem dele |
 > | Billing ou Inventory fora do ar, ou sem resposta (5 s no detalhe e na decisão, 2 s na listagem) | **503**; numa decisão, nada é gravado no work-order. Se o Billing gravou a decisão e respondeu depois do prazo, uma nova tentativa recebe **409** |
 
+> **Cobranças na área do cliente.** A rota confere o vínculo com a OS antes de ler o Billing: sem vínculo, a resposta é **404** e o Billing não é consultado. Com o Billing fora do ar ou sem resposta em 2 s, a resposta é **503**.
+
 ---
 
 ## Rotas internas (`/internal`)
@@ -206,7 +237,7 @@ Rotas para os outros serviços da oficina, pela rede do cluster. Ficam **fora do
 |---|---|---|---|
 | GET | `/internal/work-orders/:id` | Detalhe da OS, com o mesmo corpo de `GET /api/work-orders/:id`. `400` para id que não é UUID e `404` para OS inexistente | Rede do cluster |
 
-O Billing chama essa rota para conferir a OS antes de criar, enviar e aprovar um orçamento. O corpo segue o mesmo envelope das rotas públicas. O contrato fica numa fixture versionada, `app/test/contracts/internal-work-order.json`, conferida pelo e2e (ver [Contrato das rotas `/internal`](testing.md#contrato-das-rotas-internal)); detalhes do cliente HTTP das chamadas entre serviços em [Chamadas internas](architecture.md#chamadas-internas).
+O Billing chama essa rota para conferir a OS antes de criar, enviar e aprovar um orçamento e antes de criar uma cobrança. O corpo segue o mesmo envelope das rotas públicas. O contrato fica numa fixture versionada, `app/test/contracts/internal-work-order.json`, conferida pelo e2e (ver [Contrato das rotas `/internal`](testing.md#contrato-das-rotas-internal)); detalhes do cliente HTTP das chamadas entre serviços em [Chamadas internas](architecture.md#chamadas-internas).
 
 ---
 
