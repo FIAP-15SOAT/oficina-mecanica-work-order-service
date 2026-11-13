@@ -26,6 +26,7 @@ enum WorkOrderStatus {
   IN_DIAGNOSIS
   AWAITING_APPROVAL
   APPROVED
+  AWAITING_PAYMENT
   REJECTED
   IN_PROGRESS
   COMPLETED
@@ -41,10 +42,12 @@ enum WorkOrderServiceStatus {
 
 enum SagaType {
   QUOTE_APPROVAL
+  PAYMENT
 }
 
 enum SagaStatus {
   RESERVING_STOCK
+  AWAITING_PAYMENT
   COMPENSATING
   COMPLETED
   COMPENSATED
@@ -53,6 +56,10 @@ enum SagaStatus {
 enum SagaFailureReason {
   INSUFFICIENT_STOCK
   WORK_ORDER_NOT_AWAITING
+  WORK_ORDER_NOT_PAYABLE
+  PAYMENT_EXPIRED
+  PAYMENT_REJECTED
+  PAYMENT_CANCELLED
 }
 
 // ─── Models ───────────────────────────────────────────────────────────────────
@@ -232,6 +239,7 @@ model SagaInstance {
   workOrderId   String             @map("work_order_id") @db.Uuid
   status        SagaStatus
   failureReason SagaFailureReason? @map("failure_reason")
+  originStatus  WorkOrderStatus?   @map("origin_status")
   createdAt     DateTime           @default(now()) @map("created_at")
   updatedAt     DateTime           @default(now()) @updatedAt @map("updated_at")
 

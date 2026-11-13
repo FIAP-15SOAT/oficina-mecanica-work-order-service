@@ -210,6 +210,36 @@ describe('measureWorkOrderDurations', () => {
       expect(measure(history).diagnosisToCompletionSeconds).toBe(17 * 3600);
     });
 
+    it('should measure the dwell in AWAITING_PAYMENT when the work order returns to its origin', () => {
+      const history = [
+        entry(null, WorkOrderStatus.RECEIVED, 0),
+        entry(WorkOrderStatus.RECEIVED, WorkOrderStatus.APPROVED, 2),
+        entry(WorkOrderStatus.APPROVED, WorkOrderStatus.AWAITING_PAYMENT, 3),
+        entry(WorkOrderStatus.AWAITING_PAYMENT, WorkOrderStatus.APPROVED, 7),
+      ];
+
+      expect(measure(history).dwell).toEqual({
+        status: WorkOrderStatus.AWAITING_PAYMENT,
+        seconds: 4 * 3600,
+      });
+    });
+
+    it('should not measure the diagnosis to completion total again when the work order returns to COMPLETED', () => {
+      const history = [
+        ...fullCycle().slice(0, -1),
+        entry(WorkOrderStatus.COMPLETED, WorkOrderStatus.AWAITING_PAYMENT, 22),
+        entry(WorkOrderStatus.AWAITING_PAYMENT, WorkOrderStatus.COMPLETED, 25),
+      ];
+
+      const durations = measure(history);
+
+      expect(durations.diagnosisToCompletionSeconds).toBeUndefined();
+      expect(durations.dwell).toEqual({
+        status: WorkOrderStatus.AWAITING_PAYMENT,
+        seconds: 3 * 3600,
+      });
+    });
+
     it('should not produce any total when the order is cancelled midway', () => {
       const history = [
         entry(null, WorkOrderStatus.RECEIVED, 0),

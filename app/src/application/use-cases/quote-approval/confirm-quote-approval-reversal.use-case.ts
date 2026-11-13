@@ -24,7 +24,11 @@ type ApprovalReversalConfirmation =
       workOrder: WorkOrder;
     };
 
-const REVERSAL_NOTES: Record<SagaFailureReason, (quoteId: string) => string> = {
+type QuoteApprovalFailureReason =
+  | SagaFailureReason.INSUFFICIENT_STOCK
+  | SagaFailureReason.WORK_ORDER_NOT_AWAITING;
+
+const REVERSAL_NOTES: Record<QuoteApprovalFailureReason, (quoteId: string) => string> = {
   [SagaFailureReason.INSUFFICIENT_STOCK]: (quoteId) =>
     `Aprovação do orçamento ${quoteId} desfeita por falta de estoque`,
   [SagaFailureReason.WORK_ORDER_NOT_AWAITING]: (quoteId) =>
@@ -83,7 +87,8 @@ export class ConfirmQuoteApprovalReversalUseCase implements IConfirmQuoteApprova
     }
 
     const workOrder = (await repos.workOrder.findByIdWithDetails(saga.workOrderId))!;
-    const failureReason = saga.failureReason!;
+
+    const failureReason = saga.failureReason as QuoteApprovalFailureReason;
 
     saga.compensate();
 

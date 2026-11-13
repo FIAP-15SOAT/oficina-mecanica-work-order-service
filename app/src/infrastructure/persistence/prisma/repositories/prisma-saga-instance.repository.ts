@@ -43,6 +43,8 @@ export class PrismaSagaInstanceRepository implements ISagaInstanceRepository {
         workOrderId: saga.workOrderId,
         status: saga.status,
         failureReason: saga.failureReason,
+        originStatus: saga.originStatus,
+        createdAt: saga.createdAt,
       },
     });
 

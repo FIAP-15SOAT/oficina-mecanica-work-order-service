@@ -588,6 +588,38 @@ describe('WorkOrder (E2E)', () => {
       expect(res.body.pagination).toBeDefined();
     });
 
+    it('should show a work order awaiting payment in the default listing between IN_PROGRESS and APPROVED', async () => {
+      const customer = await createCustomer();
+      const vehicle = await createVehicle(customer.id);
+      const approved = await createWorkOrder(customer.id, vehicle.id);
+      const awaitingPayment = await createWorkOrder(customer.id, vehicle.id);
+      const inProgress = await createWorkOrder(customer.id, vehicle.id);
+
+      await ctx.prisma.workOrder.update({
+        where: { id: approved.id },
+        data: { status: 'APPROVED' },
+      });
+      await ctx.prisma.workOrder.update({
+        where: { id: awaitingPayment.id },
+        data: { status: 'AWAITING_PAYMENT' },
+      });
+      await ctx.prisma.workOrder.update({
+        where: { id: inProgress.id },
+        data: { status: 'IN_PROGRESS' },
+      });
+
+      const res = await request(httpServer)
+        .get('/api/work-orders')
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .expect(200);
+
+      expect(res.body.data.map((workOrder: { id: string }) => workOrder.id)).toEqual([
+        inProgress.id,
+        awaitingPayment.id,
+        approved.id,
+      ]);
+    });
+
     it('should accept sort=createdAt:asc and return 200', async () => {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
@@ -862,6 +894,48 @@ describe('WorkOrder (E2E)', () => {
         .send({ status: 'APPROVED' })
         .expect(400);
     });
+
+    it('should return 400 when asking AWAITING_PAYMENT through the status route', async () => {
+      const customer = await createCustomer();
+      const vehicle = await createVehicle(customer.id);
+      const wo = await createWorkOrder(customer.id, vehicle.id);
+
+      await ctx.prisma.workOrder.update({ where: { id: wo.id }, data: { status: 'APPROVED' } });
+
+      await request(httpServer)
+        .patch(`/api/work-orders/${wo.id}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ status: 'AWAITING_PAYMENT' })
+        .expect(400);
+    });
+
+    it.each(['DELIVERED', 'CANCELLED'])(
+      'should return 409 when delivering or cancelling a work order awaiting payment (%s)',
+      async (status) => {
+        const customer = await createCustomer();
+        const vehicle = await createVehicle(customer.id);
+        const wo = await createWorkOrder(customer.id, vehicle.id);
+
+        await ctx.prisma.workOrder.update({
+          where: { id: wo.id },
+          data: { status: 'AWAITING_PAYMENT' },
+        });
+
+        const res = await request(httpServer)
+          .patch(`/api/work-orders/${wo.id}`)
+          .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+          .send({ status, notes: 'Pedido pelo cliente' })
+          .expect(409);
+
+        const stored = await ctx.prisma.workOrder.findUniqueOrThrow({ where: { id: wo.id } });
+
+        expect(res.body.message).toBe(
+          'Ordem de serviço aguardando pagamento: execução, entrega e cancelamento voltam a valer quando a cobrança for paga, expirar ou for cancelada',
+        );
+
+        expect(stored.status).toBe('AWAITING_PAYMENT');
+      },
+    );
 
     it('should answer 409 and keep the work order when cancelling during the stock reservation', async () => {
       const customer = await createCustomer();
@@ -1183,6 +1257,47 @@ describe('WorkOrder (E2E)', () => {
         .set('Authorization', `Bearer ${adminAuth.accessToken}`)
         .expect(200);
       expect(woRes.body.data.status).toBe('IN_PROGRESS');
+    });
+
+    it('should return 409 when starting a service of a work order awaiting payment', async () => {
+      const customer = await createCustomer();
+      const vehicle = await createVehicle(customer.id);
+      const wo = await createWorkOrder(customer.id, vehicle.id);
+
+      await request(httpServer)
+        .patch(`/api/work-orders/${wo.id}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ status: 'IN_DIAGNOSIS' })
+        .expect(200);
+
+      const service = stubService(stub, { basePrice: 100 });
+
+      await approveWorkOrder(wo.id, [
+        { serviceId: service.id, quantity: 1, unitPrice: service.basePrice },
+      ]);
+      await ctx.prisma.workOrder.update({
+        where: { id: wo.id },
+        data: { status: 'AWAITING_PAYMENT' },
+      });
+
+      const res = await request(httpServer)
+        .patch(`/api/work-orders/${wo.id}/services/${service.id}`)
+        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .send({ status: 'IN_PROGRESS' })
+        .expect(409);
+
+      const stored = await ctx.prisma.workOrder.findUniqueOrThrow({
+        where: { id: wo.id },
+        include: { services: true },
+      });
+
+      expect(res.body.message).toBe(
+        'Ordem de serviço aguardando pagamento: execução, entrega e cancelamento voltam a valer quando a cobrança for paga, expirar ou for cancelada',
+      );
+
+      expect(stored.status).toBe('AWAITING_PAYMENT');
+      expect(stored.services[0].status).toBe('PENDING');
+      expect(stored.startedAt).toBeNull();
     });
 
     it('should return 409 when completing a service that is not IN_PROGRESS (still PENDING)', async () => {

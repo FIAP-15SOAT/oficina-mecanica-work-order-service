@@ -36,16 +36,14 @@ export function measureWorkOrderDurations(
     ...buildDwell(history.slice(0, index), current, endedAt),
     ...buildTotal(
       upToCurrent,
-      endedAt,
-      current.newStatus,
+      current,
       WorkOrderStatus.COMPLETED,
       WorkOrderStatus.IN_DIAGNOSIS,
       'diagnosisToCompletionSeconds',
     ),
     ...buildTotal(
       upToCurrent,
-      endedAt,
-      current.newStatus,
+      current,
       WorkOrderStatus.DELIVERED,
       WorkOrderStatus.RECEIVED,
       'leadTimeSeconds',
@@ -77,13 +75,15 @@ function buildDwell(
 
 function buildTotal(
   history: readonly StatusHistory[],
-  endedAt: Date,
-  newStatus: WorkOrderStatus,
+  transition: StatusHistory,
   closingStatus: WorkOrderStatus,
   openingStatus: WorkOrderStatus,
   key: 'diagnosisToCompletionSeconds' | 'leadTimeSeconds',
 ): WorkOrderDurations {
-  if (newStatus !== closingStatus) {
+  const firstClosing = findFirstEntryInto(history, closingStatus);
+
+  // A return to the closing status (after a payment hold) is not a second closing.
+  if (firstClosing?.id !== transition.id) {
     return {};
   }
 
@@ -93,7 +93,7 @@ function buildTotal(
     return {};
   }
 
-  const seconds = toSeconds(opened.createdAt, endedAt);
+  const seconds = toSeconds(opened.createdAt, transition.createdAt);
 
   return seconds === undefined ? {} : { [key]: seconds };
 }
@@ -121,7 +121,7 @@ function findFirstEntryInto(
   return history.find((entry) => entry.newStatus === status);
 }
 
-function toSeconds(start: Date, end: Date): number | undefined {
+export function toSeconds(start: Date, end: Date): number | undefined {
   const elapsed = end.getTime() - start.getTime();
 
   if (!Number.isFinite(elapsed) || elapsed < 0) {
