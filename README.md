@@ -24,6 +24,7 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 - **Ordens de serviço** com máquina de estados validada no domínio
 - **Orçamentos no Billing**, o serviço dono dos orçamentos e dos pagamentos: a OS com itens nasce com o orçamento inicial criado lá (**Saga de abertura**, que apaga o orçamento se a gravação da OS falhar), o envio e a rejeição chegam por mensagem e movem a OS, e o **Cliente da Oficina autenticado** consulta e decide os orçamentos pela área dele (ver [Autenticação](#-autenticação))
 - **Reserva de estoque pela Saga de aprovação**: um orçamento aprovado no Billing com peças pede a reserva ao Inventory, o serviço dono do catálogo e do estoque; a OS vai a `APPROVED` quando a reserva é confirmada, e, quando falta estoque, a aprovação é desfeita no Billing e o cliente recebe um e-mail. A baixa é pedida ao Inventory no início do primeiro serviço
+- **Cobrança pela Saga de cobrança**: quando o funcionário cria uma cobrança no Billing (um sinal com a OS aprovada, ou o restante com a OS concluída), a OS fica em `AWAITING_PAYMENT`, com a execução, a entrega e o cancelamento bloqueados, e o cliente recebe por e-mail o link de pagamento do Mercado Pago; paga, expirada, recusada ou cancelada, a cobrança devolve a OS ao status de antes. A entrega exige saldo zero no Billing, e o cliente vê as cobranças das OS dele na área própria
 - **Autorização por papéis (RBAC)**: `ADMIN`, `MECHANIC`, `ATTENDANT`
 - **Dois fluxos de autenticação JWT isolados**: interno (RS256, access + refresh com chaves separadas, bcrypt) e externo por CPF + senha (RS256, emitido por uma função serverless dedicada)
 - **Concorrência otimista** (lock por `version`) em agregados sensíveis
@@ -89,6 +90,28 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 
 **Estado atual da solução:** O escopo está implementado com AWS API Gateway, Lambda de autenticação por CPF emitindo JWT RS256, Amazon EKS, Amazon RDS PostgreSQL, Terraform e pipelines especializados. Os sete componentes vigentes estão listados em [Ecossistema de Repositórios](#-ecossistema-de-repositórios). A observabilidade usa logs estruturados, OpenTelemetry e Datadog; dashboards e alertas são declarados em Terraform nesta solução.
 
+## 🧭 Do PDF ao desenho
+
+O enunciado da fase (o PDF do desafio) pede o padrão **Saga** para "criação de ordens de serviço, aprovações e pagamentos", com o exemplo "abrir a OS → gerar orçamento → aguardar aprovação → enviar para execução" e "rollback e compensação no caso de falha em qualquer etapa". Uma Saga coordena uma operação que grava em mais de um serviço, cada um com o próprio banco, sem transação distribuída: é uma sequência de transações locais em que a falha de um passo dispara uma **compensação** que desfaz o que os passos anteriores gravaram. Ela só é necessária quando um passo pode falhar **depois** que outro serviço já gravou, e esse outro serviço precisa desfazer o que gravou. Este serviço, o work-order, guarda as ordens de serviço (OS); o Billing guarda orçamentos e pagamentos, e o Inventory, o catálogo e o estoque. Cada etapa do exemplo ficou assim:
+
+| Etapa | Como fica consistente | Se falhar |
+|---|---|---|
+| Abrir a OS com o orçamento inicial | **Saga de abertura**, dentro da requisição: com itens, o work-order cria o orçamento no Billing (que confere os itens no Inventory) **antes** de gravar a OS | Item inválido ou serviço fora do ar: nada é gravado (4xx ou 503). Se a gravação da OS falhar depois, o orçamento é apagado no Billing |
+| Gerar e enviar o orçamento | Transação no Billing e a mensagem `billing.quote.sent`, que leva a OS a `AWAITING_APPROVAL` | Erro imediato ao funcionário; nada muda |
+| Aguardar a aprovação | A OS em `AWAITING_APPROVAL` | Rejeição: a OS vai a `REJECTED`, e um novo orçamento é possível |
+| Aprovar e reservar o estoque | **Saga de aprovação**: o Billing aprova, o work-order pede a reserva ao Inventory e só então leva a OS a `APPROVED` | Falta de estoque: a aprovação é desfeita no Billing, e o orçamento volta a aguardar o cliente |
+| Pagar (sinal opcional; quitação antes da entrega) | **Saga de cobrança**: o Billing cria a cobrança, e o work-order bloqueia a OS em `AWAITING_PAYMENT` até o pagamento terminar | OS que mudou de status no intervalo: a cobrança é cancelada no Billing. Cobrança expirada, recusada ou cancelada: a OS volta ao status de antes |
+| Enviar para execução | Transação no work-order e o comando `inventory.stock.consume`, que pede a baixa do estoque | Falha na baixa: nova entrega pela fila, DLQ (fila de mensagens que falharam) e alerta. A OS não volta: é um passo de repetir, não de desfazer |
+| Executar e entregar | Transação no work-order; a entrega confere no Billing que o saldo é zero | Saldo a pagar: 409, e a OS segue concluída |
+
+**Por que três Sagas, e não uma para o ciclo inteiro.** Cada uma cobre um ponto em que dois serviços gravam e um deles pode precisar desfazer. As outras etapas são locais ou só propagam um fato que outro serviço já decidiu, sem nada a desfazer. Uma Saga única faria do status da OS uma máquina de orquestração, com mensagem e espera em todos os passos, inclusive nos que hoje são cliques síncronos.
+
+**Por que orquestradas no work-order.** O work-order decide cada passo e cada compensação num lugar só; o Billing e o Inventory só recebem comandos e respondem com eventos, sem conhecer a Saga. Na alternativa coreografada, cada serviço reagiria aos eventos dos outros, e a lógica e a ordem das compensações ficariam espalhadas por três serviços. O orquestrador fica dentro do work-order porque o estado da Saga muda na mesma transação da OS e da mensagem gravada no outbox (a tabela das mensagens a publicar).
+
+**Onde mora o estado.** As Sagas de aprovação e de cobrança esperam a resposta de outro serviço, às vezes em outra réplica ou depois de um reinício, então o estado delas fica na tabela `saga_instances`: o tipo, a OS, o id do orçamento ou da cobrança no Billing (único por tipo, o que torna inofensivas as mensagens repetidas), o status, o motivo da compensação e, na cobrança, o status de origem da OS. A Saga de abertura não tem linha: começa e termina numa requisição.
+
+**Ciclo da OS.** `RECEIVED` → `IN_DIAGNOSIS` → `AWAITING_APPROVAL` → `APPROVED` → `IN_PROGRESS` → `COMPLETED` → `DELIVERED`, com `REJECTED` (o orçamento enviado foi rejeitado; um novo orçamento volta a `AWAITING_APPROVAL`) e `CANCELLED` (até a aprovação). `AWAITING_PAYMENT` entra entre `APPROVED` e `IN_PROGRESS` quando há sinal, ou entre `COMPLETED` e `DELIVERED` quando há cobrança do restante, e a OS sempre volta ao status de onde saiu. A tabela de transições e as regras estão em [Arquitetura › Ciclo de vida da Ordem de Serviço](docs/architecture.md#ciclo-de-vida-da-ordem-de-serviço); as Sagas, em [Arquitetura › Saga de cobrança](docs/architecture.md#saga-de-cobrança) e nas seções vizinhas; a decisão e as alternativas descartadas, no [ADR 0025](docs/adr/0025-sagas-orquestradas-no-work-order.md); e os testes de cada cenário de falha, em [Testes › Cenários de falha F1 a F14](docs/testing.md#cenários-de-falha-f1-a-f14).
+
 ## 🧰 Stack
 
 - **Runtime**: Node.js 24 + TypeScript 6
@@ -105,7 +128,7 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 - **Telemetria**: traces e métricas de negócio pelo SDK do OpenTelemetry, correlacionados ao log por `trace_id`, sem nenhuma dependência ou credencial de fornecedor na aplicação; desligada por padrão (endpoint vazio) — ver [ADR 0005](docs/adr/0005-opentelemetry.md)
 - **Health checks**: endpoints dedicados de vivacidade (`/api/health/live`) e prontidão (`/api/health/ready`), consumidos pelas três probes do Kubernetes, com encerramento gracioso — ver [ADR 0003](docs/adr/0003-health-checks.md)
 - **Documentação**: Swagger/OpenAPI (`@nestjs/swagger`) — disponível em `/api/docs`
-- **Testes**: Jest 30 + ts-jest (unitários com mocks tipados e E2E com **Testcontainers 12** + PostgreSQL 18, Valkey e LocalStack reais)
+- **Testes**: Jest 30 + ts-jest (unitários com mocks tipados e E2E com **Testcontainers 12** + PostgreSQL 18, Valkey e LocalStack reais) e BDD com `@cucumber/cucumber` 13.3 (cenários em Gherkin pt-BR do fluxo completo da OS e das compensações das Sagas)
 - **Qualidade**: SonarQube Cloud (Sonar Scan via GitHub Actions)
 - **Análise de segurança**: OWASP ZAP (DAST) e SonarQube (SAST/qualidade) — relatórios em `reports/`
 - **Containerização**: Docker (multi-stage `node:24-alpine`) + Docker Compose
@@ -182,6 +205,7 @@ Execute todos os comandos a partir de `app/` (`cd app`) — não há `package.js
 | `npm run test:cov` | Testes unitários com cobertura |
 | `npm run test:e2e` | Roda testes E2E |
 | `npm run test:e2e:cov` | Testes E2E com cobertura |
+| `npm run test:bdd` | Testes de aceitação BDD (Cucumber), com o relatório em `app/reports/bdd/cucumber-report.html` — ver [Testes › BDD](docs/testing.md#bdd-testes-de-aceitação) |
 | `npm run lint` | Linting com auto-fix |
 | `npm run format` | Formata código com Prettier |
 | `npm run prisma:generate` | Gera o Prisma Client (`app/prisma/generated/`) |
@@ -227,6 +251,7 @@ A função serverless de autenticação externa **não está neste repositório*
 | `GET /api/me/work-orders` | `@CustomerArea()` (`CustomerJwtAuthGuard`) | `customer-jwt` |
 | `GET /api/me/work-orders/:workOrderId` | `@CustomerArea()` (`CustomerJwtAuthGuard`) | `customer-jwt` |
 | `GET /api/me/work-orders/:workOrderId/quotes` | `@CustomerArea()` (`CustomerJwtAuthGuard`) | `customer-jwt` |
+| `GET /api/me/work-orders/:workOrderId/payments` | `@CustomerArea()` (`CustomerJwtAuthGuard`) | `customer-jwt` |
 | `GET /api/me/quotes/:quoteId` | `@CustomerArea()` (`CustomerJwtAuthGuard`) | `customer-jwt` |
 | `POST /api/me/quotes/:quoteId/decisions` | `@CustomerArea()` (`CustomerJwtAuthGuard`) | `customer-jwt` |
 | `POST /api/users` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
@@ -268,7 +293,7 @@ A função serverless de autenticação externa **não está neste repositório*
 
 > A decisão do cliente usa `POST /api/me/quotes/:quoteId/decisions`, com autenticação `customer-jwt` RS256; este serviço confere o vínculo e repassa a decisão ao Billing.
 
-> As rotas de catálogo e estoque (`/api/services`, `/api/parts-supplies`, `/api/stock-movements`, `/api/stock-reservations`) e as permissões delas são do Inventory; deste serviço ficam só as métricas por serviço. As rotas de orçamento (`/api/quotes` e `GET /api/work-orders/:id/quotes`) e as permissões delas são do Billing.
+> As rotas de catálogo e estoque (`/api/services`, `/api/parts-supplies`, `/api/stock-movements`, `/api/stock-reservations`) e as permissões delas são do Inventory; deste serviço ficam só as métricas por serviço. As rotas de orçamento (`/api/quotes` e `GET /api/work-orders/:id/quotes`) e de cobrança (`/api/payments`) e as permissões delas são do Billing.
 
 </details>
 
@@ -308,7 +333,7 @@ A solução é composta por **quinze repositórios especializados**, com respons
 │   │   └── infrastructure/      # Persistência, mensageria, cache, clientes internos, HTTP, logging e telemetria
 │   ├── localstack/             # Topologia SNS/SQS criada no LocalStack (cópia do repositório de mensageria)
 │   ├── prisma/                 # Schema, migrations e seed
-│   ├── test/                    # Testes unitários, E2E e fixtures de contrato das rotas /internal
+│   ├── test/                    # Testes unitários, E2E, BDD e fixtures de contrato das rotas /internal
 │   ├── .env.example            # Referência de configuração local
 │   ├── Dockerfile              # Build da imagem da API
 │   ├── docker-compose.yml      # Stack para execução local
@@ -329,20 +354,20 @@ A solução é composta por **quinze repositórios especializados**, com respons
 
 | Documento | Conteúdo |
 |---|---|
-| 🏛️ [Arquitetura](docs/architecture.md) | Clean Architecture, DDD, ciclos de vida, UoW, orçamentos no Billing, Sagas de abertura e de aprovação, fluxo do orçamento, mensageria com outbox, cache, chamadas internas, exceções |
+| 🏛️ [Arquitetura](docs/architecture.md) | Clean Architecture, DDD, ciclos de vida, UoW, orçamentos no Billing, Sagas de abertura, de aprovação e de cobrança, entrega com saldo zero, fluxo do orçamento, mensageria com outbox, cache, chamadas internas, exceções |
 | 🗃️ [Banco de Dados](docs/database.md) | Diagrama ER, tabelas e relacionamentos, enums, convenções de modelagem |
-| 🔀 [Diagramas de Sequência](docs/sequence-diagrams.md) | Login interno, abertura de OS, autenticação externa por CPF e aprovação de orçamento com reserva de estoque |
+| 🔀 [Diagramas de Sequência](docs/sequence-diagrams.md) | Login interno, abertura de OS, autenticação externa por CPF, aprovação de orçamento com reserva de estoque e Saga de cobrança |
 | 🔌 [Referência da API](docs/api.md) | Endpoints por domínio, perfis (RBAC), rotas /internal, formato de resposta |
 | 💻 [Como executar localmente](docs/local-setup.md) | Setup local, MailHog, Valkey, LocalStack, variáveis de ambiente, seed |
 | 🆔 [Ids canônicos do seed](docs/seed-ids.md) | UUIDs fixos de usuários, clientes, veículos, serviços e peças, compartilhados entre os serviços |
-| 🧪 [Testes](docs/testing.md) | Unitários, E2E (PostgreSQL, Valkey, LocalStack e stub do Inventory e do Billing), contrato das rotas /internal, Postman/Newman |
+| 🧪 [Testes](docs/testing.md) | Unitários, E2E (PostgreSQL, Valkey, LocalStack e stub do Inventory e do Billing), BDD (Cucumber em pt-BR), cenários de falha F1 a F14, contrato das rotas /internal, Postman/Newman |
 | 🔒 [Segurança](docs/security.md) | Mitigações no código, proteção de dados nos logs e relatórios (ZAP, SonarQube) |
 | 🔭 [Observabilidade](docs/observability.md) | Logs estruturados, correlação, traces, métricas e degradação segura |
 | 🏗️ [Infra · Visão Geral](docs/infra/overview.md) | Arquitetura da infra como sistema: componentes, ownership e fluxos |
 | 🌍 [Infra · Terraform](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base) | Infraestrutura AWS e Kubernetes (IaC nos repositórios dedicados) |
 | ☸️ [Infra · Kubernetes](docs/infra/kubernetes.md) | Manifests de aplicação (`k8s/`), probes, HPA e deploy |
 | 🔄 [Infra · CI/CD](docs/infra/ci-cd.md) | Workflows de CI, CD, SAST e DAST |
-| 📐 [ADRs](docs/adr) | Decisões arquiteturais — [0001 PostgreSQL](docs/adr/0001-uso-do-postgresql-como-banco-de-dados.md), [0002 Logging estruturado](docs/adr/0002-logging-estruturado.md), [0003 Health checks](docs/adr/0003-health-checks.md), [0004 Autenticação de clientes](docs/adr/0004-autenticacao-de-clientes.md), [0005 OpenTelemetry](docs/adr/0005-opentelemetry.md), [0006 Escolha de nuvem](docs/adr/0006-escolha-de-nuvem-aws.md), [0007 Padrão de comunicação](docs/adr/0007-padrao-de-comunicacao-rest-monolito.md), [0008 Autoscaling (HPA)](docs/adr/0008-autoscaling-via-hpa.md), [0009 Clean Architecture/DDD](docs/adr/0009-clean-architecture-ddd-em-camadas.md), [0010 Concorrência otimista](docs/adr/0010-concorrencia-otimista-via-version.md), [0011 Unit of Work](docs/adr/0011-unit-of-work-transacoes-multi-repositorio.md), [0012 Exceções por camada](docs/adr/0012-hierarquia-de-excecoes-por-camada.md), [0013 Autenticação interna JWT](docs/adr/0013-autenticacao-interna-jwt-stateless.md) *(substituída pela 0022)*, [0014 Pipelines CI/CD/SAST/DAST](docs/adr/0014-pipelines-ci-cd-sast-dast-separados.md), [0015 Testcontainers no E2E](docs/adr/0015-testcontainers-e2e-postgresql-real.md), [0016 Sanitização e validação em duas camadas](docs/adr/0016-sanitizacao-e-validacao-em-duas-camadas.md), [0017 Credencial do banco no CD](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md), [0018 Mensageria com outbox](docs/adr/0018-mensageria-sns-sqs-fifo-com-outbox.md), [0019 Cache do dono](docs/adr/0019-cache-do-dono-no-elasticache.md), [0020 Chamadas internas e rotas negadas por padrão](docs/adr/0020-chamadas-internas-e-rotas-negadas-por-padrao.md), [0021 Span de consumo de mensagens](docs/adr/0021-span-de-consumo-de-mensagens.md), [0022 Token de funcionário em RS256](docs/adr/0022-token-de-funcionario-em-rs256.md), [0023 Catálogo e estoque no Inventory, com reserva pela Saga](docs/adr/0023-catalogo-e-estoque-no-inventory-com-reserva-pela-saga.md), [0024 Saga de abertura com orçamento inicial no Billing](docs/adr/0024-saga-de-abertura-com-orcamento-inicial-no-billing.md) |
+| 📐 [ADRs](docs/adr) | Decisões arquiteturais — [0001 PostgreSQL](docs/adr/0001-uso-do-postgresql-como-banco-de-dados.md), [0002 Logging estruturado](docs/adr/0002-logging-estruturado.md), [0003 Health checks](docs/adr/0003-health-checks.md), [0004 Autenticação de clientes](docs/adr/0004-autenticacao-de-clientes.md), [0005 OpenTelemetry](docs/adr/0005-opentelemetry.md), [0006 Escolha de nuvem](docs/adr/0006-escolha-de-nuvem-aws.md), [0007 Padrão de comunicação](docs/adr/0007-padrao-de-comunicacao-rest-monolito.md), [0008 Autoscaling (HPA)](docs/adr/0008-autoscaling-via-hpa.md), [0009 Clean Architecture/DDD](docs/adr/0009-clean-architecture-ddd-em-camadas.md), [0010 Concorrência otimista](docs/adr/0010-concorrencia-otimista-via-version.md), [0011 Unit of Work](docs/adr/0011-unit-of-work-transacoes-multi-repositorio.md) *(emendada pela 0025)*, [0012 Exceções por camada](docs/adr/0012-hierarquia-de-excecoes-por-camada.md), [0013 Autenticação interna JWT](docs/adr/0013-autenticacao-interna-jwt-stateless.md) *(substituída pela 0022)*, [0014 Pipelines CI/CD/SAST/DAST](docs/adr/0014-pipelines-ci-cd-sast-dast-separados.md), [0015 Testcontainers no E2E](docs/adr/0015-testcontainers-e2e-postgresql-real.md), [0016 Sanitização e validação em duas camadas](docs/adr/0016-sanitizacao-e-validacao-em-duas-camadas.md), [0017 Credencial do banco no CD](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md), [0018 Mensageria com outbox](docs/adr/0018-mensageria-sns-sqs-fifo-com-outbox.md), [0019 Cache do dono](docs/adr/0019-cache-do-dono-no-elasticache.md), [0020 Chamadas internas e rotas negadas por padrão](docs/adr/0020-chamadas-internas-e-rotas-negadas-por-padrao.md), [0021 Span de consumo de mensagens](docs/adr/0021-span-de-consumo-de-mensagens.md), [0022 Token de funcionário em RS256](docs/adr/0022-token-de-funcionario-em-rs256.md), [0023 Catálogo e estoque no Inventory, com reserva pela Saga](docs/adr/0023-catalogo-e-estoque-no-inventory-com-reserva-pela-saga.md), [0024 Saga de abertura com orçamento inicial no Billing](docs/adr/0024-saga-de-abertura-com-orcamento-inicial-no-billing.md), [0025 Sagas orquestradas no work-order](docs/adr/0025-sagas-orquestradas-no-work-order.md) |
 | 🧩 [Modelo C4](docs/c4) | Diagramas de Contexto, Container e Componente |
 | 🎨 [Modelagem de Domínio (Miro)](https://miro.com/app/board/uXjVGvVPEOw=/?share_link_id=9196435429) | Domain Storytelling, Event Storming e Dicionário de Linguagem Ubíqua |
 

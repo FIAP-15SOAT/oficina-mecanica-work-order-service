@@ -13,6 +13,9 @@ import { ILogger } from '@application/ports/output/services/logger.service.inter
 import { createMockLogger } from '../../../../helpers/logger-mock.factory';
 import { IEmailSenderService } from '@application/ports/output/services/email-sender.service.interface';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
+import { BUSINESS_METRICS } from '@application/metrics/business-metric.catalog';
+import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
+import { createMockMetrics } from '../../../../helpers/metrics-mock.factory';
 import { WorkOrder } from '@domain/entities/work-order.entity';
 import { SagaInstance } from '@domain/entities/saga-instance.entity';
 
@@ -22,6 +25,7 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
   let repos: jest.Mocked<IRepositories>;
   let logger: jest.Mocked<ILogger>;
   let emailSender: jest.Mocked<IEmailSenderService>;
+  let metrics: jest.Mocked<IMetrics>;
   let quoteId: string;
   let workOrder: WorkOrder;
   let saga: SagaInstance;
@@ -32,6 +36,8 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
     logger = createMockLogger();
 
     emailSender = { send: jest.fn().mockResolvedValue(undefined) };
+
+    metrics = createMockMetrics();
 
     quoteId = randomUUID();
 
@@ -51,7 +57,7 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
 
     jest.mocked(repos.workOrder.findByIdWithDetails).mockResolvedValue(workOrder);
 
-    useCase = new ConfirmQuoteApprovalReversalUseCase(unitOfWork, logger, emailSender);
+    useCase = new ConfirmQuoteApprovalReversalUseCase(unitOfWork, logger, emailSender, metrics);
   });
 
   it('should compensate the saga and record the reversal for missing stock in the history', async () => {
@@ -77,12 +83,40 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
 
     expect(workOrder.status).toBe(WorkOrderStatus.AWAITING_APPROVAL);
 
-    expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_APPROVAL_COMPENSATED, {
+    expect(logger.event).toHaveBeenCalledTimes(1);
+    expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.SAGA_COMPENSATED, {
       sagaId: saga.id,
+      sagaType: SagaType.QUOTE_APPROVAL,
+      sagaStatus: SagaStatus.COMPENSATED,
       quoteId,
       workOrderId: workOrder.id,
       workOrderNumber: workOrder.number.toString(),
       sagaFailureReason: SagaFailureReason.INSUFFICIENT_STOCK,
+    });
+
+    expect(metrics.increment).toHaveBeenCalledTimes(1);
+    expect(metrics.increment).toHaveBeenCalledWith(BUSINESS_METRICS.SAGA_FINISHED, {
+      sagaType: SagaType.QUOTE_APPROVAL,
+      sagaOutcome: 'compensated',
+    });
+  });
+
+  it('should time the saga from the update timestamp the repository saved', async () => {
+    jest.mocked(repos.sagaInstance.update).mockResolvedValue(
+      createMockSagaInstance({
+        correlationId: quoteId,
+        status: SagaStatus.COMPENSATED,
+        failureReason: SagaFailureReason.INSUFFICIENT_STOCK,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:10:00.000Z'),
+      }),
+    );
+
+    await useCase.execute(quoteId);
+
+    expect(metrics.record).toHaveBeenCalledWith(BUSINESS_METRICS.SAGA_DURATION, 600, {
+      sagaType: SagaType.QUOTE_APPROVAL,
+      sagaOutcome: 'compensated',
     });
   });
 
@@ -112,7 +146,7 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
     expect(saga.status).toBe(SagaStatus.COMPENSATED);
 
     expect(logger.event).toHaveBeenCalledWith(
-      BUSINESS_EVENTS.QUOTE_APPROVAL_COMPENSATED,
+      BUSINESS_EVENTS.SAGA_COMPENSATED,
       expect.objectContaining({ quoteId }),
     );
   });
@@ -146,7 +180,7 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
     expect(emailSender.send).not.toHaveBeenCalled();
 
     expect(logger.event).toHaveBeenCalledWith(
-      BUSINESS_EVENTS.QUOTE_APPROVAL_COMPENSATED,
+      BUSINESS_EVENTS.SAGA_COMPENSATED,
       expect.objectContaining({ sagaFailureReason: SagaFailureReason.WORK_ORDER_NOT_AWAITING }),
     );
   });
@@ -167,9 +201,12 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
     expect(repos.statusHistory.create).not.toHaveBeenCalled();
     expect(emailSender.send).not.toHaveBeenCalled();
 
-    expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_APPROVAL_STEP_SKIPPED, {
+    expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.SAGA_STEP_SKIPPED, {
+      sagaType: SagaType.QUOTE_APPROVAL,
       quoteId,
       sagaStatus,
     });
+
+    expect(metrics.increment).not.toHaveBeenCalled();
   });
 });

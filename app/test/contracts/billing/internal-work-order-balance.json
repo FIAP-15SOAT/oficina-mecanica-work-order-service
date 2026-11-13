@@ -1,0 +1,8 @@
+{
+  "$source": "oficina-mecanica-billing-service app/test/contracts/internal-work-order-balance.json",
+  "data": {
+    "approvedTotal": "500.00",
+    "paidTotal": "100.00",
+    "balance": "400.00"
+  }
+}

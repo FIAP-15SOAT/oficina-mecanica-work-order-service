@@ -76,8 +76,10 @@ describe('PinoLoggerAdapter', () => {
   });
 
   it('should map logical event fields to their physical telemetry keys', () => {
-    adapter.event(BUSINESS_EVENTS.QUOTE_APPROVAL_COMPLETED, {
+    adapter.event(BUSINESS_EVENTS.SAGA_COMPLETED, {
       sagaId: 'saga-1',
+      sagaType: 'QUOTE_APPROVAL',
+      sagaStatus: 'COMPLETED',
       quoteId: 'quote-1',
       workOrderId: 'wo-1',
       workOrderNumber: 'OS-0001',
@@ -85,9 +87,11 @@ describe('PinoLoggerAdapter', () => {
 
     expect(lines[0]).toMatchObject({
       level: 'info',
-      message: BUSINESS_EVENTS.QUOTE_APPROVAL_COMPLETED.message,
-      'oficina.event.name': 'quote_approval.completed',
+      message: BUSINESS_EVENTS.SAGA_COMPLETED.message,
+      'oficina.event.name': 'saga.completed',
       'oficina.saga.id': 'saga-1',
+      'oficina.saga.type': 'QUOTE_APPROVAL',
+      'oficina.saga.status': 'COMPLETED',
       'oficina.quote.id': 'quote-1',
       'oficina.work_order.id': 'wo-1',
       'oficina.work_order.number': 'OS-0001',

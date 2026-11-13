@@ -1,0 +1,27 @@
+{
+  "$source": "oficina-mecanica-billing-service app/test/contracts/internal-work-order-payments.json",
+  "data": [
+    {
+      "id": "8b2d4f6a-1c3e-4a5b-9d7f-0e2c4a6b8d1f",
+      "workOrderId": "6f1c2b9e-4d3a-4e8b-9c7d-2a1b3c4d5e6f",
+      "checkoutId": "ORD01JQ4S4KY8HWQ6NA5PXB65B3D3",
+      "amount": 100,
+      "status": "APPROVED",
+      "checkoutUrl": "https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=1",
+      "expiresAt": "2026-10-27T10:00:00.000-03:00",
+      "createdAt": "2026-10-26T10:00:00.000-03:00",
+      "updatedAt": "2026-10-26T10:05:00.000-03:00"
+    },
+    {
+      "id": "c4e6a8b0-2d4f-4b6c-8e0a-1f3b5d7c9e2a",
+      "workOrderId": "6f1c2b9e-4d3a-4e8b-9c7d-2a1b3c4d5e6f",
+      "checkoutId": "ORD01JQ4S4KY8HWQ6NA5PXB65B3D4",
+      "amount": 400,
+      "status": "PENDING",
+      "checkoutUrl": "https://www.mercadopago.com.br/checkout/v1/redirect?pref_id=2",
+      "expiresAt": "2026-10-29T10:00:00.000-03:00",
+      "createdAt": "2026-10-28T10:00:00.000-03:00",
+      "updatedAt": "2026-10-28T10:00:00.000-03:00"
+    }
+  ]
+}

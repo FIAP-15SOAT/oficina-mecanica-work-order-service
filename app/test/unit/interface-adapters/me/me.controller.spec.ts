@@ -14,6 +14,7 @@ import {
   readInternalQuoteFixture,
   readInternalWorkOrderQuotesFixture,
 } from '../../../helpers/billing-quotes-gateway-mock.factory';
+import { readInternalWorkOrderPaymentsFixture } from '../../../helpers/billing-payments-gateway-mock.factory';
 import { createMockCustomer } from '../../../helpers/customer-mock.factory';
 
 describe('MeController', () => {
@@ -25,6 +26,7 @@ describe('MeController', () => {
   let findMyWorkOrdersQuotesUseCase: { execute: jest.Mock };
   let findMyQuoteByIdUseCase: { execute: jest.Mock };
   let decideQuoteUseCase: { execute: jest.Mock };
+  let findMyWorkOrderPaymentsUseCase: { execute: jest.Mock };
 
   beforeEach(() => {
     changePasswordUseCase = { execute: jest.fn() };
@@ -34,6 +36,7 @@ describe('MeController', () => {
     findMyWorkOrdersQuotesUseCase = { execute: jest.fn() };
     findMyQuoteByIdUseCase = { execute: jest.fn() };
     decideQuoteUseCase = { execute: jest.fn() };
+    findMyWorkOrderPaymentsUseCase = { execute: jest.fn() };
 
     controller = new MeController(
       changePasswordUseCase,
@@ -43,6 +46,7 @@ describe('MeController', () => {
       findMyWorkOrdersQuotesUseCase,
       findMyQuoteByIdUseCase,
       decideQuoteUseCase,
+      findMyWorkOrderPaymentsUseCase,
     );
   });
 
@@ -137,6 +141,21 @@ describe('MeController', () => {
 
       expect(findMyWorkOrdersQuotesUseCase.execute).toHaveBeenCalledWith(userId, workOrderId);
       expect(response).toEqual(MePresenter.toQuoteListResponse(quotes));
+    });
+  });
+
+  describe('listWorkOrderPayments', () => {
+    it('should forward to the use case and wrap the result in data', async () => {
+      const userId = randomUUID();
+      const workOrderId = randomUUID();
+      const payments = readInternalWorkOrderPaymentsFixture().data;
+
+      findMyWorkOrderPaymentsUseCase.execute.mockResolvedValue(payments);
+
+      const response = await controller.listWorkOrderPayments(userId, workOrderId);
+
+      expect(findMyWorkOrderPaymentsUseCase.execute).toHaveBeenCalledWith(userId, workOrderId);
+      expect(response).toEqual(MePresenter.toPaymentListResponse(payments));
     });
   });
 

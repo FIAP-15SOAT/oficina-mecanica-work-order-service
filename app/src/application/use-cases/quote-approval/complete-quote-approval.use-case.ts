@@ -15,10 +15,12 @@ import { IMetrics } from '@application/ports/output/services/metrics.service.int
 import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { recordWorkOrderTransition } from '@application/metrics/work-order-metrics';
+import { recordSagaTransition } from '@application/metrics/saga-metrics';
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { ICompleteQuoteApprovalUseCase } from '@application/ports/input/quote-approval/complete-quote-approval.use-case.interface';
 
 interface ApprovalCompletion {
+  saga: SagaInstance;
   workOrder: WorkOrder;
   workOrderStatusTransition: StatusHistory;
 }
@@ -42,7 +44,8 @@ export class CompleteQuoteApprovalUseCase implements ICompleteQuoteApprovalUseCa
 
     // A duplicated or late reply finds the saga already settled; at-least-once delivery makes it expected.
     if (saga?.status !== SagaStatus.RESERVING_STOCK) {
-      this.logger.event(BUSINESS_EVENTS.QUOTE_APPROVAL_STEP_SKIPPED, {
+      this.logger.event(BUSINESS_EVENTS.SAGA_STEP_SKIPPED, {
+        sagaType: SagaType.QUOTE_APPROVAL,
         quoteId,
         sagaStatus: saga?.status,
       });
@@ -53,16 +56,16 @@ export class CompleteQuoteApprovalUseCase implements ICompleteQuoteApprovalUseCa
     // The reservation reply carries only the quote id, and the approved items belong to the Billing.
     const quote = await this.billingQuotesGateway.getQuote(quoteId);
 
-    const { workOrder, workOrderStatusTransition } = await this.unitOfWork.executeTransaction(
-      (repos) => this.complete(repos, saga, quote),
-    );
+    const {
+      saga: completedSaga,
+      workOrder,
+      workOrderStatusTransition,
+    } = await this.unitOfWork.executeTransaction((repos) => this.complete(repos, saga, quote));
 
     await this.cache.delete([workOrderCacheKey(workOrder.id)]);
 
-    this.logger.event(BUSINESS_EVENTS.QUOTE_APPROVAL_COMPLETED, {
-      sagaId: saga.id,
-      quoteId,
-      workOrderId: workOrder.id,
+    recordSagaTransition(this.logger, this.metrics, completedSaga, {
+      started: false,
       workOrderNumber: workOrder.number.toString(),
     });
 
@@ -102,7 +105,7 @@ export class CompleteQuoteApprovalUseCase implements ICompleteQuoteApprovalUseCa
     await repos.workOrder.update(workOrder);
     await repos.workOrder.addServiceItems(approvedItems.services);
     await repos.workOrder.addPartSupplyItems(approvedItems.partSupplies);
-    await repos.sagaInstance.update(saga);
+    const updatedSaga = await repos.sagaInstance.update(saga);
 
     const workOrderStatusTransition = await repos.statusHistory.create(
       StatusHistory.create({
@@ -113,6 +116,6 @@ export class CompleteQuoteApprovalUseCase implements ICompleteQuoteApprovalUseCa
       }),
     );
 
-    return { workOrder, workOrderStatusTransition };
+    return { saga: updatedSaga, workOrder, workOrderStatusTransition };
   }
 }

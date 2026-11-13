@@ -1,13 +1,7 @@
 import type { Server } from 'http';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
-import {
-  DeleteMessageCommand,
-  GetQueueUrlCommand,
-  ReceiveMessageCommand,
-  SQSClient,
-} from '@aws-sdk/client-sqs';
-import { MessageEnvelope } from '@application/messaging/message-envelope';
+import { GetQueueUrlCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
@@ -18,14 +12,9 @@ import {
   stubPartSupply,
   stubService,
 } from '../helpers/internal-services-stub';
+import { findEmails } from '../helpers/mailhog.helper';
+import { receiveCommands } from '../helpers/sqs-commands.helper';
 import { waitFor } from '../helpers/wait-for.helper';
-
-interface MailhogResponse {
-  items: {
-    To: { Mailbox: string; Domain: string }[];
-    Content: { Headers: { Subject: string[] } };
-  }[];
-}
 
 const CUSTOMER_EMAIL = 'saga@e2e.test';
 
@@ -150,57 +139,12 @@ describe('Quote approval saga (E2E)', () => {
     );
   }
 
-  // Deletes every message it receives; one more short poll after the expected count catches extras.
-  async function receiveCommands(
-    queueUrl: string,
-    workOrderId: string,
-    expectedCount: number,
-  ): Promise<MessageEnvelope[]> {
-    const commands: MessageEnvelope[] = [];
-
-    const receive = async (): Promise<void> => {
-      const { Messages = [] } = await sqs.send(
-        new ReceiveMessageCommand({
-          QueueUrl: queueUrl,
-          MaxNumberOfMessages: 10,
-          WaitTimeSeconds: 1,
-        }),
-      );
-
-      for (const message of Messages) {
-        const envelope = JSON.parse(message.Body as string) as MessageEnvelope;
-
-        if (envelope.workOrderId === workOrderId) commands.push(envelope);
-
-        await sqs.send(
-          new DeleteMessageCommand({ QueueUrl: queueUrl, ReceiptHandle: message.ReceiptHandle }),
-        );
-      }
-    };
-
-    await waitFor(async () => {
-      await receive();
-      return commands.length >= expectedCount;
-    });
-
-    await receive();
-
-    return commands;
-  }
-
   async function waitForEmail(workOrderNumber: string, subjectPart: string): Promise<void> {
-    const mailhogUrl = `http://${ctx.mailhogContainer.getHost()}:${ctx.mailhogContainer.getMappedPort(8025)}`;
-
     await waitFor(async () => {
-      const { items } = (await (
-        await fetch(`${mailhogUrl}/api/v2/messages`)
-      ).json()) as MailhogResponse;
+      const emails = await findEmails(ctx.mailhogContainer, CUSTOMER_EMAIL);
 
-      return items.some(
-        (item) =>
-          item.To.some((to) => `${to.Mailbox}@${to.Domain}` === CUSTOMER_EMAIL) &&
-          item.Content.Headers.Subject[0].includes(workOrderNumber) &&
-          item.Content.Headers.Subject[0].includes(subjectPart),
+      return emails.some(
+        ({ subject }) => subject.includes(workOrderNumber) && subject.includes(subjectPart),
       );
     }, 10_000);
   }
@@ -226,7 +170,7 @@ describe('Quote approval saga (E2E)', () => {
 
     await approveQuote(workOrder.id, quoteId, serviceId, partSupplyId);
 
-    const commands = await receiveCommands(inventoryQueueUrl, workOrder.id, 1);
+    const commands = await receiveCommands(sqs, inventoryQueueUrl, workOrder.id, 1);
 
     await unitOfWork.executeTransaction((repositories) =>
       repositories.outbox.add({
@@ -288,7 +232,7 @@ describe('Quote approval saga (E2E)', () => {
       where: { correlationId: quoteId },
     });
 
-    const commands = await receiveCommands(inventoryQueueUrl, workOrder.id, 0);
+    const commands = await receiveCommands(sqs, inventoryQueueUrl, workOrder.id, 0);
 
     expect(saga.status).toBe('COMPLETED');
     expect(commands).toEqual([]);
@@ -302,7 +246,7 @@ describe('Quote approval saga (E2E)', () => {
 
     await approveQuote(workOrder.id, quoteId, serviceId, partSupplyId);
 
-    await receiveCommands(inventoryQueueUrl, workOrder.id, 1);
+    await receiveCommands(sqs, inventoryQueueUrl, workOrder.id, 1);
 
     await unitOfWork.executeTransaction((repositories) =>
       repositories.outbox.add({
@@ -312,7 +256,7 @@ describe('Quote approval saga (E2E)', () => {
       }),
     );
 
-    const revertCommands = await receiveCommands(billingQueueUrl, workOrder.id, 1);
+    const revertCommands = await receiveCommands(sqs, billingQueueUrl, workOrder.id, 1);
 
     const compensatingSaga = await ctx.prisma.sagaInstance.findFirstOrThrow({
       where: { correlationId: quoteId },
@@ -377,7 +321,7 @@ describe('Quote approval saga (E2E)', () => {
 
     await approveQuote(workOrder.id, quoteId, serviceId, partSupplyId);
 
-    const reserveCommands = await receiveCommands(inventoryQueueUrl, workOrder.id, 1);
+    const reserveCommands = await receiveCommands(sqs, inventoryQueueUrl, workOrder.id, 1);
 
     const reopenedSaga = await ctx.prisma.sagaInstance.findFirstOrThrow({
       where: { correlationId: quoteId },
@@ -410,7 +354,7 @@ describe('Quote approval saga (E2E)', () => {
 
     await approveQuote(workOrder.id, quoteId, serviceId);
 
-    const commands = await receiveCommands(billingQueueUrl, workOrder.id, 1);
+    const commands = await receiveCommands(sqs, billingQueueUrl, workOrder.id, 1);
 
     const saga = await ctx.prisma.sagaInstance.findFirstOrThrow({
       where: { correlationId: quoteId },

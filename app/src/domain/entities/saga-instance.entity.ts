@@ -3,6 +3,7 @@ import { SagaFailureReason } from '../enums/saga-failure-reason.enum';
 import { SagaStatus } from '../enums/saga-status.enum';
 import { SagaType } from '../enums/saga-type.enum';
 import { BusinessRuleViolationException } from '../exceptions/business-rule-violation.exception';
+import { PaymentOriginStatus } from './work-order.entity';
 
 export interface CreateSagaInstanceProps {
   type: SagaType;
@@ -10,6 +11,7 @@ export interface CreateSagaInstanceProps {
   workOrderId: string;
   status: SagaStatus;
   failureReason?: SagaFailureReason | null;
+  originStatus?: PaymentOriginStatus | null;
 }
 
 interface SagaInstanceProps {
@@ -19,6 +21,9 @@ interface SagaInstanceProps {
   workOrderId: string;
   status: SagaStatus;
   failureReason: SagaFailureReason | null;
+  originStatus: PaymentOriginStatus | null;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export class SagaInstance {
@@ -26,6 +31,9 @@ export class SagaInstance {
   readonly type: SagaType;
   readonly correlationId: string;
   readonly workOrderId: string;
+  readonly originStatus: PaymentOriginStatus | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
   private _status: SagaStatus;
   private _failureReason: SagaFailureReason | null;
 
@@ -36,6 +44,9 @@ export class SagaInstance {
     this.workOrderId = props.workOrderId;
     this._status = props.status;
     this._failureReason = props.failureReason;
+    this.originStatus = props.originStatus;
+    this.createdAt = props.createdAt;
+    this.updatedAt = props.updatedAt;
   }
 
   static reconstitute(props: SagaInstanceProps): SagaInstance {
@@ -43,25 +54,37 @@ export class SagaInstance {
   }
 
   static create(props: CreateSagaInstanceProps): SagaInstance {
+    const now = new Date();
+
     return new SagaInstance({
       id: randomUUID(),
       ...props,
       failureReason: props.failureReason ?? null,
+      originStatus: props.originStatus ?? null,
+      createdAt: now,
+      updatedAt: now,
     });
   }
 
   complete(): void {
-    this.ensureStatus(
-      SagaStatus.RESERVING_STOCK,
-      'Só a Saga aguardando a reserva de estoque pode ser concluída',
-    );
+    if (this.type === SagaType.PAYMENT) {
+      this.ensureStatus(
+        [SagaStatus.AWAITING_PAYMENT, SagaStatus.COMPENSATING],
+        'Só a Saga aguardando o pagamento ou em compensação pode ser concluída',
+      );
+    } else {
+      this.ensureStatus(
+        [SagaStatus.RESERVING_STOCK],
+        'Só a Saga aguardando a reserva de estoque pode ser concluída',
+      );
+    }
 
     this._status = SagaStatus.COMPLETED;
   }
 
   requestCompensation(reason: SagaFailureReason): void {
     this.ensureStatus(
-      SagaStatus.RESERVING_STOCK,
+      [SagaStatus.RESERVING_STOCK],
       'Só a Saga aguardando a reserva de estoque pode entrar em compensação',
     );
 
@@ -69,10 +92,19 @@ export class SagaInstance {
     this._failureReason = reason;
   }
 
-  compensate(): void {
-    this.ensureStatus(SagaStatus.COMPENSATING, 'Só a Saga em compensação pode ser compensada');
+  compensate(failureReason: SagaFailureReason | null = null): void {
+    if (this.type === SagaType.PAYMENT) {
+      this.ensureStatus(
+        [SagaStatus.AWAITING_PAYMENT, SagaStatus.COMPENSATING],
+        'Só a Saga aguardando o pagamento ou em compensação pode ser compensada',
+      );
+    } else {
+      this.ensureStatus([SagaStatus.COMPENSATING], 'Só a Saga em compensação pode ser compensada');
+    }
 
     this._status = SagaStatus.COMPENSATED;
+    // A saga already compensating keeps the reason that started the compensation.
+    this._failureReason ??= failureReason;
   }
 
   reopen(
@@ -89,8 +121,8 @@ export class SagaInstance {
     this._failureReason = failureReason;
   }
 
-  private ensureStatus(expectedStatus: SagaStatus, message: string): void {
-    if (this._status !== expectedStatus) {
+  private ensureStatus(expectedStatuses: SagaStatus[], message: string): void {
+    if (!expectedStatuses.includes(this._status)) {
       throw new BusinessRuleViolationException(`${message}. Status atual: "${this._status}"`);
     }
   }

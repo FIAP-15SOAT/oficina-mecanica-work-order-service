@@ -9,6 +9,8 @@ import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { ICompensateQuoteApprovalUseCase } from '@application/ports/input/quote-approval/compensate-quote-approval.use-case.interface';
 import { CompensateQuoteApprovalInputDto } from '@application/ports/input/quote-approval/dto/compensate-quote-approval.dto';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
+import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
+import { recordSagaTransition } from '@application/metrics/saga-metrics';
 
 type ApprovalCompensation =
   | { requested: false; sagaStatus?: SagaStatus }
@@ -18,6 +20,7 @@ export class CompensateQuoteApprovalUseCase implements ICompensateQuoteApprovalU
   constructor(
     private readonly unitOfWork: IUnitOfWork,
     private readonly logger: ILogger,
+    private readonly metrics: IMetrics,
   ) {}
 
   async execute({ quoteId, missingItemCount }: CompensateQuoteApprovalInputDto): Promise<void> {
@@ -26,7 +29,8 @@ export class CompensateQuoteApprovalUseCase implements ICompensateQuoteApprovalU
     );
 
     if (!compensation.requested) {
-      this.logger.event(BUSINESS_EVENTS.QUOTE_APPROVAL_STEP_SKIPPED, {
+      this.logger.event(BUSINESS_EVENTS.SAGA_STEP_SKIPPED, {
+        sagaType: SagaType.QUOTE_APPROVAL,
         quoteId,
         sagaStatus: compensation.sagaStatus,
       });
@@ -34,14 +38,9 @@ export class CompensateQuoteApprovalUseCase implements ICompensateQuoteApprovalU
       return;
     }
 
-    const { saga, workOrder } = compensation;
-
-    this.logger.event(BUSINESS_EVENTS.QUOTE_APPROVAL_COMPENSATION_REQUESTED, {
-      sagaId: saga.id,
-      quoteId,
-      workOrderId: workOrder.id,
-      workOrderNumber: workOrder.number.toString(),
-      sagaFailureReason: SagaFailureReason.INSUFFICIENT_STOCK,
+    recordSagaTransition(this.logger, this.metrics, compensation.saga, {
+      started: false,
+      workOrderNumber: compensation.workOrder.number.toString(),
       missingItemCount,
     });
   }
@@ -66,13 +65,13 @@ export class CompensateQuoteApprovalUseCase implements ICompensateQuoteApprovalU
 
     // Updating the work order with its version orders its outbox rows against concurrent writers.
     await repos.workOrder.update(workOrder);
-    await repos.sagaInstance.update(saga);
+    const updatedSaga = await repos.sagaInstance.update(saga);
     await repos.outbox.add({
       type: 'billing.quote.revert_approval',
       workOrderId: workOrder.id,
       payload: { quoteId, revertTo: 'SENT' },
     });
 
-    return { requested: true, saga, workOrder };
+    return { requested: true, saga: updatedSaga, workOrder };
   }
 }

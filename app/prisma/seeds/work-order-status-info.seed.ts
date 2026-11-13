@@ -7,10 +7,11 @@ const WORK_ORDER_STATUS_PRIORITY: Record<WorkOrderStatus, number> = {
   [WorkOrderStatus.AWAITING_APPROVAL]: 3,
   [WorkOrderStatus.REJECTED]: 4,
   [WorkOrderStatus.APPROVED]: 5,
-  [WorkOrderStatus.IN_PROGRESS]: 6,
-  [WorkOrderStatus.COMPLETED]: 7,
-  [WorkOrderStatus.DELIVERED]: 8,
-  [WorkOrderStatus.CANCELLED]: 9,
+  [WorkOrderStatus.AWAITING_PAYMENT]: 6,
+  [WorkOrderStatus.IN_PROGRESS]: 7,
+  [WorkOrderStatus.COMPLETED]: 8,
+  [WorkOrderStatus.DELIVERED]: 9,
+  [WorkOrderStatus.CANCELLED]: 10,
 };
 
 export async function seedWorkOrderStatusInfos(prisma: PrismaClient): Promise<void> {

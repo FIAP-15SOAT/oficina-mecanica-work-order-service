@@ -11,6 +11,9 @@ export function createMockSagaInstance(overrides: Partial<SagaInstance> = {}): S
     workOrderId: overrides.workOrderId ?? '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d',
     status: overrides.status ?? SagaStatus.RESERVING_STOCK,
     failureReason: overrides.failureReason ?? null,
+    originStatus: overrides.originStatus ?? null,
+    createdAt: overrides.createdAt ?? new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: overrides.updatedAt ?? new Date('2026-01-01T00:05:00.000Z'),
   });
 }
 

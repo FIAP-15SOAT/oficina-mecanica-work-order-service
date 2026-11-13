@@ -35,3 +35,4 @@ superpowers/
 
 # Private keys (PEM) never enter the repository
 *.pem
+app/reports/

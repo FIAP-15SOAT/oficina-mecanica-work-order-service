@@ -13,6 +13,8 @@ export type LogicalFieldName =
   | 'currentWorkOrderServiceStatus'
   | 'missingItemCount'
   | 'sagaId'
+  | 'sagaType'
+  | 'paymentId'
   | 'sagaStatus'
   | 'sagaFailureReason'
   | 'targetUserId'

@@ -64,6 +64,8 @@ export interface WorkOrderProps {
   partSupplies?: WorkOrderPartSupply[];
 }
 
+export type PaymentOriginStatus = WorkOrderStatus.APPROVED | WorkOrderStatus.COMPLETED;
+
 type WorkOrderTimestampField =
   | 'startedAt'
   | 'finishedAt'
@@ -298,6 +300,28 @@ export class WorkOrder {
     this.updatedAt = new Date();
   }
 
+  holdForPayment(): void {
+    if (!this.canChangeStatusTo(WorkOrderStatus.AWAITING_PAYMENT)) {
+      throw new BusinessRuleViolationException(
+        `Só ordem de serviço aprovada ou concluída pode aguardar pagamento. Status atual: "${this.status}"`,
+      );
+    }
+
+    this._status = WorkOrderStatus.AWAITING_PAYMENT;
+    this.updatedAt = new Date();
+  }
+
+  releasePaymentHold(originStatus: PaymentOriginStatus): void {
+    if (this.status !== WorkOrderStatus.AWAITING_PAYMENT) {
+      throw new BusinessRuleViolationException(
+        `Só a ordem de serviço aguardando pagamento volta ao status de origem. Status atual: "${this.status}"`,
+      );
+    }
+
+    this._status = originStatus;
+    this.updatedAt = new Date();
+  }
+
   private static readonly STATUS_TRANSITION_MAP: Record<WorkOrderStatus, WorkOrderStatus[]> = {
     [WorkOrderStatus.RECEIVED]: [WorkOrderStatus.IN_DIAGNOSIS, WorkOrderStatus.CANCELLED],
     [WorkOrderStatus.IN_DIAGNOSIS]: [WorkOrderStatus.AWAITING_APPROVAL, WorkOrderStatus.CANCELLED],
@@ -307,9 +331,10 @@ export class WorkOrder {
       WorkOrderStatus.CANCELLED,
     ],
     [WorkOrderStatus.REJECTED]: [WorkOrderStatus.AWAITING_APPROVAL],
-    [WorkOrderStatus.APPROVED]: [WorkOrderStatus.IN_PROGRESS],
+    [WorkOrderStatus.APPROVED]: [WorkOrderStatus.IN_PROGRESS, WorkOrderStatus.AWAITING_PAYMENT],
+    [WorkOrderStatus.AWAITING_PAYMENT]: [WorkOrderStatus.APPROVED, WorkOrderStatus.COMPLETED],
     [WorkOrderStatus.IN_PROGRESS]: [WorkOrderStatus.COMPLETED],
-    [WorkOrderStatus.COMPLETED]: [WorkOrderStatus.DELIVERED],
+    [WorkOrderStatus.COMPLETED]: [WorkOrderStatus.DELIVERED, WorkOrderStatus.AWAITING_PAYMENT],
     [WorkOrderStatus.DELIVERED]: [],
     [WorkOrderStatus.CANCELLED]: [],
   };
@@ -323,6 +348,19 @@ export class WorkOrder {
   }
 
   private validateStatusTransition(newStatus: WorkOrderStatus, notes?: string | null): void {
+    // The payment hold enters and leaves only through holdForPayment and releasePaymentHold.
+    if (this.status === WorkOrderStatus.AWAITING_PAYMENT) {
+      throw new BusinessRuleViolationException(
+        'Ordem de serviço aguardando pagamento: execução, entrega e cancelamento voltam a valer quando a cobrança for paga, expirar ou for cancelada',
+      );
+    }
+
+    if (newStatus === WorkOrderStatus.AWAITING_PAYMENT) {
+      throw new BusinessRuleViolationException(
+        'Ordem de serviço só passa a aguardar pagamento quando uma cobrança é criada',
+      );
+    }
+
     if (this.status === newStatus) {
       throw new BusinessRuleViolationException(
         `A ordem de serviço já está no status ${newStatus}.`,

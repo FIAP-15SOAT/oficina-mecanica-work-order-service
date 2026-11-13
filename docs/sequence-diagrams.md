@@ -1,8 +1,8 @@
 # Diagramas de Sequência
 
-Quatro fluxos centrais da aplicação, em notação UML: login interno, abertura de Ordem de Serviço, autenticação externa do Cliente da Oficina por CPF e aprovação de orçamento com reserva de estoque. Gerados via draw.io a partir de Mermaid, com XML editável embutido nos PNGs.
+Cinco fluxos centrais da aplicação, em notação UML: login interno, abertura de Ordem de Serviço, autenticação externa do Cliente da Oficina por CPF, aprovação de orçamento com reserva de estoque e cobrança da OS. Gerados via draw.io a partir de Mermaid, com XML editável embutido nos PNGs.
 
-Nos três primeiros, existe uma camada de **Controller** duas vezes: o `Controller` do NestJS (em `infrastructure/http/controllers/`, borda HTTP — decorators de rota, DTOs, Swagger) delega para o `Controller` da Clean Architecture (em `interface-adapters/`, sem nenhuma dependência de framework), que por sua vez chama o caso de uso. Ver [ADR 0009](adr/0009-clean-architecture-ddd-em-camadas.md). No da aprovação de orçamento, a área do cliente (**Minha Conta**) aparece num participante só, para dar espaço às mensagens trocadas com o Billing e o Inventory.
+Nos três primeiros, existe uma camada de **Controller** duas vezes: o `Controller` do NestJS (em `infrastructure/http/controllers/`, borda HTTP — decorators de rota, DTOs, Swagger) delega para o `Controller` da Clean Architecture (em `interface-adapters/`, sem nenhuma dependência de framework), que por sua vez chama o caso de uso. Ver [ADR 0009](adr/0009-clean-architecture-ddd-em-camadas.md). No da aprovação de orçamento, a área do cliente (**Minha Conta**) aparece num participante só, para dar espaço às mensagens trocadas com o Billing e o Inventory; no da cobrança, o work-order aparece pelos casos de uso que tratam as mensagens.
 
 ## Login interno
 
@@ -38,6 +38,18 @@ O funcionário aprova o orçamento no Billing (`PATCH /api/quotes/:id`) ou o Cli
 
 Uma mensagem que encontra a Saga num status que não a espera (mensagem repetida ou fora de hora) só é registrada no log. Ver [Aprovação de orçamento com reserva de estoque](architecture.md#aprovação-de-orçamento-com-reserva-de-estoque) para as regras completas, inclusive a tabela de transições, a reaprovação depois da falta de estoque e os bloqueios enquanto a Saga está em andamento. O estado de cada serviço a cada passo está em [Fluxo do orçamento, do envio à aprovação](architecture.md#fluxo-do-orçamento-do-envio-à-aprovação).
 
+## Saga de cobrança
+
+<p align="center"><img src="diagrams/payment-saga-sequence.png" alt="Diagrama de sequência UML da Saga de cobrança: o atendente cria a cobrança no Billing (POST /api/payments); o Billing confere a OS em GET /internal/work-orders/:id, cria a ordem no Mercado Pago, grava a cobrança PENDING, responde 201 e publica billing.payment.requested, que chega pela fila work-order.fifo ao StartPaymentUseCase. Com a OS em APPROVED ou COMPLETED, ele grava a Saga AWAITING_PAYMENT com o status de origem, leva a OS a AWAITING_PAYMENT com o histórico e, depois do commit, envia ao cliente o e-mail com o link; o cliente paga no Checkout Pro, o Mercado Pago avisa o Billing pelo webhook, o Billing publica billing.payment.approved e o ApplyPaymentResultUseCase devolve a OS à origem e marca a Saga COMPLETED. Com a cobrança expirada, recusada ou cancelada, o Billing publica billing.payment.failed e a OS volta à origem com a Saga COMPENSATED. Com a OS já em outro status, como IN_PROGRESS, o StartPaymentUseCase grava a Saga COMPENSATING e o comando billing.payment.cancel no outbox; o Billing cancela a ordem no Mercado Pago e publica billing.payment.failed com CANCELLED, e a Saga fica COMPENSATED sem que a OS mude" width="100%"></p>
+
+O atendente cria a cobrança no Billing (`POST /api/payments`), com a OS em `APPROVED` (sinal) ou `COMPLETED` (restante). O Billing confere a OS em `GET /internal/work-orders/:id`, cria a ordem de pagamento no Mercado Pago, o provedor de pagamento da solução, grava a cobrança `PENDING`, responde `201` e publica `billing.payment.requested`, com o id da cobrança, o valor, o link do Checkout Pro (a página de pagamento do Mercado Pago) e a validade dele. A mensagem chega pela fila SQS FIFO `work-order.fifo` ao `StartPaymentUseCase`. A cobrança é uma **Saga**, com o estado em `saga_instances`, porque o passo deste serviço pode falhar depois de o Billing gravar a cobrança. O diagrama tem três caminhos:
+
+- **Pagamento aprovado.** A OS está em `APPROVED` ou `COMPLETED`: numa transação, a Saga nasce `AWAITING_PAYMENT` guardando esse status de origem, a OS vai a `AWAITING_PAYMENT` e o histórico registra a cobrança. Depois do commit, o cliente recebe o e-mail com o link. Ele paga no Checkout Pro, o Mercado Pago avisa o Billing pelo webhook (a chamada HTTP que o provedor faz quando o pagamento muda), e o Billing publica `billing.payment.approved`. O `ApplyPaymentResultUseCase` devolve a OS à origem e marca a Saga `COMPLETED`.
+- **Cobrança expirada, recusada ou cancelada (F7).** No lugar do pagamento, o Billing publica `billing.payment.failed` com o motivo (`EXPIRED`, `REJECTED` ou `CANCELLED`). A OS volta à origem do mesmo jeito, e a Saga fica `COMPENSATED` com `PAYMENT_EXPIRED`, `PAYMENT_REJECTED` ou `PAYMENT_CANCELLED`.
+- **OS fora de status (F6).** Entre a criação da cobrança e a chegada da mensagem, a OS mudou (o mecânico iniciou a execução, por exemplo). A Saga nasce `COMPENSATING` com `WORK_ORDER_NOT_PAYABLE`, e o comando `billing.payment.cancel` vai ao Billing pelo outbox e pela fila `billing.fifo`. O Billing cancela a ordem no Mercado Pago, marca a cobrança `CANCELLED` e publica `billing.payment.failed` com `CANCELLED`: a Saga fica `COMPENSATED`, a OS não muda e nenhum e-mail sai.
+
+F6 e F7 são os números desses cenários de falha na matriz de [Testes](testing.md#cenários-de-falha-f1-a-f14). Um caminho que o diagrama não mostra: se o cliente pagou antes de o cancelamento da F6 chegar ao Mercado Pago, o Billing publica `billing.payment.approved`, a Saga fica `COMPLETED`, a OS não muda e o valor entra no saldo. Ver [Saga de cobrança](architecture.md#saga-de-cobrança) para a tabela de transições completa, o histórico, o e-mail e a entrega com saldo zero.
+
 ## Referências
 
 - [ADR 0004 — Autenticação externa de clientes por CPF](adr/0004-autenticacao-de-clientes.md)
@@ -46,3 +58,4 @@ Uma mensagem que encontra a Saga num status que não a espera (mensagem repetida
 - [ADR 0022 — Token de funcionário em RS256](adr/0022-token-de-funcionario-em-rs256.md)
 - [ADR 0023 — Catálogo e estoque no Inventory, com reserva pela Saga de aprovação](adr/0023-catalogo-e-estoque-no-inventory-com-reserva-pela-saga.md)
 - [ADR 0024 — Saga de abertura com orçamento inicial no Billing](adr/0024-saga-de-abertura-com-orcamento-inicial-no-billing.md)
+- [ADR 0025 — Sagas orquestradas no work-order](adr/0025-sagas-orquestradas-no-work-order.md)

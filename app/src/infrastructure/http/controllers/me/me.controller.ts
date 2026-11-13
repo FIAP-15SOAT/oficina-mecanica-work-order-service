@@ -44,6 +44,7 @@ import {
   MyQuoteDataResponseDto,
   MyQuoteListResponseDto,
 } from './dto/responses/my-quote-response.dto';
+import { MyPaymentListResponseDto } from './dto/responses/my-payment-response.dto';
 
 @ApiTags('Minha Conta')
 @ApiProduces('application/json')
@@ -117,6 +118,20 @@ export class MeController {
     @CurrentPrincipal() principal: AuthenticatedPrincipal,
   ): Promise<MyQuoteListResponseDto> {
     return this.controller.listWorkOrderQuotes(principal.sub, workOrderId);
+  }
+
+  @Get('work-orders/:workOrderId/payments')
+  @CustomerArea()
+  @ApiOperation({ summary: 'Cobranças de uma ordem de serviço vinculada' })
+  @ApiParam({ name: 'workOrderId', format: 'uuid' })
+  @ApiOkResponse({ type: MyPaymentListResponseDto })
+  @ApiNotFoundResponse({ description: 'Ordem inexistente ou não vinculada' })
+  @ApiServiceUnavailableResponse({ description: 'Billing indisponível' })
+  listWorkOrderPayments(
+    @Param('workOrderId', ParseUUIDPipe) workOrderId: string,
+    @CurrentPrincipal() principal: AuthenticatedPrincipal,
+  ): Promise<MyPaymentListResponseDto> {
+    return this.controller.listWorkOrderPayments(principal.sub, workOrderId);
   }
 
   @Get('quotes/:quoteId')

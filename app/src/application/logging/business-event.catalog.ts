@@ -1,5 +1,16 @@
 import { defineLogEvent } from './log-event';
 
+// Type and status together name the step; the correlation is the quote or the payment.
+interface SagaEventFields {
+  sagaId: string;
+  sagaType: string;
+  sagaStatus: string;
+  workOrderId: string;
+  workOrderNumber: string;
+  quoteId?: string;
+  paymentId?: string;
+}
+
 export type AuthenticationFailureReason =
   | 'unknown_user'
   | 'inactive_user'
@@ -39,51 +50,35 @@ export const BUSINESS_EVENTS = {
     message: 'refresh token rejected',
     level: 'warn',
   }),
-  QUOTE_APPROVAL_STARTED: defineLogEvent<{
-    sagaId: string;
-    quoteId: string;
-    workOrderId: string;
-    workOrderNumber: string;
-  }>({
-    name: 'quote_approval.started',
-    message: 'quote approval saga started and stock reservation requested',
+  SAGA_STARTED: defineLogEvent<SagaEventFields>({
+    name: 'saga.started',
+    message: 'saga created or reopened for a new attempt',
     level: 'info',
   }),
-  QUOTE_APPROVAL_COMPENSATION_REQUESTED: defineLogEvent<{
-    sagaId: string;
-    quoteId: string;
-    workOrderId: string;
-    workOrderNumber: string;
-    sagaFailureReason: string;
-    missingItemCount?: number;
-  }>({
-    name: 'quote_approval.compensation_requested',
-    message: 'quote approval reversal requested from the billing',
+  SAGA_COMPENSATION_STARTED: defineLogEvent<
+    SagaEventFields & { sagaFailureReason?: string; missingItemCount?: number }
+  >({
+    name: 'saga.compensation.started',
+    message: 'saga compensation started and the undo requested from the participant',
     level: 'info',
   }),
-  QUOTE_APPROVAL_COMPLETED: defineLogEvent<{
-    sagaId: string;
-    quoteId: string;
-    workOrderId: string;
-    workOrderNumber: string;
-  }>({
-    name: 'quote_approval.completed',
-    message: 'work order approved with the approved quote items and saga completed',
+  SAGA_COMPLETED: defineLogEvent<SagaEventFields>({
+    name: 'saga.completed',
+    message: 'saga completed and its result applied to the work order',
     level: 'info',
   }),
-  QUOTE_APPROVAL_COMPENSATED: defineLogEvent<{
-    sagaId: string;
-    quoteId: string;
-    workOrderId: string;
-    workOrderNumber: string;
-    sagaFailureReason: string;
-  }>({
-    name: 'quote_approval.compensated',
-    message: 'quote approval reversal confirmed and saga compensated',
+  SAGA_COMPENSATED: defineLogEvent<SagaEventFields & { sagaFailureReason?: string }>({
+    name: 'saga.compensated',
+    message: 'saga compensated after the participant confirmed the undo',
     level: 'info',
   }),
-  QUOTE_APPROVAL_STEP_SKIPPED: defineLogEvent<{ quoteId: string; sagaStatus?: string }>({
-    name: 'quote_approval.step_skipped',
+  SAGA_STEP_SKIPPED: defineLogEvent<{
+    sagaType: string;
+    quoteId?: string;
+    paymentId?: string;
+    sagaStatus?: string;
+  }>({
+    name: 'saga.step_skipped',
     message: 'saga message skipped because it does not match the saga status',
     level: 'info',
   }),

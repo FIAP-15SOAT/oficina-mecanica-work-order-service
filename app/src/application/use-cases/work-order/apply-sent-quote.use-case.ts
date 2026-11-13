@@ -3,6 +3,10 @@ import { WorkOrder } from '@domain/entities/work-order.entity';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
 import { IRepositories, IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
+import {
+  CustomerEmailRecipient,
+  CustomerEmailRecipients,
+} from '@domain/services/customer-email-recipients';
 
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
@@ -17,18 +21,12 @@ import {
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
 
-interface QuoteRecipient {
-  email: string;
-  name: string;
-  hasAccess: boolean;
-}
-
 type SentQuoteApplication =
   | { applied: false; currentWorkOrderStatus: WorkOrderStatus }
   | {
       applied: true;
       workOrderNumber: string;
-      recipients: QuoteRecipient[];
+      recipients: CustomerEmailRecipient[];
       workOrderStatusTransition?: StatusHistory;
     };
 
@@ -106,10 +104,13 @@ export class ApplySentQuoteUseCase implements IApplySentQuoteUseCase {
     workOrder: WorkOrder,
     workOrderStatusTransition?: StatusHistory,
   ): Promise<SentQuoteApplication> {
+    const customer = (await repos.customer.findById(workOrder.customerId))!;
+    const linkedUsers = await repos.userCustomer.findUsersByCustomerId(customer.id);
+
     return {
       applied: true,
       workOrderNumber: workOrder.number.toString(),
-      recipients: await this.findQuoteEmailRecipients(repos, workOrder.customerId),
+      recipients: CustomerEmailRecipients.fromActiveLinkedUsersOrCustomer(customer, linkedUsers),
       workOrderStatusTransition,
     };
   }
@@ -135,28 +136,9 @@ export class ApplySentQuoteUseCase implements IApplySentQuoteUseCase {
     );
   }
 
-  private async findQuoteEmailRecipients(
-    repos: IRepositories,
-    customerId: string,
-  ): Promise<QuoteRecipient[]> {
-    const customer = (await repos.customer.findById(customerId))!;
-    const linkedUsers = await repos.userCustomer.findUsersByCustomerId(customer.id);
-    const activeLinkedUsers = linkedUsers.filter((user) => user.isActive);
-
-    if (activeLinkedUsers.length === 0) {
-      return [{ email: customer.email.value, name: customer.name, hasAccess: false }];
-    }
-
-    return activeLinkedUsers.map((user) => ({
-      email: user.email.value,
-      name: user.name,
-      hasAccess: true,
-    }));
-  }
-
   private buildEmailContent(
     { total, items }: ApplySentQuoteInputDto,
-    recipient: QuoteRecipient,
+    recipient: CustomerEmailRecipient,
     workOrderNumber: string,
   ): SendEmailInput {
     const instructionText = recipient.hasAccess

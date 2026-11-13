@@ -8,6 +8,7 @@ import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
 import { signTestCustomerToken } from '../helpers/customer-jwt.helper';
 import { InternalServicesStub, startInternalServicesStub } from '../helpers/internal-services-stub';
 import { readInternalQuoteFixture } from '../helpers/billing-quotes-gateway-mock.factory';
+import { readInternalWorkOrderPaymentsFixture } from '../helpers/billing-payments-gateway-mock.factory';
 
 describe('Me (E2E)', () => {
   let ctx: TestContext;
@@ -529,7 +530,7 @@ describe('Me (E2E)', () => {
 
   // ─── Quotes read and decided in the Billing ─────────────────────────────────
 
-  describe('Quotes read and decided in the Billing', () => {
+  describe('Quotes and payments in the Billing', () => {
     let token: string;
     let userId: string;
     let workOrderId: string;
@@ -614,6 +615,40 @@ describe('Me (E2E)', () => {
         .get(`/api/me/work-orders/${unlinkedWorkOrderId}/quotes`)
         .set('Authorization', `Bearer ${token}`)
         .expect(404);
+    });
+
+    it('should list the payments of a linked work order', async () => {
+      const payments = readInternalWorkOrderPaymentsFixture().data;
+
+      const res = await request(httpServer)
+        .get(`/api/me/work-orders/${workOrderId}/payments`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(res.body.data).toEqual(
+        payments.map(({ id, amount, status, checkoutUrl, expiresAt, createdAt, updatedAt }) => ({
+          id,
+          amount,
+          status,
+          checkoutUrl,
+          expiresAt,
+          createdAt,
+          updatedAt,
+        })),
+      );
+    });
+
+    it('should return 404 for a work order not linked to the customer', async () => {
+      const paymentsRoute = `GET /internal/work-orders/${unlinkedWorkOrderId}/payments`;
+
+      stub.nextResponses.set(paymentsRoute, { status: 500 });
+
+      await request(httpServer)
+        .get(`/api/me/work-orders/${unlinkedWorkOrderId}/payments`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+
+      expect(stub.nextResponses.has(paymentsRoute)).toBe(true);
     });
 
     it('should answer 404 without quote data for a quote of an unlinked work order', async () => {

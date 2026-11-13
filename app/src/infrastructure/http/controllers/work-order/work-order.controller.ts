@@ -121,7 +121,13 @@ export class WorkOrderController {
   @ApiOkResponse({ type: WorkOrderDataResponseDto, description: 'Status atualizado com sucesso' })
   @ApiNotFoundResponse({ description: 'Ordem de Serviço não encontrada' })
   @ApiUnprocessableEntityResponse({ description: 'Transição de status inválida' })
-  @ApiConflictResponse({ description: 'Modificação concorrente detectada. Tente novamente.' })
+  @ApiConflictResponse({
+    description:
+      'Saldo a pagar na entrega, ordem de serviço aguardando pagamento ou modificação concorrente detectada',
+  })
+  @ApiServiceUnavailableResponse({
+    description: 'Billing indisponível ao conferir o saldo da entrega',
+  })
   @ApiBadRequestResponse({ description: 'Dados inválidos ou ID inválido' })
   @ApiUnauthorizedResponse({ description: 'Não autenticado' })
   @ApiForbiddenResponse({ description: 'Acesso negado' })
@@ -142,7 +148,9 @@ export class WorkOrderController {
     description: 'Status do serviço atualizado',
   })
   @ApiNotFoundResponse({ description: 'Ordem de Serviço ou serviço não encontrado' })
-  @ApiConflictResponse({ description: 'Modificação concorrente detectada. Tente novamente.' })
+  @ApiConflictResponse({
+    description: 'Ordem de serviço aguardando pagamento ou modificação concorrente detectada',
+  })
   @ApiBadRequestResponse({ description: 'Dados inválidos ou ID inválido' })
   @ApiUnauthorizedResponse({ description: 'Não autenticado' })
   @ApiForbiddenResponse({ description: 'Acesso negado' })

@@ -1,6 +1,7 @@
 import { UserRole } from '@domain/enums/user-role.enum';
 import { CustomerType } from '@domain/enums/customer-type.enum';
 import { BillingQuoteStatus } from '@application/ports/output/gateways/billing/billing-quotes-gateway.response';
+import { BillingPaymentStatus } from '@application/ports/output/gateways/billing/billing-payments-gateway.response';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { PaginationMeta } from '@domain/interfaces/common/pagination.interface';
 
@@ -83,4 +84,18 @@ export interface MyQuoteDataResponse {
 
 export interface MyQuoteListResponse {
   data: MyQuoteSummaryResponse[];
+}
+
+export interface MyPaymentResponse {
+  id: string;
+  amount: number;
+  status: BillingPaymentStatus;
+  checkoutUrl: string;
+  expiresAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MyPaymentListResponse {
+  data: MyPaymentResponse[];
 }

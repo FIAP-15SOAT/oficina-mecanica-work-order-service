@@ -14,6 +14,8 @@ import {
   SendEmailInput,
 } from '@application/ports/output/services/email-sender.service.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
+import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
+import { recordSagaTransition } from '@application/metrics/saga-metrics';
 
 type ApprovalReversalConfirmation =
   | { confirmed: false; sagaStatus?: SagaStatus }
@@ -24,7 +26,11 @@ type ApprovalReversalConfirmation =
       workOrder: WorkOrder;
     };
 
-const REVERSAL_NOTES: Record<SagaFailureReason, (quoteId: string) => string> = {
+type QuoteApprovalFailureReason =
+  | SagaFailureReason.INSUFFICIENT_STOCK
+  | SagaFailureReason.WORK_ORDER_NOT_AWAITING;
+
+const REVERSAL_NOTES: Record<QuoteApprovalFailureReason, (quoteId: string) => string> = {
   [SagaFailureReason.INSUFFICIENT_STOCK]: (quoteId) =>
     `Aprovação do orçamento ${quoteId} desfeita por falta de estoque`,
   [SagaFailureReason.WORK_ORDER_NOT_AWAITING]: (quoteId) =>
@@ -36,6 +42,7 @@ export class ConfirmQuoteApprovalReversalUseCase implements IConfirmQuoteApprova
     private readonly unitOfWork: IUnitOfWork,
     private readonly logger: ILogger,
     private readonly emailSender: IEmailSenderService,
+    private readonly metrics: IMetrics,
   ) {}
 
   async execute(quoteId: string): Promise<void> {
@@ -44,7 +51,8 @@ export class ConfirmQuoteApprovalReversalUseCase implements IConfirmQuoteApprova
     );
 
     if (!confirmation.confirmed) {
-      this.logger.event(BUSINESS_EVENTS.QUOTE_APPROVAL_STEP_SKIPPED, {
+      this.logger.event(BUSINESS_EVENTS.SAGA_STEP_SKIPPED, {
+        sagaType: SagaType.QUOTE_APPROVAL,
         quoteId,
         sagaStatus: confirmation.sagaStatus,
       });
@@ -54,12 +62,9 @@ export class ConfirmQuoteApprovalReversalUseCase implements IConfirmQuoteApprova
 
     const { saga, failureReason, workOrder } = confirmation;
 
-    this.logger.event(BUSINESS_EVENTS.QUOTE_APPROVAL_COMPENSATED, {
-      sagaId: saga.id,
-      quoteId,
-      workOrderId: workOrder.id,
+    recordSagaTransition(this.logger, this.metrics, saga, {
+      started: false,
       workOrderNumber: workOrder.number.toString(),
-      sagaFailureReason: failureReason,
     });
 
     // A work order that left AWAITING_APPROVAL had nothing for the customer to approve again.
@@ -83,11 +88,12 @@ export class ConfirmQuoteApprovalReversalUseCase implements IConfirmQuoteApprova
     }
 
     const workOrder = (await repos.workOrder.findByIdWithDetails(saga.workOrderId))!;
-    const failureReason = saga.failureReason!;
+
+    const failureReason = saga.failureReason as QuoteApprovalFailureReason;
 
     saga.compensate();
 
-    await repos.sagaInstance.update(saga);
+    const updatedSaga = await repos.sagaInstance.update(saga);
     await repos.statusHistory.create(
       StatusHistory.create({
         workOrderId: workOrder.id,
@@ -98,7 +104,7 @@ export class ConfirmQuoteApprovalReversalUseCase implements IConfirmQuoteApprova
       }),
     );
 
-    return { confirmed: true, saga, failureReason, workOrder };
+    return { confirmed: true, saga: updatedSaga, failureReason, workOrder };
   }
 
   private async notifyCustomer(workOrder: WorkOrder): Promise<void> {

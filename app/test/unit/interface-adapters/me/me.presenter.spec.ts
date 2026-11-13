@@ -12,6 +12,7 @@ import {
   readInternalQuoteFixture,
   readInternalWorkOrderQuotesFixture,
 } from '../../../helpers/billing-quotes-gateway-mock.factory';
+import { readInternalWorkOrderPaymentsFixture } from '../../../helpers/billing-payments-gateway-mock.factory';
 
 describe('MePresenter', () => {
   describe('toMeDataResponse', () => {
@@ -216,6 +217,28 @@ describe('MePresenter', () => {
             sentAt: quote.sentAt,
             approvedAt: quote.approvedAt,
             rejectedAt: quote.rejectedAt,
+          },
+        ],
+      });
+    });
+  });
+
+  describe('toPaymentListResponse', () => {
+    it('should present the Billing payments without checkoutId and workOrderId', () => {
+      const [payment] = readInternalWorkOrderPaymentsFixture().data;
+
+      const response = MePresenter.toPaymentListResponse([payment]);
+
+      expect(response).toEqual({
+        data: [
+          {
+            id: payment.id,
+            amount: payment.amount,
+            status: payment.status,
+            checkoutUrl: payment.checkoutUrl,
+            expiresAt: payment.expiresAt,
+            createdAt: payment.createdAt,
+            updatedAt: payment.updatedAt,
           },
         ],
       });

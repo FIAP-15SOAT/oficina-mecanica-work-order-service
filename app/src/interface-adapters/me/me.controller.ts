@@ -5,6 +5,7 @@ import { IFindMyWorkOrderByIdUseCase } from '@application/ports/input/me/find-my
 import { IFindMyWorkOrdersQuotesUseCase } from '@application/ports/input/me/find-my-work-orders-quotes.use-case.interface';
 import { IFindMyQuoteByIdUseCase } from '@application/ports/input/me/find-my-quote-by-id.use-case.interface';
 import { IDecideMyQuoteUseCase } from '@application/ports/input/me/decide-my-quote.use-case.interface';
+import { IFindMyWorkOrderPaymentsUseCase } from '@application/ports/input/me/find-my-work-order-payments.use-case.interface';
 
 import { ChangeOwnPasswordDto } from '@application/ports/input/me/dto/change-own-password.dto';
 import { QuoteDecisionDto } from '@application/ports/input/me/dto/quote-decision.dto';
@@ -18,6 +19,7 @@ import {
   MyWorkOrderPaginatedResponse,
   MyQuoteDataResponse,
   MyQuoteListResponse,
+  MyPaymentListResponse,
 } from './responses/me.response';
 
 export class MeController {
@@ -29,6 +31,7 @@ export class MeController {
     private readonly findMyWorkOrdersQuotesUseCase: IFindMyWorkOrdersQuotesUseCase,
     private readonly findMyQuoteByIdUseCase: IFindMyQuoteByIdUseCase,
     private readonly decideMyQuoteUseCase: IDecideMyQuoteUseCase,
+    private readonly findMyWorkOrderPaymentsUseCase: IFindMyWorkOrderPaymentsUseCase,
   ) {}
 
   async changePassword(userId: string, input: ChangeOwnPasswordDto): Promise<void> {
@@ -57,6 +60,11 @@ export class MeController {
   async listWorkOrderQuotes(userId: string, workOrderId: string): Promise<MyQuoteListResponse> {
     const quotes = await this.findMyWorkOrdersQuotesUseCase.execute(userId, workOrderId);
     return MePresenter.toQuoteListResponse(quotes);
+  }
+
+  async listWorkOrderPayments(userId: string, workOrderId: string): Promise<MyPaymentListResponse> {
+    const payments = await this.findMyWorkOrderPaymentsUseCase.execute(userId, workOrderId);
+    return MePresenter.toPaymentListResponse(payments);
   }
 
   async getQuote(userId: string, quoteId: string): Promise<MyQuoteDataResponse> {

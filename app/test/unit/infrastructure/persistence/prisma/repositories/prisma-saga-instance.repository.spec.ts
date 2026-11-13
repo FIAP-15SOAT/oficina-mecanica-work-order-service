@@ -1,8 +1,10 @@
 import { PrismaSagaInstanceRepository } from '@infrastructure/persistence/prisma/repositories/prisma-saga-instance.repository';
 
+import { SagaInstance } from '@domain/entities/saga-instance.entity';
 import { SagaFailureReason } from '@domain/enums/saga-failure-reason.enum';
 import { SagaStatus } from '@domain/enums/saga-status.enum';
 import { SagaType } from '@domain/enums/saga-type.enum';
+import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 
 import {
   createMockPrismaClient,
@@ -21,8 +23,9 @@ describe('PrismaSagaInstanceRepository', () => {
     workOrderId: '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d',
     status: SagaStatus.COMPENSATED,
     failureReason: SagaFailureReason.INSUFFICIENT_STOCK,
+    originStatus: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
-    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:05:00.000Z'),
   };
 
   beforeEach(() => {
@@ -88,13 +91,23 @@ describe('PrismaSagaInstanceRepository', () => {
   });
 
   describe('create', () => {
-    it('should create', async () => {
-      const saga = createMockSagaInstance({ status: SagaStatus.RESERVING_STOCK });
+    it('should create with the origin status and the creation timestamp of the saga', async () => {
+      const saga = SagaInstance.create({
+        type: SagaType.PAYMENT,
+        correlationId: record.correlationId,
+        workOrderId: record.workOrderId,
+        status: SagaStatus.AWAITING_PAYMENT,
+        originStatus: WorkOrderStatus.APPROVED,
+      });
 
       prisma.sagaInstance.create.mockResolvedValue({
         ...record,
-        status: SagaStatus.RESERVING_STOCK,
+        id: saga.id,
+        type: SagaType.PAYMENT,
+        status: SagaStatus.AWAITING_PAYMENT,
         failureReason: null,
+        originStatus: WorkOrderStatus.APPROVED,
+        createdAt: saga.createdAt,
       });
 
       const result = await repository.create(saga);
@@ -102,15 +115,19 @@ describe('PrismaSagaInstanceRepository', () => {
       expect(prisma.sagaInstance.create).toHaveBeenCalledWith({
         data: {
           id: saga.id,
-          type: saga.type,
+          type: SagaType.PAYMENT,
           correlationId: saga.correlationId,
           workOrderId: saga.workOrderId,
-          status: SagaStatus.RESERVING_STOCK,
+          status: SagaStatus.AWAITING_PAYMENT,
           failureReason: null,
+          originStatus: WorkOrderStatus.APPROVED,
+          createdAt: saga.createdAt,
         },
       });
 
-      expect(result).toEqual(saga);
+      expect(result.originStatus).toBe(WorkOrderStatus.APPROVED);
+      expect(result.createdAt).toBe(saga.createdAt);
+      expect(result.updatedAt).toBe(record.updatedAt);
     });
   });
 

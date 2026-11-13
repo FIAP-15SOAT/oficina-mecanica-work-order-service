@@ -367,6 +367,126 @@ describe('WorkOrder Entity', () => {
     });
   });
 
+  describe('holdForPayment()', () => {
+    it('should hold an approved work order for payment without touching approvedAt', () => {
+      const approvedAt = new Date('2026-11-01T10:00:00.000Z');
+      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.APPROVED, approvedAt });
+
+      workOrder.holdForPayment();
+
+      expect(workOrder.status).toBe(WorkOrderStatus.AWAITING_PAYMENT);
+      expect(workOrder.approvedAt).toBe(approvedAt);
+    });
+
+    it('should hold a completed work order for payment without touching finishedAt', () => {
+      const finishedAt = new Date('2026-11-02T10:00:00.000Z');
+      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.COMPLETED, finishedAt });
+
+      workOrder.holdForPayment();
+
+      expect(workOrder.status).toBe(WorkOrderStatus.AWAITING_PAYMENT);
+      expect(workOrder.finishedAt).toBe(finishedAt);
+    });
+
+    it.each([
+      WorkOrderStatus.RECEIVED,
+      WorkOrderStatus.IN_PROGRESS,
+      WorkOrderStatus.AWAITING_PAYMENT,
+      WorkOrderStatus.DELIVERED,
+    ])('should refuse to hold a work order outside APPROVED and COMPLETED (%s)', (status) => {
+      const workOrder = createMockWorkOrder({ status });
+
+      expect(() => workOrder.holdForPayment()).toThrow(
+        new BusinessRuleViolationException(
+          `Só ordem de serviço aprovada ou concluída pode aguardar pagamento. Status atual: "${status}"`,
+        ),
+      );
+
+      expect(workOrder.status).toBe(status);
+    });
+  });
+
+  describe('releasePaymentHold()', () => {
+    it.each([
+      [WorkOrderStatus.APPROVED, 'approvedAt'],
+      [WorkOrderStatus.COMPLETED, 'finishedAt'],
+    ] as const)(
+      'should release the payment hold back to the origin status without touching its timestamps (%s)',
+      (origin, timestampField) => {
+        const timestamp = new Date('2026-11-01T10:00:00.000Z');
+        const workOrder = createMockWorkOrder({
+          status: WorkOrderStatus.AWAITING_PAYMENT,
+          [timestampField]: timestamp,
+        });
+
+        workOrder.releasePaymentHold(origin);
+
+        expect(workOrder.status).toBe(origin);
+        expect(workOrder[timestampField]).toBe(timestamp);
+      },
+    );
+
+    it('should refuse to release a work order not awaiting payment', () => {
+      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.IN_PROGRESS });
+
+      expect(() => workOrder.releasePaymentHold(WorkOrderStatus.APPROVED)).toThrow(
+        new BusinessRuleViolationException(
+          'Só a ordem de serviço aguardando pagamento volta ao status de origem. Status atual: "IN_PROGRESS"',
+        ),
+      );
+
+      expect(workOrder.status).toBe(WorkOrderStatus.IN_PROGRESS);
+    });
+  });
+
+  describe('awaiting payment', () => {
+    const awaitingPaymentMessage =
+      'Ordem de serviço aguardando pagamento: execução, entrega e cancelamento voltam a valer quando a cobrança for paga, expirar ou for cancelada';
+
+    it.each([WorkOrderStatus.IN_DIAGNOSIS, WorkOrderStatus.CANCELLED, WorkOrderStatus.DELIVERED])(
+      'should refuse a status change while awaiting payment (%s)',
+      (newStatus) => {
+        const workOrder = createMockWorkOrder({ status: WorkOrderStatus.AWAITING_PAYMENT });
+
+        expect(() => workOrder.changeStatus(newStatus, 'notes')).toThrow(
+          new BusinessRuleViolationException(awaitingPaymentMessage),
+        );
+
+        expect(workOrder.status).toBe(WorkOrderStatus.AWAITING_PAYMENT);
+      },
+    );
+
+    it('should refuse a manual change to AWAITING_PAYMENT', () => {
+      const workOrder = createMockWorkOrder({ status: WorkOrderStatus.APPROVED });
+
+      expect(() => workOrder.changeStatus(WorkOrderStatus.AWAITING_PAYMENT)).toThrow(
+        new BusinessRuleViolationException(
+          'Ordem de serviço só passa a aguardar pagamento quando uma cobrança é criada',
+        ),
+      );
+
+      expect(workOrder.status).toBe(WorkOrderStatus.APPROVED);
+    });
+
+    it('should refuse starting a service item while awaiting payment', () => {
+      const serviceId = randomUUID();
+      const workOrder = createMockWorkOrder({
+        status: WorkOrderStatus.AWAITING_PAYMENT,
+        services: [createMockWorkOrderService({ serviceId })],
+      });
+
+      expect(() => workOrder.startServiceItem(serviceId)).toThrow(
+        new BusinessRuleViolationException(awaitingPaymentMessage),
+      );
+
+      expect(workOrder.status).toBe(WorkOrderStatus.AWAITING_PAYMENT);
+    });
+
+    it('should not treat AWAITING_PAYMENT as terminal', () => {
+      expect(WorkOrder.isTerminalStatus(WorkOrderStatus.AWAITING_PAYMENT)).toBe(false);
+    });
+  });
+
   describe('ensureAwaitingQuoteDecision()', () => {
     it('should allow a quote decision in AWAITING_APPROVAL', () => {
       const workOrder = createMockWorkOrder({ status: WorkOrderStatus.AWAITING_APPROVAL });

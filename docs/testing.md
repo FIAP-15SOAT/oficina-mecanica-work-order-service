@@ -4,6 +4,8 @@
 
 - [Unitários](#unitários)
 - [E2E](#e2e)
+- [BDD (testes de aceitação)](#bdd-testes-de-aceitação)
+- [Cenários de falha F1 a F14](#cenários-de-falha-f1-a-f14)
 - [Autenticação externa nos testes (customer-jwt)](#autenticação-externa-nos-testes-customer-jwt)
 - [Telemetria: o que o Jest não instrumenta](#telemetria-o-que-o-jest-não-instrumenta)
 - [Mensageria e cache no E2E](#mensageria-e-cache-no-e2e)
@@ -25,7 +27,7 @@ Os scripts rodam o Jest como `node --experimental-vm-modules node_modules/jest/b
 
 As suítes cobrem todas as camadas (`application/`, `domain/` — incluindo entidades, value objects e validators —, `interface-adapters/` e `infrastructure/`). Use-cases são instanciados diretamente com mocks do tipo `jest.Mocked<IRepository>` (ou `jest.Mocked<IUnitOfWork>` onde aplicável) — sem NestJS DI, sem banco de dados. Os Clean Controllers são instanciados diretamente com use-cases mockados; a borda HTTP (`@Controller` fino) é exercitada via `jest.spyOn` no Clean Controller real. As factories de mocks (incluindo `UnitOfWorkMockFactory`) estão em `test/helpers/`, organizadas por entidade.
 
-211 suites e 2100 testes, com **100% de cobertura em lines, statements, functions e branches**. O piso é declarado em `package.json` → `jest.coverageThreshold`, então `npm run test:cov` (e com ele o job `unit-tests` do CI) falha quando qualquer uma das quatro métricas cai abaixo de 100% — foi assim que a cobertura voltou a ser um contrato verificado em vez de um número observado.
+195 suites e 1997 testes, com **100% de cobertura em lines, statements, functions e branches**. O piso é declarado em `package.json` → `jest.coverageThreshold`, então `npm run test:cov` (e com ele o job `unit-tests` do CI) falha quando qualquer uma das quatro métricas cai abaixo de 100% — foi assim que a cobertura voltou a ser um contrato verificado em vez de um número observado.
 
 A cobertura é coletada em todo `src/**` (todas as camadas — `domain/`, `application/`, `interface-adapters/` e `infrastructure/`). As exclusões são por sufixo/caminho, não por camada: `*.module.ts`, `main.ts`, `otel.ts`, `*.enums.ts`, `*.config.ts`, `*.exception.ts`, `*.dto.ts`, `infrastructure/persistence/prisma/prisma.service.ts` e `domain/constants/**` (ver `package.json` → `jest.collectCoverageFrom`). Os arquivos gerados pelo Prisma ficam de fora por viverem em `prisma/generated/`, fora de `src/`.
 
@@ -38,7 +40,7 @@ npm run test:e2e      # executa os testes
 npm run test:e2e:cov  # com cobertura
 ```
 
-15 suites cobrindo todos os domínios (auth, user, customer, customer-access, vehicle, service — as métricas por serviço —, work-order) mais `me` (rotas do Cliente da Oficina autenticado), uma suite dedicada ao `AllExceptionsFilter`, outra ao logging estruturado, outra aos endpoints de saúde, outra à telemetria (correlação log-trace e métricas de negócio), outra às rotas `/internal`, outra à mensageria e outra à Saga de aprovação e às mensagens de orçamento do Billing. Os testes E2E sobem um PostgreSQL 18 real (`postgres:18-alpine`), um Valkey 9.1 real e um MailHog via **Testcontainers 12** (sem necessidade de banco externo), mais o LocalStack nas suítes de mensageria e da Saga (ver [Mensageria e cache no E2E](#mensageria-e-cache-no-e2e)), e respondem pelo Inventory e pelo Billing com um stub HTTP (ver [Inventory e Billing no E2E](#inventory-e-billing-no-e2e)) e usam helpers compartilhados em `test/helpers/` (`test-app.helper.ts`, `auth.helper.ts`, `db-cleanup.helper.ts`) para subir o `INestApplication`, autenticar e limpar o banco entre testes. Configuração em `test/jest-e2e.json` (timeout de 10 minutos para acomodar a inicialização dos containers).
+16 suites cobrindo todos os domínios (auth, user, customer, customer-access, vehicle, service — as métricas por serviço —, work-order) mais `me` (rotas do Cliente da Oficina autenticado), uma suite dedicada ao `AllExceptionsFilter`, outra ao logging estruturado, outra aos endpoints de saúde, outra à telemetria (correlação log-trace e métricas de negócio), outra às rotas `/internal`, outra à mensageria, outra à Saga de aprovação e às mensagens de orçamento do Billing e outra à Saga de cobrança. Os testes E2E sobem um PostgreSQL 18 real (`postgres:18-alpine`), um Valkey 9.1 real e um MailHog via **Testcontainers 12** (sem necessidade de banco externo), mais o LocalStack nas suítes de mensageria e das Sagas (ver [Mensageria e cache no E2E](#mensageria-e-cache-no-e2e)), e respondem pelo Inventory e pelo Billing com um stub HTTP (ver [Inventory e Billing no E2E](#inventory-e-billing-no-e2e)) e usam helpers compartilhados em `test/helpers/` (`test-app.helper.ts`, `auth.helper.ts`, `db-cleanup.helper.ts`) para subir o `INestApplication`, autenticar e limpar o banco entre testes. Configuração em `test/jest-e2e.json` (timeout de 10 minutos para acomodar a inicialização dos containers).
 
 O motivo de testar contra um Postgres real (em vez de mocks Prisma) é validar comportamentos que dependem do banco — constraints de unicidade, cascade deletes, sequences, conversões de tipos, índices e a corrida implícita de updates condicionados (`WHERE version = ?`) — e detectar regressões em migrations.
 
@@ -71,6 +73,53 @@ Duas opções extras, usadas só pela suíte de logging para que as outras quinz
 
 Shutdown hooks continuam desligados no E2E: ligá-los acumularia listeners de processo entre as suítes.
 
+## BDD (testes de aceitação)
+
+```bash
+npm run test:bdd  # a partir de app/, com o Docker em execução
+```
+
+BDD (Behavior-Driven Development) descreve o comportamento esperado em cenários de linguagem natural, que rodam como teste. Aqui os cenários ficam em `app/test/bdd/features/`, em Gherkin pt-BR (`# language: pt`, com as palavras-chave `Funcionalidade`, `Contexto`, `Cenário`, `Dado`, `Quando`, `Então` e `E`), e rodam pelo `@cucumber/cucumber` 13.3 contra o work-order real. São três features e cinco cenários:
+
+| Feature | Cenário | O que confere |
+|---|---|---|
+| `fluxo-completo.feature` | OS da abertura à entrega com a cobrança total paga | A OS aberta com um serviço e uma peça passa por diagnóstico, envio e aprovação do orçamento, reserva da peça, cobrança do valor total paga (com o e-mail do link no MailHog), execução com a baixa do estoque pedida ao Inventory, conclusão e entrega; o histórico mostra `RECEIVED, IN_DIAGNOSIS, AWAITING_APPROVAL, APPROVED, AWAITING_PAYMENT, APPROVED, IN_PROGRESS, COMPLETED, DELIVERED` |
+| `compensacao-da-aprovacao.feature` | Reserva confirmada aprova a OS | O Billing aprova, o work-order pede a reserva ao Inventory, o Inventory confirma e a OS fica `APPROVED` |
+| `compensacao-da-aprovacao.feature` | Falta de estoque devolve o orçamento e a reaprovação conclui a Saga (F2) | O Inventory recusa a reserva, a reversão é pedida ao Billing para `SENT`, a Saga fica `COMPENSATED` e a OS `AWAITING_APPROVAL`; o Billing aprova de novo, a reserva é confirmada e a mesma Saga fica `COMPLETED`, com a OS `APPROVED` |
+| `compensacao-da-cobranca.feature` | Cobrança expirada devolve a OS ao status de origem (F7) | A OS aprovada vai a `AWAITING_PAYMENT`; com a cobrança expirada, a Saga fica `COMPENSATED` e a OS volta a `APPROVED` |
+| `compensacao-da-cobranca.feature` | Cobrança com a OS já em execução é cancelada (F6) | Com o serviço iniciado, o pedido de cobrança leva ao cancelamento pedido ao Billing e à Saga `COMPENSATING`; com o cancelamento confirmado, a Saga fica `COMPENSATED`, a OS segue `IN_PROGRESS` e nenhum e-mail com link sai |
+
+**Como roda.** `app/cucumber.js` aponta as features e carrega os passos e o suporte pelo `ts-node`, que lê a seção `ts-node` do `app/tsconfig.json` (`transpileOnly`, `experimentalResolver` e `rootDir`): sem o resolvedor, o client gerado do Prisma, que importa `./x.js` de arquivos `.ts`, não carrega, e o TypeScript 6 recusa a compilação sem `rootDir`.
+
+- `test/bdd/support/hooks.ts` sobe, uma vez por execução (`BeforeAll`), o stub HTTP e o work-order real pelo mesmo `setupTestApp` do E2E, com PostgreSQL, Valkey, LocalStack e MailHog por Testcontainers, e cria o funcionário, o cliente com veículo e o usuário de acesso vinculado que recebe os e-mails. O `AfterAll` derruba tudo.
+- `test/bdd/support/world.ts` define o `OficinaWorld`, o estado de cada cenário (o Cucumber cria um por cenário): a OS do cenário, o orçamento, a cobrança e as esperas pela OS e pela Saga, sempre por condição (consulta repetida), nunca por pausa fixa.
+- `test/bdd/steps/` separa os passos por participante: `work-order.steps.ts` (as ações dos funcionários e as verificações da OS, do histórico e do MailHog), `billing.steps.ts` e `inventory.steps.ts`.
+
+**Participantes simulados.** Billing e Inventory não sobem. As respostas síncronas vêm do stub HTTP do E2E (ver [Inventory e Billing no E2E](#inventory-e-billing-no-e2e)), com os corpos das fixtures de contrato dos donos. Os eventos que eles publicariam são publicados no tópico do LocalStack pelos passos (`publishEvent`, em `test/bdd/support/sns-events.helper.ts`), com o mesmo envelope do relay, e os comandos que o work-order manda são lidos nas filas `billing.fifo` e `inventory.fifo` pelo `receiveCommands` do E2E. Assim o BDD passa por todos os tipos de mensagem que o work-order troca e confere também as filter policies do script de topologia (`app/localstack/init-topology.sh`). O Identity não participa: os usuários ainda são deste serviço.
+
+**Relatório.** Cada execução grava `app/reports/bdd/cucumber-report.html` (pasta fora do Git), com cada cenário e passo e o resultado. No CI, o job `bdd` (nome `BDD`) roda o mesmo comando e publica a pasta como artifact `bdd-report`, mesmo quando falha (ver [Infra · CI/CD](infra/ci-cd.md)).
+
+## Cenários de falha F1 a F14
+
+A solução numera de F1 a F14 os cenários de falha das Sagas e da mensageria. A tabela liga cada um ao teste que o cobre, com o arquivo e o nome do teste. Os testes de outros repositórios estão na `main` do [Billing](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service) e do [Inventory](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service); os caminhos sem repositório são deste, a partir de `app/test/`.
+
+| # | Cenário | Tratamento esperado | Onde é coberto |
+|---|---|---|---|
+| F1 | O orçamento deixou de estar `SENT` (decisão concorrente) | O 409 do Billing volta como está; nada começa | `e2e/me.e2e-spec.ts` — `should answer the Billing 409 on a concurrent decision` |
+| F2 | Estoque insuficiente na reserva | Reversão para `SENT`, Saga `COMPENSATED`, OS em `AWAITING_APPROVAL`; a reaprovação reabre a Saga | `e2e/quote-approval-saga.e2e-spec.ts` — `should compensate the approval when the Inventory refuses the reservation and reopen the saga on a new approval`; `bdd/features/compensacao-da-aprovacao.feature` — `Falta de estoque devolve o orçamento e a reaprovação conclui a Saga` |
+| F3 | OS cancelada entre a aprovação e o início da Saga | Reversão para `REJECTED`, Saga `COMPENSATED` | `e2e/quote-approval-saga.e2e-spec.ts` — `should request the reversal to REJECTED when the work order was cancelled before the approval arrived` |
+| F4 | Billing ou Inventory fora na abertura da OS | 503, nada gravado | `e2e/work-order.e2e-spec.ts` — `should answer 503 when the Billing is unavailable without consuming a work order number` |
+| F5 | A gravação da OS falha depois de o orçamento ser criado | O orçamento é apagado no Billing | `e2e/work-order.e2e-spec.ts` — `should delete the initial quote when the work order write fails` |
+| F6 | A OS mudou de status antes de `billing.payment.requested` chegar | `billing.payment.cancel`, Saga `COMPENSATED`, OS inalterada, nenhum e-mail | `e2e/payment-saga.e2e-spec.ts` — `should ask the Billing to cancel the payment when the work order is already in progress`; `bdd/features/compensacao-da-cobranca.feature` — `Cobrança com a OS já em execução é cancelada`; `unit/application/use-cases/payment/start-payment.use-case.spec.ts` — `should start the saga compensating and ask the Billing to cancel the payment when the work order is not payable` |
+| F7 | A cobrança expirou, foi recusada ou cancelada pelo funcionário | A OS volta à origem, Saga `COMPENSATED` com o motivo | `e2e/payment-saga.e2e-spec.ts` — `should return the work order to its origin and compensate the saga when the payment expires`; `bdd/features/compensacao-da-cobranca.feature` — `Cobrança expirada devolve a OS ao status de origem`; `unit/application/use-cases/payment/apply-payment-result.use-case.spec.ts` — `should return the work order to its origin and compensate the saga with the payment failure reason (%s)`, com `EXPIRED`, `REJECTED` e `CANCELLED` |
+| F8 | O cliente pagou antes de o cancelamento da compensação chegar ao Mercado Pago | O Billing publica `billing.payment.approved`; Saga `COMPLETED`, OS inalterada | `unit/application/use-cases/payment/apply-payment-result.use-case.spec.ts` — `should complete a compensating saga without touching the work order when the payment was approved`; Billing: `app/test/unit/application/use-cases/payment/cancel-payment.use-case.spec.ts` — `should resolve as APPROVED and raise a conflict when the checkout was paid`, e `app/test/unit/infrastructure/messaging/handlers/payment/payment-message-handlers.spec.ts` — `should acknowledge a command whose payment cannot be cancelled` |
+| F9 | Mercado Pago fora na criação da cobrança | Nada é gravado; erro ao funcionário | Billing: `app/test/unit/application/use-cases/payment/create-payment.use-case.spec.ts` — `should save nothing when the payment provider fails` |
+| F10 | Participante fora do ar: as mensagens acumulam na fila | Nova entrega pela fila; DLQ e alerta depois de 5 recebimentos; a Saga retoma no redrive | `unit/infrastructure/messaging/sqs-consumer.service.spec.ts` — `should rethrow a handler failure and log messaging.message.failed when ApproximateReceiveCount is below 5` e `should log messaging.message.dead_lettered and rethrow when ApproximateReceiveCount is 5`; `e2e/messaging.e2e-spec.ts` — `should keep the group order when the first message fails`. O redrive é manual, pelo [runbook do infra-messaging](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-messaging/blob/main/docs/runbook.md) |
+| F11 | Mensagem duplicada | Registra `saga.step_skipped` e confirma, sem efeito | `unit/application/use-cases/payment/start-payment.use-case.spec.ts` — `should skip a redelivered payment request`; `unit/application/use-cases/payment/apply-payment-result.use-case.spec.ts` — `should skip a result for an unknown or settled saga (saga status %s)`; `unit/application/use-cases/quote-approval/start-quote-approval.use-case.spec.ts` — `should skip a repeated approval when the saga is %s`; `compensate-quote-approval.use-case.spec.ts` — `should skip a reservation failure when the saga is not reserving stock (%s)`; `confirm-quote-approval-reversal.use-case.spec.ts` — `should skip a reversal when the saga is %s` |
+| F12 | O work-order reinicia no meio de uma Saga | Estado e outbox duráveis; relay e consumidor retomam | Nenhum teste reinicia o processo; o que a retomada exige está coberto em `e2e/messaging.e2e-spec.ts` — `should publish an outbox message and consume it back through a test handler` (a mensagem sai de uma linha do banco, não da memória) e `should leave no outbox row when the transaction rolls back`; `unit/infrastructure/messaging/outbox-relay.service.spec.ts` — `should stop at the first failed publish, keep that row and the next ones and log messaging.outbox.publish_failed with the messaging bindings`; e na Saga, cujo próximo passo é lido de `saga_instances` a cada mensagem (todos os testes de F2 a F8) |
+| F13 | A baixa de estoque falha | Nova entrega, DLQ e alerta; a OS segue em `IN_PROGRESS` | `unit/application/use-cases/work-order/update-work-order-service-status.use-case.spec.ts` — `should write the consume command when the first started service moves a work order with parts to IN_PROGRESS`; Inventory: `app/test/e2e/consume-reserved-stock.e2e-spec.ts` — `should roll everything back when the part version changes between read and write`, e `app/test/unit/infrastructure/messaging/sqs-consumer.service.spec.ts` — `should log messaging.message.dead_lettered and rethrow when ApproximateReceiveCount is 5` |
+| F14 | O aviso do Mercado Pago (webhook) não chega | O funcionário cancela a cobrança; com a ordem já expirada, o Billing encerra a cobrança como `EXPIRED` e a OS volta pela F7 | Billing: `app/test/unit/application/use-cases/payment/cancel-payment.use-case.spec.ts` — `should close the payment with the checkout status when the cancellation is refused and the checkout already ended (%s)`; a volta da OS, pelos testes da F7 |
+
 ## Autenticação externa nos testes (customer-jwt)
 
 A função serverless que emite o token `customer-jwt` (RS256) fica **fora do escopo desta entrega** (ver [ADR 0004](./adr/0004-autenticacao-de-clientes.md)) e vive num repositório à parte, [`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth). Para exercitar `/api/me/*` sem criar uma dependência de CI entre os dois repositórios, `test/helpers/customer-jwt.helper.ts` gera um **par de chaves RS256 em tempo de execução** (`generateKeyPairSync`, nunca um PEM comitado no repositório) e expõe `signTestCustomerToken(userId, expiresInSeconds?)`, que assina um token de teste com o mesmo formato de claims que a função serverless emite (`{ sub: userId }`, `iss`/`aud` fixos, RS256).
@@ -93,7 +142,7 @@ await request(ctx.httpServer)
 
 ## Mensageria e cache no E2E
 
-Toda suíte E2E sobe, além do PostgreSQL, um **Valkey real** (`valkey/valkey:9.1`, `@testcontainers/valkey`), porque o detalhe da OS passa pelo cache em qualquer rota que o lê. O LocalStack só sobe com `setupTestApp({ withMessaging: true })`, a opção das suítes `messaging.e2e-spec.ts` e `quote-approval-saga.e2e-spec.ts`: ela inicia o `localstack/localstack:4.14.0` (`@testcontainers/localstack`) com o mesmo `app/localstack/init-topology.sh` do compose, roda o relay e o consumidor reais e aponta `AWS_ENDPOINT_URL` para o container. Nas outras suítes, o relay e o consumidor são substituídos por versões vazias, então nenhuma delas paga o LocalStack.
+Toda suíte E2E sobe, além do PostgreSQL, um **Valkey real** (`valkey/valkey:9.1`, `@testcontainers/valkey`), porque o detalhe da OS passa pelo cache em qualquer rota que o lê. O LocalStack só sobe com `setupTestApp({ withMessaging: true })`, a opção das suítes `messaging.e2e-spec.ts`, `quote-approval-saga.e2e-spec.ts` e `payment-saga.e2e-spec.ts` e do BDD: ela inicia o `localstack/localstack:4.14.0` (`@testcontainers/localstack`) com o mesmo `app/localstack/init-topology.sh` do compose, roda o relay e o consumidor reais e aponta `AWS_ENDPOINT_URL` para o container. Nas outras suítes, o relay e o consumidor são substituídos por versões vazias, então nenhuma delas paga o LocalStack.
 
 `messaging.e2e-spec.ts` cobre o que os unitários só simulam:
 
@@ -103,7 +152,7 @@ Toda suíte E2E sobe, além do PostgreSQL, um **Valkey real** (`valkey/valkey:9.
 | Rollback | Uma transação desfeita não deixa linha no outbox |
 | Lock do relay | Com outra transação segurando o `pg_advisory_xact_lock` do relay, nada é publicado; depois do `COMMIT` dela, a mensagem sai |
 | Ordem do grupo | A falha da primeira mensagem de uma OS segura as seguintes do mesmo grupo |
-| Sem handler | Mensagem sem handler registrado (`billing.payment.failed`, que a fila do serviço recebe e que ainda não tem handler) não é confirmada e volta a ser entregue |
+| Sem handler | Mensagem sem handler registrado não é confirmada e volta a ser entregue. A suíte troca o módulo de mensageria da cobrança por um vazio, para que `billing.payment.failed`, que a fila do serviço recebe, chegue sem handler |
 | Campos de log | As linhas da mensageria só emitem campos declarados no dicionário |
 
 O cache tem e2e próprio em `work-order.e2e-spec.ts` (`GET /api/work-orders/:id — cache`): a segunda leitura sai do cache com o mesmo corpo, a mudança de status e a troca de placa do veículo aparecem na leitura seguinte (a invalidação depois do commit funciona), o nome novo de um serviço renomeado no Inventory aparece mesmo com a OS em cache (os dados de exibição não vão ao cache) e, com o Valkey pausado, a rota responde pelo PostgreSQL e registra `cache.unavailable`.
@@ -121,10 +170,12 @@ O stub declara as rotas numa tabela de `'MÉTODO /caminho/:param'` para o handle
 | Billing | `GET /internal/quotes/:id`, `DELETE /internal/quotes/:id` | Lê ou apaga o orçamento guardado (`204`); id ausente responde 404 |
 | Billing | `POST /internal/quotes/:id/decisions` | Grava no orçamento guardado o status decidido e o autor |
 | Billing | `GET /internal/work-orders/:workOrderId/quotes` | Resumo dos orçamentos guardados daquela OS |
+| Billing | `GET /internal/work-orders/:workOrderId/balance` | Saldo zero (`paidTotal` igual ao `approvedTotal` da fixture), porque os ciclos completos das suítes entregam a OS |
+| Billing | `GET /internal/work-orders/:workOrderId/payments` | As cobranças da fixture, com o `workOrderId` da rota |
 
-Um id em `failingIds` responde 500, o caminho do 503, e `nextResponses` guarda uma resposta de uso único por `'MÉTODO caminho'`, consultada antes das rotas (é assim que um teste faz o Billing responder 409). Item ou orçamento que só precisa existir nasce no stub, com `stubService(stub)`, `stubPartSupply(stub)` ou direto em `stub.quotes`, escrito em cada teste.
+Um id em `failingIds` responde 500, o caminho do 503, e `nextResponses` guarda uma resposta de uso único por `'MÉTODO caminho'`, consultada antes das rotas (é assim que um teste faz o Billing responder 409 ou um saldo a pagar). Item ou orçamento que só precisa existir nasce no stub, com `stubService(stub)`, `stubPartSupply(stub)` ou direto em `stub.quotes`, escrito em cada teste.
 
-A suíte `quote-approval-saga.e2e-spec.ts` cobre as Sagas e as mensagens de orçamento pelo LocalStack e pelo MailHog do harness. As mensagens do Billing (`billing.quote.*`) e do Inventory (`inventory.stock.*`) entram pelo outbox do próprio work-order, que as publica no tópico e as recebe de volta na fila `work-order.fifo`: o caminho até o handler é o mesmo de uma mensagem do outro serviço. Os comandos que o work-order manda (`inventory.stock.reserve` e `billing.quote.revert_approval`) são lidos das filas `inventory.fifo` e `billing.fifo` do LocalStack, como o dono os leria. Os cenários de falha, numerados como na arquitetura da solução (F1 a F5), ficam nesta suíte e nas de `me` e `work-order`:
+A suíte `quote-approval-saga.e2e-spec.ts` cobre as Sagas e as mensagens de orçamento pelo LocalStack e pelo MailHog do harness. As mensagens do Billing (`billing.quote.*`) e do Inventory (`inventory.stock.*`) entram pelo outbox do próprio work-order, que as publica no tópico e as recebe de volta na fila `work-order.fifo`: o caminho até o handler é o mesmo de uma mensagem do outro serviço. Os comandos que o work-order manda (`inventory.stock.reserve` e `billing.quote.revert_approval`) são lidos das filas `inventory.fifo` e `billing.fifo` do LocalStack, como o dono os leria, pelo `receiveCommands` de `test/helpers/sqs-commands.helper.ts`, que apaga tudo o que recebe e guarda só os comandos da OS do teste. Os cenários de falha F1 a F5 (a numeração está em [Cenários de falha F1 a F14](#cenários-de-falha-f1-a-f14)) ficam nesta suíte e nas de `me` e `work-order`:
 
 | Cenário | Suíte | O que prova |
 |---|---|---|
@@ -137,6 +188,15 @@ A suíte `quote-approval-saga.e2e-spec.ts` cobre as Sagas e as mensagens de orç
 | F5 — falha da gravação da OS | `work-order` | Com a transação da abertura falhando, o orçamento é apagado no stub do Billing e nenhuma OS fica gravada |
 | Envio e rejeição | `quote-approval-saga` | `billing.quote.sent` leva a OS a `AWAITING_APPROVAL` e manda o e-mail; `billing.quote.rejected` sem outro orçamento enviado leva a OS a `REJECTED` |
 
+A suíte `payment-saga.e2e-spec.ts` cobre a Saga de cobrança do mesmo jeito: os eventos `billing.payment.*` entram pelo outbox do work-order, e o comando `billing.payment.cancel` é lido da fila `billing.fifo`. As OS são postas em `APPROVED`, `COMPLETED` ou `IN_PROGRESS` direto no banco, porque a aprovação e a execução têm as suítes delas:
+
+| Teste | O que prova |
+|---|---|
+| Pagamento aprovado com origem `APPROVED` | A OS vai a `AWAITING_PAYMENT`, a Saga guarda `APPROVED` como origem, o cliente recebe no MailHog o e-mail com o link, e com `billing.payment.approved` a OS volta a `APPROVED` com a data da aprovação intacta e o histórico com as duas notas |
+| Pagamento aprovado com origem `COMPLETED` | A OS volta a `COMPLETED` e é entregue em seguida, com o saldo zero do stub |
+| F7 — cobrança expirada | Com `billing.payment.failed` (`EXPIRED`), a OS volta à origem e a Saga fica `COMPENSATED` com `PAYMENT_EXPIRED` |
+| F6 — OS já em execução | `billing.payment.requested` com a OS em `IN_PROGRESS` manda `billing.payment.cancel` e deixa a Saga `COMPENSATING`; com `billing.payment.failed` (`CANCELLED`), a Saga fica `COMPENSATED`, a OS segue em `IN_PROGRESS` e nenhum e-mail sai |
+
 ## Contrato das rotas `/internal`
 
 O dono de uma rota `/internal` versiona a fixture da resposta em `app/test/contracts/` (aqui, `internal-work-order.json`, o detalhe completo de uma OS). O e2e do dono (`internal.e2e-spec.ts`) compara a **forma** da resposta real com a da fixture pelo `jsonShape`: as chaves e o tipo JSON de cada valor, não os valores. Arrays são comparados elemento a elemento, então o tamanho conta, e `null` é um tipo próprio.
@@ -144,19 +204,22 @@ O dono de uma rota `/internal` versiona a fixture da resposta em `app/test/contr
 Quem consome a rota copia a fixture para `app/test/contracts/<dono>/`, mantém o campo `$source` com a origem e testa o próprio adaptador contra ela. Este serviço consome as rotas de catálogo do Inventory e as de orçamento do Billing:
 
 - `app/test/contracts/inventory/internal-service.json` e `internal-part-supply.json` alimentam o spec do `HttpInventoryCatalogGateway` e o stub do e2e;
-- `app/test/contracts/billing/internal-quote-summary.json` (resposta de `POST /internal/quotes`), `internal-quote.json` (`GET /internal/quotes/:id` e `POST /internal/quotes/:id/decisions`, com itens) e `internal-work-order-quotes.json` (`GET /internal/work-orders/:workOrderId/quotes`) alimentam o spec do `HttpBillingQuotesGateway` e o stub do e2e.
+- `app/test/contracts/billing/internal-quote-summary.json` (resposta de `POST /internal/quotes`), `internal-quote.json` (`GET /internal/quotes/:id` e `POST /internal/quotes/:id/decisions`, com itens) e `internal-work-order-quotes.json` (`GET /internal/work-orders/:workOrderId/quotes`) alimentam o spec do `HttpBillingQuotesGateway` e o stub do e2e;
+- `app/test/contracts/billing/internal-work-order-balance.json` (`GET /internal/work-orders/:workOrderId/balance`) e `internal-work-order-payments.json` (`GET /internal/work-orders/:workOrderId/payments`) alimentam o spec do `HttpBillingPaymentsGateway`, o stub do e2e e o do DAST.
 
-Os payloads das mensagens `billing.quote.*` são conferidos pelo catálogo tipado de `domain/messaging/`, cópia do catálogo do Billing. Mudou a resposta do dono, a fixture muda no mesmo PR; as cópias dos consumidores mudam no PR de cada um, conferidas por diff contra a origem.
+Os payloads das mensagens `billing.quote.*` e `billing.payment.*` são conferidos pelo catálogo tipado de `domain/messaging/`, cópia do catálogo do Billing. Mudou a resposta do dono, a fixture muda no mesmo PR; as cópias dos consumidores mudam no PR de cada um, conferidas por diff contra a origem.
 
 ## Mensagem de teste no ambiente
 
-Para ver uma mensagem sair do outbox, passar pelo tópico e voltar pela fila do serviço (no log e no trace), insira uma linha na tabela `outbox`. O tipo `billing.payment.failed` é roteado para a fila `work-order.fifo`. Como o serviço ainda não registra handler para ele, o consumidor registra `messaging.message.unhandled` a cada entrega e, na quinta, `messaging.message.dead_lettered`, e a mensagem vai para a `work-order-dlq.fifo`. Com `work_order_id` nulo, a mensagem forma um grupo só dela e não segura as mensagens de OS alguma.
+Para ver uma mensagem sair do outbox, passar pelo tópico e voltar pela fila do serviço (no log e no trace), insira uma linha na tabela `outbox`. O tipo `billing.payment.failed` é roteado para a fila `work-order.fifo` e não precisa de OS no envelope. Com um `paymentId` que nenhuma Saga conhece, o handler da Saga de cobrança não encontra Saga, registra `saga.step_skipped` e confirma a mensagem, sem mudar nada. Com `work_order_id` nulo, a mensagem forma um grupo só dela e não segura as mensagens de OS alguma.
 
 Na stack do compose (a partir de `app/`):
 
 ```bash
-docker compose exec postgres psql -U postgres -d work_order -c "INSERT INTO outbox (message_id, type, work_order_id, payload) VALUES (gen_random_uuid(), 'billing.payment.failed', NULL, '{}')"
+docker compose exec postgres psql -U postgres -d work_order -c "INSERT INTO outbox (message_id, type, work_order_id, payload) VALUES (gen_random_uuid(), 'billing.payment.failed', NULL, jsonb_build_object('paymentId', gen_random_uuid(), 'reason', 'EXPIRED'))"
 ```
+
+Para ver o caminho da falha até a DLQ (fila de mensagens que falharam, `work-order-dlq.fifo`), troque o payload por `'{}'`: sem `paymentId`, a validação do payload recusa a mensagem, o consumidor registra `messaging.message.failed` nas quatro primeiras entregas e `messaging.message.dead_lettered` na quinta, e o SQS a move para a DLQ.
 
 No banco de um ambiente implantado, o mesmo `INSERT` vale em qualquer cliente SQL conectado ao banco do serviço. `message_id` não tem valor padrão no banco, por isso o `gen_random_uuid()`; um `work_order_id` preenchido precisa ser de uma OS existente, por causa da FK.
 
@@ -172,7 +235,7 @@ A collection mantém as pastas de domínio sem numeração ou agrupadores adicio
 
 O cadastro de serviços, peças e estoque não está nesta collection: é do Inventory, que tem a collection própria. Os orçamentos também não: são do Billing, cuja collection cobre as rotas de orçamento. As OS usam um serviço e uma peça do seed do Inventory, com os ids canônicos de [Ids canônicos do seed](seed-ids.md) já gravados no environment (`serviceId` = `Troca de óleo`, `partSupplyId` = `FILT-OL-001`).
 
-O fluxo da OS passa pelo Billing, então a pasta **Gestão de Ordens de Serviço** só roda inteira pelo API Gateway, que encaminha as rotas de orçamento ao Billing. `TC-WO-02` abre a OS com itens (o orçamento inicial nasce no Billing); `TC-WO-30` descobre o id desse orçamento pela lista de orçamentos da OS, envia-o ao cliente e consulta a OS a cada segundo, até 15 vezes, até vê-la `AWAITING_APPROVAL`; e `TC-WO-31` aprova o orçamento e consulta a OS até vê-la `APPROVED`, porque a OS só muda depois que o Inventory confirma a reserva do estoque. Com só este serviço no ar, rode as pastas que não dependem do Billing, por exemplo:
+O fluxo da OS passa pelo Billing, então a pasta **Gestão de Ordens de Serviço** só roda inteira pelo API Gateway, que encaminha as rotas de orçamento e de cobrança ao Billing. `TC-WO-02` abre a OS com itens (o orçamento inicial nasce no Billing); `TC-WO-30` descobre o id desse orçamento pela lista de orçamentos da OS, envia-o ao cliente e consulta a OS a cada segundo, até 15 vezes, até vê-la `AWAITING_APPROVAL`; `TC-WO-31` aprova o orçamento e consulta a OS até vê-la `APPROVED`, porque a OS só muda depois que o Inventory confirma a reserva do estoque; `TC-WO-32` cria no Billing uma cobrança de sinal de R$ 10,00 (`POST /api/payments`, que grava `paymentId`) e consulta a OS até vê-la `AWAITING_PAYMENT`; e `TC-WO-33` cancela essa cobrança (`POST /api/payments/:id/cancellations`) e consulta a OS até vê-la de volta em `APPROVED`. Como nenhuma cobrança é paga (o pagamento passa pela página do Mercado Pago), a entrega no fim do fluxo, `TC-WO-07`, espera o **409** do saldo a pagar. Com só este serviço no ar, rode as pastas que não dependem do Billing, por exemplo:
 
 ```bash
 npx newman run collections/oficina-collection.json -e collections/oficina-environment.json \
@@ -184,7 +247,8 @@ O grupo **Autenticação** mantém os dois fluxos separados: o login interno gra
 
 - `TC-ME-03` troca a senha do cliente para `NovaSenha@456`. A troca invalida os tokens emitidos antes dela, então `TC-ME-03B` faz login com a senha nova, `TC-ME-04B` devolve a senha original e `TC-ME-04C` faz login de novo, o que deixa a collection pronta para rodar outra vez;
 - `TC-ME-05A` a `TC-ME-05E` abrem uma OS de `myCustomerId` com um serviço (o orçamento inicial nasce no Billing), colocam-na em diagnóstico, enviam esse orçamento, esperam a OS chegar a `AWAITING_APPROVAL` e criam e enviam um segundo orçamento (`rejectQuoteId`);
-- `TC-ME-11` rejeita o segundo orçamento antes de `TC-ME-10` aprovar o inicial, porque a aprovação rejeita os outros orçamentos da OS.
+- `TC-ME-11` rejeita o segundo orçamento antes de `TC-ME-10` aprovar o inicial, porque a aprovação rejeita os outros orçamentos da OS;
+- `TC-ME-13` lista as cobranças da OS vinculada (`GET /api/me/work-orders/:id/payments`), lidas no Billing; a OS da pasta não tem cobrança, então a lista volta vazia.
 
 Com apenas a API local em execução, ignore os logins serverless (`TC-AUTH-06`, `TC-ME-03B` e `TC-ME-04C`) e a troca de senha (`TC-ME-03` e `TC-ME-04B`), que invalidaria o token preenchido à mão, e preencha `customerJwtToken` por um destes caminhos:
 

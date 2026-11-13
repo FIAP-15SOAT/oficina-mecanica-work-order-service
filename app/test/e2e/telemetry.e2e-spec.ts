@@ -394,6 +394,22 @@ describe('Telemetry (E2E)', () => {
 
       expect(points('oficina.work_order.diagnosis_to_completion.duration')).toHaveLength(1);
       expect(points('oficina.work_order.lead_time.duration')).toHaveLength(1);
+
+      // A quote with no parts approves the work order without a stock reservation, so the saga starts completed.
+      const approvalSaga = { 'oficina.saga.type': 'QUOTE_APPROVAL' };
+      const completedApprovalSaga = { ...approvalSaga, 'oficina.saga.outcome': 'completed' };
+
+      expect(points('oficina.saga.started')).toEqual([
+        expect.objectContaining({ value: 1, attributes: approvalSaga }),
+      ]);
+
+      expect(points('oficina.saga.finished')).toEqual([
+        expect.objectContaining({ value: 1, attributes: completedApprovalSaga }),
+      ]);
+
+      expect(points('oficina.saga.duration')).toEqual([
+        expect.objectContaining({ attributes: completedApprovalSaga }),
+      ]);
     });
 
     it('should measure the wait in REJECTED when there is a rejection and a new quote', async () => {

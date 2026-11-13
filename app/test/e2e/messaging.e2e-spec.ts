@@ -12,6 +12,7 @@ import { MessageEnvelope } from '@application/messaging/message-envelope';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { OutboxMessage } from '@domain/messaging/message-catalog';
 import { DECLARED_FIELD_NAMES } from '@infrastructure/logging/field-registry';
+import { PaymentMessagingModule } from '@infrastructure/messaging/handlers/payment/payment-messaging.module';
 import { QuoteApprovalMessagingModule } from '@infrastructure/messaging/handlers/quote-approval/quote-approval-messaging.module';
 import { MessageHandlerRegistry } from '@infrastructure/messaging/message-handler.registry';
 import { OUTBOX_RELAY_LOCK_KEY } from '@infrastructure/messaging/outbox-relay.service';
@@ -41,6 +42,10 @@ class PaymentApprovedPayload {
 @Module({})
 class NoQuoteApprovalHandlersModule {}
 
+// Stands in for the payment handlers, so this suite owns billing.payment.approved and billing.payment.failed stays unhandled.
+@Module({})
+class NoPaymentHandlersModule {}
+
 // Every test publishes on its own work order, so a message stuck in one FIFO group never blocks another test.
 describe('Messaging (E2E)', () => {
   let ctx: TestContext;
@@ -56,7 +61,10 @@ describe('Messaging (E2E)', () => {
     ctx = await setupTestApp({
       withMessaging: true,
       captureLogs: true,
-      overrideModules: [[QuoteApprovalMessagingModule, NoQuoteApprovalHandlersModule]],
+      overrideModules: [
+        [QuoteApprovalMessagingModule, NoQuoteApprovalHandlersModule],
+        [PaymentMessagingModule, NoPaymentHandlersModule],
+      ],
     });
     unitOfWork = ctx.app.get<IUnitOfWork>('IUnitOfWork');
     registry = ctx.app.get(MessageHandlerRegistry);

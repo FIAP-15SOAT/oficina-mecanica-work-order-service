@@ -9,6 +9,7 @@ import {
   BillingQuoteGatewayResponse,
   BillingQuoteWithItemsGatewayResponse,
 } from '@application/ports/output/gateways/billing/billing-quotes-gateway.response';
+import { BillingPaymentGatewayResponse } from '@application/ports/output/gateways/billing/billing-payments-gateway.response';
 import { buildPaginationMeta } from '@application/utils/pagination.util';
 
 import {
@@ -21,6 +22,7 @@ import {
   MyQuoteResponse,
   MyQuoteDataResponse,
   MyQuoteListResponse,
+  MyPaymentListResponse,
 } from './responses/me.response';
 
 export class MePresenter {
@@ -113,5 +115,21 @@ export class MePresenter {
 
   static toQuoteListResponse(quotes: BillingQuoteGatewayResponse[]): MyQuoteListResponse {
     return { data: quotes.map((quote) => MePresenter.toQuoteSummaryResponse(quote)) };
+  }
+
+  static toPaymentListResponse(payments: BillingPaymentGatewayResponse[]): MyPaymentListResponse {
+    return {
+      data: payments.map(
+        ({ id, amount, status, checkoutUrl, expiresAt, createdAt, updatedAt }) => ({
+          id,
+          amount,
+          status,
+          checkoutUrl,
+          expiresAt,
+          createdAt,
+          updatedAt,
+        }),
+      ),
+    };
   }
 }

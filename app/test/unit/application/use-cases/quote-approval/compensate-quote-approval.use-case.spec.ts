@@ -10,6 +10,8 @@ import { createMockUnitOfWorkWithRepos } from '../../../../helpers/unit-of-work-
 import { IUnitOfWork, IRepositories } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { createMockLogger } from '../../../../helpers/logger-mock.factory';
+import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
+import { createMockMetrics } from '../../../../helpers/metrics-mock.factory';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { WorkOrder } from '@domain/entities/work-order.entity';
 import { SagaInstance } from '@domain/entities/saga-instance.entity';
@@ -19,6 +21,7 @@ describe('CompensateQuoteApprovalUseCase', () => {
   let unitOfWork: jest.Mocked<IUnitOfWork>;
   let repos: jest.Mocked<IRepositories>;
   let logger: jest.Mocked<ILogger>;
+  let metrics: jest.Mocked<IMetrics>;
   let quoteId: string;
   let workOrder: WorkOrder;
   let saga: SagaInstance;
@@ -27,6 +30,8 @@ describe('CompensateQuoteApprovalUseCase', () => {
     ({ unitOfWork, repos } = createMockUnitOfWorkWithRepos());
 
     logger = createMockLogger();
+
+    metrics = createMockMetrics();
 
     quoteId = randomUUID();
 
@@ -42,7 +47,7 @@ describe('CompensateQuoteApprovalUseCase', () => {
 
     jest.mocked(repos.workOrder.findById).mockResolvedValue(workOrder);
 
-    useCase = new CompensateQuoteApprovalUseCase(unitOfWork, logger);
+    useCase = new CompensateQuoteApprovalUseCase(unitOfWork, logger, metrics);
   });
 
   it('should move the saga to COMPENSATING and request the reversal to SENT', async () => {
@@ -63,17 +68,20 @@ describe('CompensateQuoteApprovalUseCase', () => {
       payload: { quoteId, revertTo: 'SENT' },
     });
 
-    expect(logger.event).toHaveBeenCalledWith(
-      BUSINESS_EVENTS.QUOTE_APPROVAL_COMPENSATION_REQUESTED,
-      {
-        sagaId: saga.id,
-        quoteId,
-        workOrderId: workOrder.id,
-        workOrderNumber: workOrder.number.toString(),
-        sagaFailureReason: SagaFailureReason.INSUFFICIENT_STOCK,
-        missingItemCount: 2,
-      },
-    );
+    expect(logger.event).toHaveBeenCalledTimes(1);
+    expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.SAGA_COMPENSATION_STARTED, {
+      sagaId: saga.id,
+      sagaType: SagaType.QUOTE_APPROVAL,
+      sagaStatus: SagaStatus.COMPENSATING,
+      quoteId,
+      workOrderId: workOrder.id,
+      workOrderNumber: workOrder.number.toString(),
+      sagaFailureReason: SagaFailureReason.INSUFFICIENT_STOCK,
+      missingItemCount: 2,
+    });
+
+    expect(metrics.increment).not.toHaveBeenCalled();
+    expect(metrics.record).not.toHaveBeenCalled();
   });
 
   it('should keep the work order awaiting approval and record no history', async () => {
@@ -111,7 +119,8 @@ describe('CompensateQuoteApprovalUseCase', () => {
       expect(repos.sagaInstance.update).not.toHaveBeenCalled();
       expect(repos.outbox.add).not.toHaveBeenCalled();
 
-      expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_APPROVAL_STEP_SKIPPED, {
+      expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.SAGA_STEP_SKIPPED, {
+        sagaType: SagaType.QUOTE_APPROVAL,
         quoteId,
         sagaStatus,
       });

@@ -222,8 +222,9 @@ describe('OtelMetricsAdapter', () => {
       expect(point.positive.bucketCounts.filter((count) => count > 0)).toHaveLength(3);
     });
 
-    it('should apply the same aggregation to the three business durations', () => {
+    it('should apply the same aggregation to the four business durations', () => {
       expect(METRIC_VIEWS.map((view) => view.instrumentName).sort()).toEqual([
+        'oficina.saga.duration',
         'oficina.work_order.diagnosis_to_completion.duration',
         'oficina.work_order.lead_time.duration',
         'oficina.work_order.status.duration',
