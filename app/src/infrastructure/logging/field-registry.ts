@@ -150,6 +150,20 @@ export const LOGICAL_FIELDS: Readonly<Record<LogicalFieldName, LogicalFieldDefin
     owner: 'use-case',
     sensitivity: 'identifier',
   },
+  sagaType: {
+    key: 'oficina.saga.type',
+    type: 'string',
+    cardinality: 'low',
+    owner: 'use-case',
+    sensitivity: 'clear',
+  },
+  paymentId: {
+    key: 'oficina.payment.id',
+    type: 'string',
+    cardinality: 'high',
+    owner: 'use-case',
+    sensitivity: 'identifier',
+  },
   sagaStatus: {
     key: 'oficina.saga.status',
     type: 'string',

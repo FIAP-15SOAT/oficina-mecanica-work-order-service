@@ -1,5 +1,7 @@
 import { defineBusinessMetric } from './business-metric';
 
+export type SagaOutcome = 'completed' | 'compensated';
+
 export const BUSINESS_METRICS = {
   WORK_ORDER_CREATED: defineBusinessMetric<Record<never, never>>({
     name: 'work_order.created',
@@ -24,5 +26,23 @@ export const BUSINESS_METRICS = {
     kind: 'histogram',
     unit: 's',
     description: 'Tempo total entre o recebimento e a entrega da ordem de serviço',
+  }),
+  SAGA_STARTED: defineBusinessMetric<{ sagaType: string }>({
+    name: 'saga.started',
+    kind: 'counter',
+    unit: '{saga}',
+    description: 'Sagas iniciadas, reaberturas incluídas',
+  }),
+  SAGA_FINISHED: defineBusinessMetric<{ sagaType: string; sagaOutcome: SagaOutcome }>({
+    name: 'saga.finished',
+    kind: 'counter',
+    unit: '{saga}',
+    description: 'Sagas encerradas, por desfecho',
+  }),
+  SAGA_DURATION: defineBusinessMetric<{ sagaType: string; sagaOutcome: SagaOutcome }>({
+    name: 'saga.duration',
+    kind: 'histogram',
+    unit: 's',
+    description: 'Tempo entre a criação da Saga e o encerramento dela',
   }),
 } as const;

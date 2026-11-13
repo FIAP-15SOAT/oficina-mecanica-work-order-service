@@ -6,6 +6,7 @@ import { IRepositories, IUnitOfWork } from '@domain/interfaces/repositories/unit
 
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
+import { BUSINESS_METRICS } from '@application/metrics/business-metric.catalog';
 import { StartQuoteApprovalInputDto } from '@application/ports/input/quote-approval/dto/start-quote-approval.dto';
 import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
@@ -108,11 +109,18 @@ describe('StartQuoteApprovalUseCase', () => {
     expect(cache.delete).not.toHaveBeenCalled();
     expect(metrics.record).not.toHaveBeenCalled();
 
-    expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_APPROVAL_STARTED, {
+    expect(logger.event).toHaveBeenCalledTimes(1);
+    expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.SAGA_STARTED, {
       sagaId: expect.any(String),
+      sagaType: SagaType.QUOTE_APPROVAL,
+      sagaStatus: SagaStatus.RESERVING_STOCK,
       quoteId,
       workOrderId,
       workOrderNumber: workOrder.number.toString(),
+    });
+
+    expect(metrics.increment).toHaveBeenCalledWith(BUSINESS_METRICS.SAGA_STARTED, {
+      sagaType: SagaType.QUOTE_APPROVAL,
     });
   });
 
@@ -163,12 +171,36 @@ describe('StartQuoteApprovalUseCase', () => {
     expect(repos.outbox.add).not.toHaveBeenCalled();
     expect(cache.delete).toHaveBeenCalledWith([workOrderCacheKey(workOrderId)]);
 
-    expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_APPROVAL_COMPLETED, {
+    expect(logger.event).toHaveBeenNthCalledWith(
+      1,
+      BUSINESS_EVENTS.SAGA_STARTED,
+      expect.objectContaining({ quoteId }),
+    );
+
+    expect(logger.event).toHaveBeenNthCalledWith(2, BUSINESS_EVENTS.SAGA_COMPLETED, {
       sagaId: expect.any(String),
+      sagaType: SagaType.QUOTE_APPROVAL,
+      sagaStatus: SagaStatus.COMPLETED,
       quoteId,
       workOrderId,
       workOrderNumber: workOrder.number.toString(),
     });
+
+    expect(metrics.increment).toHaveBeenCalledWith(BUSINESS_METRICS.SAGA_STARTED, {
+      sagaType: SagaType.QUOTE_APPROVAL,
+    });
+    expect(metrics.increment).toHaveBeenCalledWith(BUSINESS_METRICS.SAGA_FINISHED, {
+      sagaType: SagaType.QUOTE_APPROVAL,
+      sagaOutcome: 'completed',
+    });
+    expect(metrics.record).toHaveBeenCalledWith(
+      BUSINESS_METRICS.SAGA_DURATION,
+      expect.any(Number),
+      {
+        sagaType: SagaType.QUOTE_APPROVAL,
+        sagaOutcome: 'completed',
+      },
+    );
 
     expect(metrics.record).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'work_order.status.duration' }),
@@ -207,16 +239,22 @@ describe('StartQuoteApprovalUseCase', () => {
     expect(cache.delete).not.toHaveBeenCalled();
     expect(metrics.record).not.toHaveBeenCalled();
 
-    expect(logger.event).toHaveBeenCalledWith(
-      BUSINESS_EVENTS.QUOTE_APPROVAL_COMPENSATION_REQUESTED,
-      {
-        sagaId: expect.any(String),
-        quoteId,
-        workOrderId,
-        workOrderNumber: workOrder.number.toString(),
-        sagaFailureReason: SagaFailureReason.WORK_ORDER_NOT_AWAITING,
-      },
+    expect(logger.event).toHaveBeenNthCalledWith(
+      1,
+      BUSINESS_EVENTS.SAGA_STARTED,
+      expect.objectContaining({ quoteId }),
     );
+
+    expect(logger.event).toHaveBeenNthCalledWith(2, BUSINESS_EVENTS.SAGA_COMPENSATION_STARTED, {
+      sagaId: expect.any(String),
+      sagaType: SagaType.QUOTE_APPROVAL,
+      sagaStatus: SagaStatus.COMPENSATING,
+      quoteId,
+      workOrderId,
+      workOrderNumber: workOrder.number.toString(),
+      sagaFailureReason: SagaFailureReason.WORK_ORDER_NOT_AWAITING,
+      missingItemCount: undefined,
+    });
   });
 
   it('should reopen the saga compensated for insufficient stock and request the reservation again', async () => {
@@ -247,9 +285,13 @@ describe('StartQuoteApprovalUseCase', () => {
     );
 
     expect(logger.event).toHaveBeenCalledWith(
-      BUSINESS_EVENTS.QUOTE_APPROVAL_STARTED,
+      BUSINESS_EVENTS.SAGA_STARTED,
       expect.objectContaining({ sagaId: saga.id, quoteId }),
     );
+
+    expect(metrics.increment).toHaveBeenCalledWith(BUSINESS_METRICS.SAGA_STARTED, {
+      sagaType: SagaType.QUOTE_APPROVAL,
+    });
   });
 
   it('should reopen the compensated saga to request the reversal when the work order is no longer awaiting approval', async () => {
@@ -306,10 +348,13 @@ describe('StartQuoteApprovalUseCase', () => {
       expect(repos.outbox.add).not.toHaveBeenCalled();
       expect(cache.delete).not.toHaveBeenCalled();
 
-      expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_APPROVAL_STEP_SKIPPED, {
+      expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.SAGA_STEP_SKIPPED, {
+        sagaType: SagaType.QUOTE_APPROVAL,
         quoteId,
         sagaStatus: status,
       });
+
+      expect(metrics.increment).not.toHaveBeenCalled();
     },
   );
 
@@ -335,6 +380,7 @@ describe('StartQuoteApprovalUseCase', () => {
 
     expect(cache.delete).not.toHaveBeenCalled();
     expect(logger.event).not.toHaveBeenCalled();
+    expect(metrics.increment).not.toHaveBeenCalled();
     expect(metrics.record).not.toHaveBeenCalled();
   });
 });

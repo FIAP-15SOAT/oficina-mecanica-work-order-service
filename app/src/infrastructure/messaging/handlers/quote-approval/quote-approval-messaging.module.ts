@@ -56,11 +56,13 @@ import { QuoteApprovalMessageHandlers } from './quote-approval-message-handlers'
           new CompensateQuoteApprovalUseCase(
             unitOfWork,
             logger.forContext(CompensateQuoteApprovalUseCase.name),
+            metrics,
           ),
           new ConfirmQuoteApprovalReversalUseCase(
             unitOfWork,
             logger.forContext(ConfirmQuoteApprovalReversalUseCase.name),
             emailSender,
+            metrics,
           ),
         ),
       inject: [

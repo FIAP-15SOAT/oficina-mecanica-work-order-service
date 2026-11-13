@@ -35,12 +35,26 @@ export const METRIC_REGISTRY: Readonly<Record<BusinessMetricName, MetricRegistry
     key: `${OWNED_NAMESPACE}.work_order.lead_time.duration`,
     aggregation: { type: AggregationType.EXPONENTIAL_HISTOGRAM },
   },
+  'saga.started': {
+    key: `${OWNED_NAMESPACE}.saga.started`,
+    aggregation: { type: AggregationType.DEFAULT },
+  },
+  'saga.finished': {
+    key: `${OWNED_NAMESPACE}.saga.finished`,
+    aggregation: { type: AggregationType.DEFAULT },
+  },
+  'saga.duration': {
+    key: `${OWNED_NAMESPACE}.saga.duration`,
+    aggregation: { type: AggregationType.EXPONENTIAL_HISTOGRAM },
+  },
 };
 
 export const METRIC_ATTRIBUTE_REGISTRY: Readonly<
   Record<MetricAttributeName, MetricAttributeRegistryEntry>
 > = {
   workOrderStatus: { key: `${OWNED_NAMESPACE}.work_order.status`, cardinality: 'low' },
+  sagaType: { key: `${OWNED_NAMESPACE}.saga.type`, cardinality: 'fixed' },
+  sagaOutcome: { key: `${OWNED_NAMESPACE}.saga.outcome`, cardinality: 'fixed' },
 };
 
 /**

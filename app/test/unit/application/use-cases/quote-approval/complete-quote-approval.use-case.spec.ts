@@ -27,6 +27,7 @@ import {
   readInternalQuoteFixture,
 } from '../../../../helpers/billing-quotes-gateway-mock.factory';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
+import { BUSINESS_METRICS } from '@application/metrics/business-metric.catalog';
 import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
 
 describe('CompleteQuoteApprovalUseCase', () => {
@@ -140,11 +141,20 @@ describe('CompleteQuoteApprovalUseCase', () => {
     );
 
     expect(cache.delete).toHaveBeenCalledWith([workOrderCacheKey(workOrder.id)]);
-    expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_APPROVAL_COMPLETED, {
+    expect(logger.event).toHaveBeenCalledTimes(1);
+    expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.SAGA_COMPLETED, {
       sagaId: saga.id,
+      sagaType: SagaType.QUOTE_APPROVAL,
+      sagaStatus: SagaStatus.COMPLETED,
       quoteId: quote.id,
       workOrderId: workOrder.id,
       workOrderNumber: workOrder.number.toString(),
+    });
+
+    expect(metrics.increment).toHaveBeenCalledTimes(1);
+    expect(metrics.increment).toHaveBeenCalledWith(BUSINESS_METRICS.SAGA_FINISHED, {
+      sagaType: SagaType.QUOTE_APPROVAL,
+      sagaOutcome: 'completed',
     });
 
     expect(metrics.record).toHaveBeenCalledWith(
@@ -152,6 +162,38 @@ describe('CompleteQuoteApprovalUseCase', () => {
       2 * 3600,
       { workOrderStatus: WorkOrderStatus.AWAITING_APPROVAL },
     );
+  });
+
+  it('should time the saga from the update timestamp the repository saved', async () => {
+    const quote = readInternalQuoteFixture().data;
+
+    sagaInstanceRepository.findByTypeAndCorrelationId.mockResolvedValue(
+      createMockSagaInstance({ correlationId: quote.id, status: SagaStatus.RESERVING_STOCK }),
+    );
+
+    billingQuotesGateway.getQuote.mockResolvedValue(quote);
+
+    jest
+      .mocked(repos.workOrder.findByIdWithDetails)
+      .mockResolvedValue(
+        createMockWorkOrder({ id: quote.workOrderId, status: WorkOrderStatus.AWAITING_APPROVAL }),
+      );
+
+    jest.mocked(repos.sagaInstance.update).mockResolvedValue(
+      createMockSagaInstance({
+        correlationId: quote.id,
+        status: SagaStatus.COMPLETED,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-01T00:10:00.000Z'),
+      }),
+    );
+
+    await useCase.execute(quote.id);
+
+    expect(metrics.record).toHaveBeenCalledWith(BUSINESS_METRICS.SAGA_DURATION, 600, {
+      sagaType: SagaType.QUOTE_APPROVAL,
+      sagaOutcome: 'completed',
+    });
   });
 
   it.each([
@@ -173,7 +215,8 @@ describe('CompleteQuoteApprovalUseCase', () => {
       expect(unitOfWork.executeTransaction).not.toHaveBeenCalled();
       expect(cache.delete).not.toHaveBeenCalled();
 
-      expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_APPROVAL_STEP_SKIPPED, {
+      expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.SAGA_STEP_SKIPPED, {
+        sagaType: SagaType.QUOTE_APPROVAL,
         quoteId,
         sagaStatus,
       });
@@ -213,6 +256,7 @@ describe('CompleteQuoteApprovalUseCase', () => {
 
     expect(cache.delete).not.toHaveBeenCalled();
     expect(logger.event).not.toHaveBeenCalled();
+    expect(metrics.increment).not.toHaveBeenCalled();
     expect(metrics.record).not.toHaveBeenCalled();
   });
 });

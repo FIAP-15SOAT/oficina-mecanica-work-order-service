@@ -12,6 +12,7 @@ import { IRepositories, IUnitOfWork } from '@domain/interfaces/repositories/unit
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { recordWorkOrderTransition } from '@application/metrics/work-order-metrics';
+import { recordSagaTransition } from '@application/metrics/saga-metrics';
 import { StartQuoteApprovalInputDto } from '@application/ports/input/quote-approval/dto/start-quote-approval.dto';
 import { IStartQuoteApprovalUseCase } from '@application/ports/input/quote-approval/start-quote-approval.use-case.interface';
 import { ICache } from '@application/ports/output/services/cache.service.interface';
@@ -42,7 +43,8 @@ export class StartQuoteApprovalUseCase implements IStartQuoteApprovalUseCase {
     const start = await this.unitOfWork.executeTransaction((repos) => this.start(repos, input));
 
     if (start.outcome === 'skipped') {
-      this.logger.event(BUSINESS_EVENTS.QUOTE_APPROVAL_STEP_SKIPPED, {
+      this.logger.event(BUSINESS_EVENTS.SAGA_STEP_SKIPPED, {
+        sagaType: SagaType.QUOTE_APPROVAL,
         quoteId: input.quoteId,
         sagaStatus: start.sagaStatus,
       });
@@ -50,31 +52,18 @@ export class StartQuoteApprovalUseCase implements IStartQuoteApprovalUseCase {
       return;
     }
 
-    const sagaFields = {
-      sagaId: start.saga.id,
-      quoteId: input.quoteId,
-      workOrderId: input.workOrderId,
+    if (start.outcome === 'completed') {
+      await this.cache.delete([workOrderCacheKey(input.workOrderId)]);
+    }
+
+    recordSagaTransition(this.logger, this.metrics, start.saga, {
+      started: true,
       workOrderNumber: start.workOrder.number.toString(),
-    };
+    });
 
-    if (start.outcome === 'stock_reservation_requested') {
-      this.logger.event(BUSINESS_EVENTS.QUOTE_APPROVAL_STARTED, sagaFields);
-
+    if (start.outcome !== 'completed') {
       return;
     }
-
-    if (start.outcome === 'reversal_requested') {
-      this.logger.event(BUSINESS_EVENTS.QUOTE_APPROVAL_COMPENSATION_REQUESTED, {
-        ...sagaFields,
-        sagaFailureReason: SagaFailureReason.WORK_ORDER_NOT_AWAITING,
-      });
-
-      return;
-    }
-
-    await this.cache.delete([workOrderCacheKey(input.workOrderId)]);
-
-    this.logger.event(BUSINESS_EVENTS.QUOTE_APPROVAL_COMPLETED, sagaFields);
 
     await recordWorkOrderTransition(
       this.metrics,

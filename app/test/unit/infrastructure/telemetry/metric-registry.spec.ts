@@ -76,7 +76,7 @@ describe('metric registry', () => {
       (definition) => definition.unit === 's',
     );
 
-    expect(durations).toHaveLength(3);
+    expect(durations).toHaveLength(4);
 
     for (const definition of durations) {
       expect(METRIC_REGISTRY[definition.name].aggregation.type).toBe(
@@ -85,10 +85,26 @@ describe('metric registry', () => {
     }
   });
 
-  it('should not declare a custom aggregation for the counter', () => {
-    expect(METRIC_REGISTRY[BUSINESS_METRICS.WORK_ORDER_CREATED.name].aggregation.type).toBe(
-      AggregationType.DEFAULT,
-    );
+  it.each([
+    BUSINESS_METRICS.WORK_ORDER_CREATED,
+    BUSINESS_METRICS.SAGA_STARTED,
+    BUSINESS_METRICS.SAGA_FINISHED,
+  ])('should not declare a custom aggregation for the counter $name', (definition) => {
+    expect(METRIC_REGISTRY[definition.name].aggregation.type).toBe(AggregationType.DEFAULT);
+  });
+
+  it('should map the saga metrics and attributes to the owned saga namespace', () => {
+    expect(resolveMetricKey(BUSINESS_METRICS.SAGA_STARTED.name)).toBe('oficina.saga.started');
+    expect(resolveMetricKey(BUSINESS_METRICS.SAGA_FINISHED.name)).toBe('oficina.saga.finished');
+    expect(resolveMetricKey(BUSINESS_METRICS.SAGA_DURATION.name)).toBe('oficina.saga.duration');
+    expect(resolveMetricAttribute('sagaType')).toEqual({
+      key: 'oficina.saga.type',
+      cardinality: 'fixed',
+    });
+    expect(resolveMetricAttribute('sagaOutcome')).toEqual({
+      key: 'oficina.saga.outcome',
+      cardinality: 'fixed',
+    });
   });
 
   /**

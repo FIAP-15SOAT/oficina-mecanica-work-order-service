@@ -4,7 +4,10 @@ export type BusinessMetricName =
   | 'work_order.created'
   | 'work_order.status.duration'
   | 'work_order.diagnosis_to_completion.duration'
-  | 'work_order.lead_time.duration';
+  | 'work_order.lead_time.duration'
+  | 'saga.started'
+  | 'saga.finished'
+  | 'saga.duration';
 
 export type MetricInstrumentKind = 'counter' | 'histogram';
 
