@@ -219,7 +219,7 @@ Na stack do compose (a partir de `app/`):
 docker compose exec postgres psql -U postgres -d work_order -c "INSERT INTO outbox (message_id, type, work_order_id, payload) VALUES (gen_random_uuid(), 'billing.payment.failed', NULL, jsonb_build_object('paymentId', gen_random_uuid(), 'reason', 'EXPIRED'))"
 ```
 
-Para ver o caminho da falha até a DLQ (fila de mensagens que falharam, `work-order-dlq.fifo`), troque o payload por `'{}'`: sem `paymentId`, a validação do payload recusa a mensagem, o consumidor registra `messaging.message.failed` a cada entrega e, na quinta, `messaging.message.dead_lettered`, e o SQS a move para a DLQ.
+Para ver o caminho da falha até a DLQ (fila de mensagens que falharam, `work-order-dlq.fifo`), troque o payload por `'{}'`: sem `paymentId`, a validação do payload recusa a mensagem, o consumidor registra `messaging.message.failed` nas quatro primeiras entregas e `messaging.message.dead_lettered` na quinta, e o SQS a move para a DLQ.
 
 No banco de um ambiente implantado, o mesmo `INSERT` vale em qualquer cliente SQL conectado ao banco do serviço. `message_id` não tem valor padrão no banco, por isso o `gen_random_uuid()`; um `work_order_id` preenchido precisa ser de uma OS existente, por causa da FK.
 
