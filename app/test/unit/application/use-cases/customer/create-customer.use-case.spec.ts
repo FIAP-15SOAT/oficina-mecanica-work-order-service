@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { CreateCustomerUseCase } from '@application/use-cases/customer/create-customer.use-case';
-import { GrantCustomerAccessUseCase } from '@application/use-cases/customer-access/grant-customer-access.use-case';
+import { CustomerAccessUserProvisioner } from '@application/services/customer-access-user-provisioner';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { ResourceConflictException } from '@application/exceptions/resource-conflict.exception';
 import { ServiceRequestRejectedException } from '@application/exceptions/service-request-rejected.exception';
@@ -20,7 +20,7 @@ describe('CreateCustomerUseCase', () => {
   let useCase: CreateCustomerUseCase;
   let unitOfWork: jest.Mocked<IUnitOfWork>;
   let repos: jest.Mocked<IRepositories>;
-  let grantCustomerAccessUseCase: jest.Mocked<Pick<GrantCustomerAccessUseCase, 'ensureUser'>>;
+  let customerAccessUserProvisioner: jest.Mocked<CustomerAccessUserProvisioner>;
   let logger: jest.Mocked<ILogger>;
 
   const validInput = {
@@ -35,15 +35,13 @@ describe('CreateCustomerUseCase', () => {
   beforeEach(() => {
     ({ unitOfWork, repos } = createMockUnitOfWorkWithRepos());
 
-    grantCustomerAccessUseCase = { ensureUser: jest.fn() };
+    customerAccessUserProvisioner = {
+      ensureUser: jest.fn(),
+    } as unknown as jest.Mocked<CustomerAccessUserProvisioner>;
 
     logger = createMockLogger();
 
-    useCase = new CreateCustomerUseCase(
-      unitOfWork,
-      grantCustomerAccessUseCase as unknown as GrantCustomerAccessUseCase,
-      logger,
-    );
+    useCase = new CreateCustomerUseCase(unitOfWork, customerAccessUserProvisioner, logger);
   });
 
   it('should create customer when document and email are unique', async () => {
@@ -81,7 +79,7 @@ describe('CreateCustomerUseCase', () => {
         ResourceConflictException,
       );
 
-      expect(grantCustomerAccessUseCase.ensureUser).not.toHaveBeenCalled();
+      expect(customerAccessUserProvisioner.ensureUser).not.toHaveBeenCalled();
       expect(repos.customer.create).not.toHaveBeenCalled();
     },
   );
@@ -95,13 +93,13 @@ describe('CreateCustomerUseCase', () => {
     jest
       .mocked(repos.customer.create)
       .mockImplementation((customer: Customer) => Promise.resolve(customer));
-    grantCustomerAccessUseCase.ensureUser.mockResolvedValue({ userId, created: true });
+    customerAccessUserProvisioner.ensureUser.mockResolvedValue({ userId, created: true });
 
     const created = await useCase.execute(validInput, actingUserId);
 
-    expect(grantCustomerAccessUseCase.ensureUser).toHaveBeenCalledWith(created);
+    expect(customerAccessUserProvisioner.ensureUser).toHaveBeenCalledWith(created);
     expect(unitOfWork.executeTransaction).toHaveBeenCalledTimes(2);
-    expect(grantCustomerAccessUseCase.ensureUser.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(customerAccessUserProvisioner.ensureUser.mock.invocationCallOrder[0]).toBeLessThan(
       unitOfWork.executeTransaction.mock.invocationCallOrder[1],
     );
     expect(repos.userCustomer.create).toHaveBeenCalledWith(
@@ -125,7 +123,7 @@ describe('CreateCustomerUseCase', () => {
 
     await useCase.execute({ ...validInput, createAccess: false }, randomUUID());
 
-    expect(grantCustomerAccessUseCase.ensureUser).not.toHaveBeenCalled();
+    expect(customerAccessUserProvisioner.ensureUser).not.toHaveBeenCalled();
     expect(repos.userCustomer.create).not.toHaveBeenCalled();
     expect(logger.event).not.toHaveBeenCalled();
   });
@@ -157,7 +155,7 @@ describe('CreateCustomerUseCase', () => {
 
     jest.mocked(repos.customer.findByDocument).mockResolvedValue(null);
     jest.mocked(repos.customer.findByEmail).mockResolvedValue(null);
-    grantCustomerAccessUseCase.ensureUser.mockRejectedValue(error);
+    customerAccessUserProvisioner.ensureUser.mockRejectedValue(error);
 
     await expect(useCase.execute(validInput, randomUUID())).rejects.toBe(error);
 

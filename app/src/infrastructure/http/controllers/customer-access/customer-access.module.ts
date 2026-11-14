@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { CustomerAccessUserProvisioner } from '@application/services/customer-access-user-provisioner';
 import { GrantCustomerAccessUseCase } from '@application/use-cases/customer-access/grant-customer-access.use-case';
 import { ListCustomerAccessUsersUseCase } from '@application/use-cases/customer-access/list-customer-access-users.use-case';
 import { ListActiveUserCustomersUseCase } from '@application/use-cases/customer-access/list-active-user-customers.use-case';
@@ -38,6 +39,7 @@ import { UserCustomersController } from './user-customers.controller';
           new GrantCustomerAccessUseCase(
             unitOfWork,
             identityUsersGateway,
+            new CustomerAccessUserProvisioner(identityUsersGateway),
             logger.forContext(GrantCustomerAccessUseCase.name),
           ),
           new ListCustomerAccessUsersUseCase(

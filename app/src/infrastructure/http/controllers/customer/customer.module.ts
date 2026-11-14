@@ -5,7 +5,7 @@ import { FindAllCustomersUseCase } from '@application/use-cases/customer/find-al
 import { FindCustomerByIdUseCase } from '@application/use-cases/customer/find-customer-by-id.use-case';
 import { UpdateCustomerUseCase } from '@application/use-cases/customer/update-customer.use-case';
 import { DeleteCustomerUseCase } from '@application/use-cases/customer/delete-customer.use-case';
-import { GrantCustomerAccessUseCase } from '@application/use-cases/customer-access/grant-customer-access.use-case';
+import { CustomerAccessUserProvisioner } from '@application/services/customer-access-user-provisioner';
 
 import { ICustomerRepository } from '@domain/interfaces/repositories/customer.repository.interface';
 import { IUserCustomerRepository } from '@domain/interfaces/repositories/user-customer.repository.interface';
@@ -35,11 +35,7 @@ import { CustomerController } from './customer.controller';
         new CustomerCleanController(
           new CreateCustomerUseCase(
             unitOfWork,
-            new GrantCustomerAccessUseCase(
-              unitOfWork,
-              identityUsersGateway,
-              logger.forContext(GrantCustomerAccessUseCase.name),
-            ),
+            new CustomerAccessUserProvisioner(identityUsersGateway),
             logger.forContext(CreateCustomerUseCase.name),
           ),
           new FindAllCustomersUseCase(customerRepository),

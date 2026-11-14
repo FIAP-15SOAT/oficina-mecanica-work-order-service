@@ -87,6 +87,7 @@ export class WorkOrderController {
   @Roles(UserRole.ADMIN, UserRole.MECHANIC, UserRole.ATTENDANT)
   @ApiOperation({ summary: 'Listar Ordens de Serviço paginado' })
   @ApiOkResponse({ type: WorkOrderPaginatedResponseDto })
+  @ApiServiceUnavailableResponse({ description: 'Identity ou Inventory indisponível' })
   findAll(
     @Query() query: FindAllWorkOrdersPaginatedQueryDto,
   ): Promise<WorkOrderPaginatedResponseDto> {
@@ -98,6 +99,7 @@ export class WorkOrderController {
   @ApiOperation({ summary: 'Buscar Ordem de Serviço por ID' })
   @ApiOkResponse({ type: WorkOrderDataResponseDto })
   @ApiNotFoundResponse()
+  @ApiServiceUnavailableResponse({ description: 'Identity ou Inventory indisponível' })
   @ApiParam({ name: 'id', format: 'uuid' })
   findOne(@Param('id', ParseUUIDPipe) id: string): Promise<WorkOrderDataResponseDto> {
     return this.controller.findOne(id);
@@ -135,7 +137,8 @@ export class WorkOrderController {
       'Saldo a pagar na entrega, ordem de serviço aguardando pagamento ou modificação concorrente detectada',
   })
   @ApiServiceUnavailableResponse({
-    description: 'Billing indisponível ao conferir o saldo da entrega',
+    description:
+      'Billing, Inventory ou Identity indisponível ao conferir o saldo da entrega, o catálogo ou o responsável; nada é gravado',
   })
   @ApiBadRequestResponse({ description: 'Dados inválidos ou ID inválido' })
   @ApiUnauthorizedResponse({ description: 'Não autenticado' })
@@ -179,6 +182,7 @@ export class WorkOrderController {
   @ApiOperation({ summary: 'Histórico de status da Ordem de Serviço' })
   @ApiOkResponse({ type: StatusHistoryListResponseDto })
   @ApiNotFoundResponse()
+  @ApiServiceUnavailableResponse({ description: 'Identity indisponível' })
   @ApiParam({ name: 'id', format: 'uuid' })
   getStatusHistory(@Param('id', ParseUUIDPipe) id: string): Promise<StatusHistoryListResponseDto> {
     return this.controller.getStatusHistory(id);

@@ -23,6 +23,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiProduces,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
@@ -64,6 +65,9 @@ export class CustomerAccessController {
     description: 'Vínculo já existe, conflito de identidade ou cliente inativo',
   })
   @ApiUnprocessableEntityResponse({ description: 'CPF inválido' })
+  @ApiServiceUnavailableResponse({
+    description: 'Identity, o serviço dono dos usuários, indisponível; nada é gravado',
+  })
   @HttpCode(HttpStatus.CREATED)
   grantAccess(
     @Param('customerId', ParseUUIDPipe) customerId: string,
@@ -79,6 +83,9 @@ export class CustomerAccessController {
   @ApiParam({ name: 'customerId', format: 'uuid' })
   @ApiOkResponse({ type: AccessUserListResponseDto })
   @ApiNotFoundResponse({ description: 'Cliente não encontrado' })
+  @ApiServiceUnavailableResponse({
+    description: 'Identity, o serviço dono dos usuários, indisponível',
+  })
   listAccessUsers(
     @Param('customerId', ParseUUIDPipe) customerId: string,
   ): Promise<AccessUserListResponseDto> {

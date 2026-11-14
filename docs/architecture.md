@@ -85,7 +85,10 @@ app/src/
 │   │                                # o usuário atribuído é um mecânico ativo;
 │   │                                # CustomerEmailRecipientsResolver — destinatários
 │   │                                # dos e-mails ao cliente (usuários vinculados ativos
-│   │                                # no Identity ou o e-mail do cadastro)
+│   │                                # no Identity ou o e-mail do cadastro);
+│   │                                # CustomerAccessUserProvisioner — localiza ou cria no
+│   │                                # Identity o usuário de acesso do cliente, usado ao
+│   │                                # conceder acesso e ao cadastrar o cliente
 │   ├── notifications/               # WorkOrderEmailComposer — monta as mensagens
 │   │                                # notification.email.send (assunto, texto e HTML
 │   │                                # com os valores externos escapados)

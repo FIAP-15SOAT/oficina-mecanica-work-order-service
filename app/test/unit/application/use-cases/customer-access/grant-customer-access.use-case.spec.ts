@@ -2,16 +2,13 @@ import { randomUUID } from 'node:crypto';
 
 import { GrantCustomerAccessUseCase } from '@application/use-cases/customer-access/grant-customer-access.use-case';
 import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
+import { CustomerAccessUserProvisioner } from '@application/services/customer-access-user-provisioner';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { ResourceConflictException } from '@application/exceptions/resource-conflict.exception';
 import { ServiceRequestRejectedException } from '@application/exceptions/service-request-rejected.exception';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
-import { CustomerType } from '@domain/enums/customer-type.enum';
-import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
 import { IRepositories, IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
-import { Document } from '@domain/value-objects/document.vo';
-import { Email } from '@domain/value-objects/email.vo';
 
 import { createMockCustomer } from '../../../../helpers/customer-mock.factory';
 import {
@@ -26,51 +23,45 @@ describe('GrantCustomerAccessUseCase', () => {
   let unitOfWork: jest.Mocked<IUnitOfWork>;
   let repos: jest.Mocked<IRepositories>;
   let identityUsersGateway: jest.Mocked<IIdentityUsersGateway>;
+  let customerAccessUserProvisioner: jest.Mocked<CustomerAccessUserProvisioner>;
   let logger: jest.Mocked<ILogger>;
-
-  const companyInput = {
-    name: 'Operador',
-    email: 'operador@parceira.com.br',
-    cpf: '123.456.789-09',
-  };
 
   beforeEach(() => {
     ({ unitOfWork, repos } = createMockUnitOfWorkWithRepos());
 
     identityUsersGateway = createMockIdentityUsersGateway();
 
+    customerAccessUserProvisioner = {
+      ensureUser: jest.fn(),
+    } as unknown as jest.Mocked<CustomerAccessUserProvisioner>;
+
     logger = createMockLogger();
 
-    useCase = new GrantCustomerAccessUseCase(unitOfWork, identityUsersGateway, logger);
+    useCase = new GrantCustomerAccessUseCase(
+      unitOfWork,
+      identityUsersGateway,
+      customerAccessUserProvisioner,
+      logger,
+    );
   });
 
-  function createCompanyCustomer() {
-    return createMockCustomer({
-      name: 'Oficina Parceira LTDA',
-      type: CustomerType.COMPANY,
-      document: Document.create('12345678000195', CustomerType.COMPANY),
-      email: Email.create('contato@parceira.com.br'),
-    });
-  }
-
   describe('execute', () => {
-    it('should ensure the user of an active individual customer in the identity before the transaction that writes the link', async () => {
+    it('should ensure the user in the identity before the transaction that writes the link', async () => {
       const customer = createMockCustomer();
       const user = createMockIdentityUserGatewayResponse({ role: null });
 
       jest.mocked(repos.customer.findById).mockResolvedValue(customer);
-      identityUsersGateway.ensureCustomerUser.mockResolvedValue({ userId: user.id, created: true });
+      customerAccessUserProvisioner.ensureUser.mockResolvedValue({
+        userId: user.id,
+        created: true,
+      });
       identityUsersGateway.findById.mockResolvedValue(user);
 
       await useCase.execute(customer.id, randomUUID());
 
-      expect(identityUsersGateway.ensureCustomerUser).toHaveBeenCalledWith({
-        name: customer.name,
-        email: customer.email.value,
-        cpf: customer.document.value,
-      });
+      expect(customerAccessUserProvisioner.ensureUser).toHaveBeenCalledWith(customer, undefined);
       expect(unitOfWork.executeTransaction).toHaveBeenCalledTimes(2);
-      expect(identityUsersGateway.ensureCustomerUser.mock.invocationCallOrder[0]).toBeLessThan(
+      expect(customerAccessUserProvisioner.ensureUser.mock.invocationCallOrder[0]).toBeLessThan(
         unitOfWork.executeTransaction.mock.invocationCallOrder[1],
       );
       expect(identityUsersGateway.findById.mock.invocationCallOrder[0]).toBeLessThan(
@@ -83,7 +74,10 @@ describe('GrantCustomerAccessUseCase', () => {
       const user = createMockIdentityUserGatewayResponse({ role: null });
 
       jest.mocked(repos.customer.findById).mockResolvedValue(customer);
-      identityUsersGateway.ensureCustomerUser.mockResolvedValue({ userId: user.id, created: true });
+      customerAccessUserProvisioner.ensureUser.mockResolvedValue({
+        userId: user.id,
+        created: true,
+      });
       identityUsersGateway.findById.mockResolvedValue(user);
 
       await useCase.execute(customer.id, randomUUID());
@@ -104,7 +98,7 @@ describe('GrantCustomerAccessUseCase', () => {
         const user = createMockIdentityUserGatewayResponse({ role: null });
 
         jest.mocked(repos.customer.findById).mockResolvedValue(customer);
-        identityUsersGateway.ensureCustomerUser.mockResolvedValue({ userId: user.id, created });
+        customerAccessUserProvisioner.ensureUser.mockResolvedValue({ userId: user.id, created });
         identityUsersGateway.findById.mockResolvedValue(user);
 
         const result = await useCase.execute(customer.id, actingUserId);
@@ -130,46 +124,6 @@ describe('GrantCustomerAccessUseCase', () => {
       },
     );
 
-    it('should send the person data of the body with the cpf in digits only for a company customer', async () => {
-      const customer = createCompanyCustomer();
-      const user = createMockIdentityUserGatewayResponse({ role: null });
-
-      jest.mocked(repos.customer.findById).mockResolvedValue(customer);
-      identityUsersGateway.ensureCustomerUser.mockResolvedValue({ userId: user.id, created: true });
-      identityUsersGateway.findById.mockResolvedValue(user);
-
-      await useCase.execute(customer.id, randomUUID(), companyInput);
-
-      expect(identityUsersGateway.ensureCustomerUser).toHaveBeenCalledWith({
-        name: 'Operador',
-        email: 'operador@parceira.com.br',
-        cpf: '12345678909',
-      });
-    });
-
-    it.each([
-      ['no body', undefined],
-      ['no email', { name: 'Operador', cpf: '12345678909' }],
-      ['no cpf', { name: 'Operador', email: 'operador@parceira.com.br' }],
-      ['no name', { email: 'operador@parceira.com.br', cpf: '12345678909' }],
-    ])(
-      'should require name, email and cpf of a company customer given %s',
-      async (_label, input) => {
-        const customer = createCompanyCustomer();
-
-        jest.mocked(repos.customer.findById).mockResolvedValue(customer);
-
-        const result = useCase.execute(customer.id, randomUUID(), input);
-
-        await expect(result).rejects.toThrow(BusinessRuleViolationException);
-        await expect(result).rejects.toThrow(
-          'Nome, e-mail e CPF são obrigatórios para conceder acesso a um cliente do tipo COMPANY',
-        );
-
-        expect(identityUsersGateway.ensureCustomerUser).not.toHaveBeenCalled();
-      },
-    );
-
     it('should refuse a customer that does not exist without calling the identity', async () => {
       jest.mocked(repos.customer.findById).mockResolvedValue(null);
 
@@ -177,20 +131,7 @@ describe('GrantCustomerAccessUseCase', () => {
         ResourceNotFoundException,
       );
 
-      expect(identityUsersGateway.ensureCustomerUser).not.toHaveBeenCalled();
-    });
-
-    it('should refuse an inactive customer without calling the identity', async () => {
-      const customer = createMockCustomer({ isActive: false });
-
-      jest.mocked(repos.customer.findById).mockResolvedValue(customer);
-
-      const result = useCase.execute(customer.id, randomUUID());
-
-      await expect(result).rejects.toThrow(BusinessRuleViolationException);
-      await expect(result).rejects.toThrow('Cliente inativo não pode receber novos acessos');
-
-      expect(identityUsersGateway.ensureCustomerUser).not.toHaveBeenCalled();
+      expect(customerAccessUserProvisioner.ensureUser).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -203,7 +144,7 @@ describe('GrantCustomerAccessUseCase', () => {
         const error = new ServiceRequestRejectedException(statusCode, message);
 
         jest.mocked(repos.customer.findById).mockResolvedValue(customer);
-        identityUsersGateway.ensureCustomerUser.mockRejectedValue(error);
+        customerAccessUserProvisioner.ensureUser.mockRejectedValue(error);
 
         await expect(useCase.execute(customer.id, randomUUID())).rejects.toBe(error);
 
@@ -217,7 +158,7 @@ describe('GrantCustomerAccessUseCase', () => {
       const userId = randomUUID();
 
       jest.mocked(repos.customer.findById).mockResolvedValue(customer);
-      identityUsersGateway.ensureCustomerUser.mockResolvedValue({ userId, created: true });
+      customerAccessUserProvisioner.ensureUser.mockResolvedValue({ userId, created: true });
       identityUsersGateway.findById.mockResolvedValue(null);
 
       const result = useCase.execute(customer.id, randomUUID());
@@ -236,7 +177,7 @@ describe('GrantCustomerAccessUseCase', () => {
       const error = new ResourceConflictException('Usuário já possui acesso a este cliente');
 
       jest.mocked(repos.customer.findById).mockResolvedValue(customer);
-      identityUsersGateway.ensureCustomerUser.mockResolvedValue({
+      customerAccessUserProvisioner.ensureUser.mockResolvedValue({
         userId: user.id,
         created: false,
       });
@@ -246,25 +187,6 @@ describe('GrantCustomerAccessUseCase', () => {
       await expect(useCase.execute(customer.id, randomUUID())).rejects.toBe(error);
 
       expect(logger.event).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('ensureUser', () => {
-    it('should ensure the user of an individual customer by its document', async () => {
-      const customer = createMockCustomer();
-      const ensured = { userId: randomUUID(), created: true };
-
-      identityUsersGateway.ensureCustomerUser.mockResolvedValue(ensured);
-
-      const result = await useCase.ensureUser(customer);
-
-      expect(result).toEqual(ensured);
-      expect(identityUsersGateway.ensureCustomerUser).toHaveBeenCalledWith({
-        name: customer.name,
-        email: customer.email.value,
-        cpf: customer.document.value,
-      });
-      expect(unitOfWork.executeTransaction).not.toHaveBeenCalled();
     });
   });
 });
