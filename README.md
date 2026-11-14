@@ -4,12 +4,13 @@
 
 **Sistema Integrado de Atendimento e Execução de Serviços para oficinas mecânicas** — ordens de serviço, clientes e veículos, com os orçamentos no serviço Billing, o catálogo de serviços e peças e o estoque no serviço Inventory e os usuários lidos no serviço Identity.
 
-![Node](https://img.shields.io/badge/Node.js-22-339933?logo=node.js&logoColor=white)
-![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?logo=nestjs&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white)
-![Prisma](https://img.shields.io/badge/Prisma-7-2D3748?logo=prisma&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
-![Cobertura unitária](https://img.shields.io/badge/cobertura-100%25-brightgreen)
+![Node](https://img.shields.io/badge/Node.js-24-339933?logo=node.js&logoColor=white)
+![NestJS](https://img.shields.io/badge/NestJS-12-E0234E?logo=nestjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)
+![Prisma](https://img.shields.io/badge/Prisma-7.10-2D3748?logo=prisma&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql&logoColor=white)
+[![Cobertura](https://sonarcloud.io/api/project_badges/measure?project=FIAP-15SOAT_oficina-mecanica-work-order-service&metric=coverage)](https://sonarcloud.io/summary/new_code?id=FIAP-15SOAT_oficina-mecanica-work-order-service)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=FIAP-15SOAT_oficina-mecanica-work-order-service&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=FIAP-15SOAT_oficina-mecanica-work-order-service)
 
 </div>
 
@@ -75,7 +76,8 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 
 </details>
 
-### Fase 3 — Segurança, Escalabilidade e Observabilidade
+<details>
+<summary><strong>Fase 3 — Segurança, Escalabilidade e Observabilidade</strong></summary>
 
 **Desafio:** A expansão da oficina para múltiplas unidades e o crescimento contínuo da base de clientes exigiram segurança, escalabilidade, alta disponibilidade e visibilidade completa do funcionamento do sistema. A direção precisava controlar acessos e autenticações com segurança, detectar gargalos em tempo real, adotar soluções serverless para autenticação e notificações, separar a aplicação em repositórios organizados com CI/CD completo e melhorar a modelagem relacional para garantir consistência e desempenho.
 
@@ -90,7 +92,128 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 - Dashboards de volume diário de ordens de serviço, tempo médio por status e erros/falhas nas integrações;
 - Documentação arquitetural com diagrama de componentes da solução, diagramas de sequência de autenticação e abertura de ordem de serviço, RFCs/ADRs para decisões relevantes e justificativa do banco acompanhada de modelo ER.
 
-**Estado atual da solução:** O escopo está implementado com AWS API Gateway, Lambda de autenticação por CPF emitindo JWT RS256, Amazon EKS, Amazon RDS PostgreSQL, Terraform e pipelines especializados. Os sete componentes vigentes estão listados em [Ecossistema de Repositórios](#-ecossistema-de-repositórios). A observabilidade usa logs estruturados, OpenTelemetry e Datadog; dashboards e alertas são declarados em Terraform nesta solução.
+**Estado atual da solução:** O escopo está implementado com AWS API Gateway, Lambda de autenticação por CPF emitindo JWT RS256, Amazon EKS, Amazon RDS PostgreSQL, Terraform e pipelines especializados. Os sete repositórios da Fase 3 (`oficina-mecanica-work-order-service`, `oficina-mecanica-infra-base`, `oficina-mecanica-infra-k8s`, `oficina-mecanica-infra-database-work-order`, `oficina-mecanica-api-gateway`, `oficina-mecanica-lambda-customer-auth` e `oficina-mecanica-custom-monitoring`) estão hoje entre os quinze listados em [Ecossistema de Repositórios](#-ecossistema-de-repositórios). A observabilidade usa logs estruturados, OpenTelemetry e Datadog; dashboards e alertas são declarados em Terraform nesta solução.
+
+</details>
+
+### Fase 4 — Microsserviços, Sagas e Pagamento
+
+**Desafio:** A oficina chegou à escala nacional, com várias filiais, e cresceram o volume de ordens de serviço, a troca entre as áreas (atendimento, diagnóstico, execução e cobrança) e a exigência de resiliência e tolerância a falhas. A aplicação precisa passar a um modelo distribuído, com microsserviços independentes, e manter consistentes as transações críticas que atravessam mais de um deles (abertura de OS, aprovação e pagamento), com rollback seguro quando um passo falha.
+
+**Objetivo:** Refatorar a aplicação para microsserviços, com gestão transacional distribuída e automação completa de build, testes e deploy.
+
+**Requisitos obrigatórios:**
+
+- No mínimo três microsserviços, cada um com repositório, infraestrutura e banco de dados próprios, e na solução pelo menos um banco relacional (SQL) e um não relacional (NoSQL);
+- Comunicação por REST síncrono quando necessário e por mensageria assíncrona, sem que um serviço acesse o banco de outro;
+- O padrão Saga no fluxo da OS, com rollback e compensação em caso de falha, orquestrado ou coreografado, com a escolha justificada no README;
+- Pagamento integrado ao Mercado Pago;
+- Testes unitários em todos os serviços, pelo menos um fluxo completo em BDD (Behavior-Driven Development: cenários escritos na linguagem do negócio e executados como teste), cobertura mínima de 80% por serviço e análise de qualidade pelo SonarQube ou similar no CI;
+- Pipeline de CI/CD independente por serviço (build, testes, verificação de qualidade e deploy no Kubernetes), com a branch `main` protegida por PR obrigatório e checagens automáticas;
+- A observabilidade da Fase 3 mantida.
+
+**Estado atual da solução:** A solução tem quatro microsserviços NestJS no Amazon EKS (o Kubernetes gerenciado da AWS): o Identity, o Work Order (este repositório), o Billing e o Inventory. Cada um é o único cliente do próprio PostgreSQL no Amazon RDS e do próprio Valkey (um banco chave-valor em memória, compatível com o Redis) no Amazon ElastiCache. Completam a solução duas funções AWS Lambda: a customer-auth, que faz o login do cliente por CPF e emite o token dele, e a notification, que envia os e-mails. Uma consulta a outro serviço é uma chamada REST interna (rotas `/internal/...`) direto ao dono do dado, pela rede do cluster. Um efeito em outro serviço é uma mensagem gravada no outbox (a tabela das mensagens a publicar), na mesma transação do dado, e publicada no tópico Amazon SNS FIFO `oficina-events.fifo`, que a entrega em ordem por OS às filas Amazon SQS FIFO dos consumidores (`work-order.fifo`, `billing.fifo`, `inventory.fifo` e `notification.fifo`), cada uma com a sua DLQ (fila que recebe as mensagens que falharam depois das novas tentativas). A observabilidade continua a da Fase 3: logs JSON, traces e métricas pelo OpenTelemetry, coletados pelo Datadog. Os quinze repositórios estão em [Ecossistema de Repositórios](#-ecossistema-de-repositórios).
+
+#### Por que quatro serviços
+
+O enunciado sugere três serviços como exemplo (ordem de serviço, orçamento e pagamento, execução e produção) e deixa claro que são só exemplos. A divisão seguiu os contextos de negócio que o código já tinha:
+
+| Serviço | O que guarda | Por que é um serviço próprio |
+|---|---|---|
+| **Identity** | Usuários, papéis, credenciais, emissão do token de funcionário e códigos de redefinição de senha | Identidade é um subdomínio genérico, sem regra da OS. Separada, ela tem um único emissor do token de funcionário, e a customer-auth passa a chamar rotas internas do Identity e do Work Order em vez de ler o banco de outro serviço |
+| **Work Order** | Ordens de serviço e a execução delas, clientes, veículos, vínculos de acesso do cliente e o estado das Sagas | É o dono do ciclo de vida da OS. Clientes e veículos ficam aqui porque as regras deles cruzam a OS (não excluir cliente ou veículo com OS, o veículo pertencer ao cliente, só cliente ativo abrir OS), e assim continuam locais e atômicas. O vínculo de acesso fica aqui para a área do cliente autorizar e revogar na hora, sem consultar outro serviço |
+| **Billing** | Orçamentos e cobranças, com a integração ao Mercado Pago | Igual ao exemplo do enunciado: o preço congelado do orçamento e a cobrança formam um contexto financeiro coeso |
+| **Inventory** | Catálogo de serviços e peças, estoque e reservas | Tem invariantes próprias (o saldo nunca fica abaixo do reservado, com lock otimista: a gravação confere a versão lida e falha se outra requisição a mudou antes) e é usado pelo Billing, que confere os itens do orçamento, e pela Saga de aprovação, que reserva e baixa as peças |
+
+A "execução e produção" do exemplo ficou dentro do Work Order. Iniciar o primeiro serviço da OS leva a OS a `IN_PROGRESS`, e concluir o último a leva a `COMPLETED`, na mesma transação; um serviço à parte trocaria essa regra atômica por consistência eventual, sem ganho de negócio. A fila de execução é a listagem de OS, que já filtra por status e ordena pela prioridade do status. Os e-mails saem pela notification, acionada pela fila, para que uma falha de envio nunca desfaça uma transação.
+
+#### As três Sagas
+
+Uma Saga coordena uma operação que grava em mais de um serviço sem transação distribuída, com uma compensação que desfaz os passos anteriores quando um passo falha. A solução tem três, de abertura, de aprovação e de cobrança, orquestradas pelo Work Order: cada passo e cada compensação são decididos num lugar só, e o Billing e o Inventory só recebem comandos e respondem com eventos, sem conhecer a Saga. O orquestrador fica no Work Order porque o estado da Saga muda na mesma transação da OS e do outbox. O que cada Saga faz, por que são três, as alternativas descartadas (coreografia e uma Saga única) e onde mora o estado estão em [Do PDF ao desenho](#-do-pdf-ao-desenho).
+
+#### Tecnologias
+
+| Tecnologia | Uso | Por quê |
+|---|---|---|
+| NestJS 12, TypeScript 6 e Node.js 24 | Os quatro serviços | Base das fases anteriores, nas versões atuais, com o mesmo esqueleto copiado em cada serviço; trocar de framework não agregaria à fase |
+| Prisma 7.10 (o ORM, que mapeia as tabelas do banco para o código) e PostgreSQL 18 (Amazon RDS) | Banco relacional de cada serviço | Consistência ACID (transações atômicas, consistentes, isoladas e duráveis) para o dado de negócio e o outbox na mesma transação; gerenciado pela AWS, fora do cluster |
+| Valkey 9.1 (Amazon ElastiCache) | Banco NoSQL de cada serviço | Cache das leituras do próprio dono e dado temporário com TTL (tempo de vida que apaga a chave sozinho); gerenciado, fora do cluster |
+| Amazon SNS FIFO e Amazon SQS FIFO | Mensageria entre os serviços | Gerenciados, com ordem por OS e DLQ nativa |
+| Sagas próprias, com o outbox e a tabela `saga_instances` no PostgreSQL | Abertura, aprovação e cobrança | Sem componente novo para operar; o estado da Saga fica consultável e muda junto com a OS |
+| Mercado Pago Checkout Pro pela API de Orders | Pagamento | A página de pagamento é hospedada pelo Mercado Pago, com todos os meios de pagamento e sem dado de cartão na solução, o que a deixa fora do escopo do PCI DSS (a norma de segurança de dados de cartão) |
+| Amazon EKS 1.35, NLB (Network Load Balancer) e AWS API Gateway HTTP API | Execução dos serviços e entrada pública | Plataforma da Fase 3, ampliada a quatro serviços |
+| AWS Lambda (Node.js 24) | Login do cliente por CPF e envio de e-mails | Padrão serverless da Fase 3 |
+| OpenTelemetry e Datadog | Observabilidade | Pilha da Fase 3, mantida |
+| Terraform, GitHub Actions e SonarQube Cloud | Infraestrutura e CI/CD | Padrão das fases anteriores, com uma pipeline por repositório |
+| Jest 30, Testcontainers 12, LocalStack 4.14.0, Cucumber 13.3 e MailHog | Testes e desenvolvimento local | Unitários com 100% de cobertura; E2E com PostgreSQL, Valkey e mensageria reais em containers (Testcontainers); o LocalStack emula o SNS e o SQS sem conta AWS; o Cucumber executa o BDD; o MailHog é um servidor SMTP de teste que guarda os e-mails numa caixa web em vez de entregá-los |
+| pytest e boto3 | Teste de roteamento das mensagens no repositório de mensageria | O repositório é só Terraform, sem Node.js; o boto3 é o SDK de referência da AWS |
+
+#### Alternativas descartadas
+
+- **Serviço de execução e produção**, como no exemplo do enunciado: a execução faz parte do agregado da OS, e separá-la trocaria uma regra atômica por consistência eventual.
+- **Serviço próprio de clientes**: as regras de cliente e veículo cruzam a OS e virariam chamadas síncronas, com um quinto repositório, banco e pipeline que nenhum requisito pede.
+- **Vínculo de acesso do cliente no Identity**: o Work Order teria de consultar o Identity em toda requisição da área do cliente ou manter uma cópia.
+- **Cópias por evento do dado de outro serviço**: exigiriam código de sincronização; consultar o dono devolve sempre o dado atual.
+- **Saga coreografada e Saga única para o ciclo inteiro da OS**: ver [Do PDF ao desenho](#-do-pdf-ao-desenho).
+- **Serviço orquestrador separado ou worker separado**: o primeiro faria do Work Order mais um participante, com mais mensagens, repositório, banco e pipeline; o segundo seria só uma escolha operacional, sem ganho neste volume.
+- **AWS Step Functions**: exige uma role IAM de execução que a conta AWS usada pela solução não permite criar.
+- **Temporal** (motor de workflows): um servidor com vários serviços próprios e um banco próprio, pesado demais para um cluster de dois nós.
+- **Publicar no SNS sem outbox**, na transação ou depois do commit: o SNS não participa da transação do PostgreSQL, e uma das duas gravações pode se perder.
+- **Filas SQS standard**: perderiam a ordem por OS, que teria de ser reconstruída por versão no código.
+- **DynamoDB como NoSQL**: o Valkey cobre o cache e os códigos com TTL numa tecnologia só, gerenciada e sem tabela a mais no Terraform.
+- **Valkey em pod no cluster**: o ElastiCache é gerenciado, fica fora do cluster e custa centavos por sessão de uso.
+- **Cache em quem consome o dado**: quem consome não sabe quando o dado muda; o cache fica só no dono, que o invalida.
+- **Chamada interna pelo API Gateway**: exporia as rotas internas na internet e somaria latência.
+- **Checkout Transparente ou token de cartão no backend**: trariam dado de pagamento para a solução e exigiriam tela própria.
+- **Job de reconciliação de pagamentos**: o webhook do Mercado Pago basta; sem notificação, o funcionário cancela a cobrança.
+
+#### Leituras adotadas
+
+Alguns requisitos do enunciado admitem mais de uma interpretação. A solução adota estas:
+
+| Requisito | Leitura adotada | Por quê |
+|---|---|---|
+| "Infraestrutura própria" por serviço | Cada serviço tem banco PostgreSQL e Valkey, imagem no Amazon ECR (o registro de imagens da AWS), namespace no Kubernetes, manifests, pipeline e rotas no gateway próprios. Cluster, rede, NLB, API Gateway e a topologia de mensageria são plataforma compartilhada | É o desenho comum de quem roda vários serviços num cluster Kubernetes: o que guarda estado e o que é implantado é de cada serviço, e a plataforma é de todos |
+| "SQL e NoSQL" | Por serviço: cada um tem o seu PostgreSQL e o seu Valkey, com uso real do Valkey em todos | Nos quatro serviços, o Valkey guarda o cache das leituras do próprio dono (o detalhe da OS no Work Order, o usuário no Identity, os orçamentos no Billing, os serviços e as peças no Inventory), invalidado pelo use case depois do commit. No Identity, ele também guarda os códigos de redefinição de senha, com TTL de 10 minutos e contador de tentativas |
+| "Pelo menos um fluxo completo em BDD" | A OS de ponta a ponta, da abertura à entrega com a cobrança paga, e as compensações das Sagas de aprovação e de cobrança, em cenários do Cucumber (a ferramenta que executa o BDD) descritos em [Testes › BDD](docs/testing.md#bdd-testes-de-aceitação) | É o fluxo central do negócio, e é nele que as Sagas e as compensações acontecem |
+| "Saga para criação de OS, aprovações e pagamentos" | Três Sagas orquestradas: abertura, aprovação e cobrança | Cada uma cobre um ponto em que dois serviços gravam e um deles pode precisar desfazer. A etapa "enviar para execução" é um passo de repetir, não de desfazer: uma falha na baixa do estoque volta para a fila |
+| "Múltiplas filiais" | Contexto do desafio, sem modelagem de filial | O enunciado cita a escala nacional, mas não pede nenhuma regra ou tela por filial |
+
+#### Entregáveis da Fase 4
+
+Cada entregável do enunciado, com o link que o comprova ou, quando depende de algo fora dos repositórios, marcado como verificação manual.
+
+**Repositórios Git, um por microsserviço:**
+
+| Entregável | Situação | Work Order | Identity | Billing | Inventory |
+|---|---|---|---|---|---|
+| Código-fonte | Feito | [`app/src`](app/src) | [repositório](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service) | [repositório](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service) | [repositório](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service) |
+| Dockerfile | Feito | [`app/Dockerfile`](app/Dockerfile) | [`app/Dockerfile`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/app/Dockerfile) | [`app/Dockerfile`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/blob/main/app/Dockerfile) | [`app/Dockerfile`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service/blob/main/app/Dockerfile) |
+| Manifests Kubernetes | Feito | [`k8s/`](k8s) | [`k8s/`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/tree/main/k8s) | [`k8s/`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/tree/main/k8s) | [`k8s/`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service/tree/main/k8s) |
+| Pipelines de CI/CD | Feito | [`.github/workflows/`](.github/workflows) | [`.github/workflows/`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/tree/main/.github/workflows) | [`.github/workflows/`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/tree/main/.github/workflows) | [`.github/workflows/`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service/tree/main/.github/workflows) |
+| Evidência de cobertura: o CI roda `npm run test:cov`, que falha abaixo de 100%; os READMEs dos quatro serviços e das duas Lambdas têm o badge de cobertura do SonarQube Cloud; faltam as capturas de cobertura | Parcial | [`ci.yml`](.github/workflows/ci.yml) | [`ci.yml`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/.github/workflows/ci.yml) | [`ci.yml`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/blob/main/.github/workflows/ci.yml) | [`ci.yml`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service/blob/main/.github/workflows/ci.yml) |
+| Documentação da arquitetura do serviço | Feito | [`docs/architecture.md`](docs/architecture.md) | [`docs/architecture.md`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/docs/architecture.md) | [`docs/architecture.md`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/blob/main/docs/architecture.md) | [`docs/architecture.md`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service/blob/main/docs/architecture.md) |
+| Swagger (em `/api/docs` de cada serviço) e collection Postman | Feito | [`collections/`](collections) | [`collections/`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/tree/main/collections) | [`collections/`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/tree/main/collections) | [`collections/`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service/tree/main/collections) |
+
+**Vídeo de demonstração:**
+
+| Entregável | Situação | Onde conferir |
+|---|---|---|
+| Vídeo de até 15 minutos no YouTube ou no Vimeo, público ou não listado | Verificação manual | Link no PDF entregue no portal |
+| No vídeo: o fluxo completo de uma OS pelos serviços, as Sagas com falhas e compensações, o deploy automatizado de um serviço com os testes e o monitoramento dos fluxos distribuídos | Verificação manual | O roteiro do que é mostrado está no [Manual de demonstração](docs/demo-manual.md) |
+
+**PDF entregue no portal:**
+
+| Entregável | Situação | Onde conferir |
+|---|---|---|
+| Nome e identificação dos participantes | Verificação manual | PDF no portal; os autores também estão em [Autores](#-autores) |
+| Links dos repositórios | Verificação manual | PDF no portal; os quinze repositórios também estão em [Ecossistema de Repositórios](#-ecossistema-de-repositórios) |
+| Link do vídeo | Verificação manual | PDF no portal |
+| Diagrama geral da arquitetura, com os serviços, os bancos e a comunicação | Verificação manual | PDF no portal; o diagrama de containers da solução está no [Modelo C4](docs/c4/README.md) |
+| Estratégia escolhida para o padrão Saga | Verificação manual | PDF no portal; a escolha e a justificativa estão em [As três Sagas](#as-três-sagas) e em [Do PDF ao desenho](#-do-pdf-ao-desenho) |
+| Justificativa da divisão dos serviços e das tecnologias | Verificação manual | PDF no portal; o conteúdo está em [Por que quatro serviços](#por-que-quatro-serviços), [Tecnologias](#tecnologias) e [Alternativas descartadas](#alternativas-descartadas) |
+
+**Acesso do avaliador:** o enunciado da Fase 4 não pede, mas a prática do curso desde a Fase 3 é dar ao avaliador acesso de leitura aos repositórios da organização FIAP-15SOAT; é uma verificação manual no GitHub.
 
 ## 🧭 Do PDF ao desenho
 
@@ -121,7 +244,7 @@ O enunciado da fase (o PDF do desafio) pede o padrão **Saga** para "criação d
 - **ORM**: Prisma 7.10 (driver `@prisma/adapter-pg`, client gerado em `prisma/generated/`)
 - **Banco de dados**: PostgreSQL 18
 - **Mensageria**: Amazon SNS FIFO + SQS FIFO (`@aws-sdk/client-sns`, `@aws-sdk/client-sqs`, `sqs-consumer`), com outbox transacional no PostgreSQL; LocalStack 4.14 em desenvolvimento
-- **Cache**: Valkey 9.1 (Amazon ElastiCache no cluster) via `ioredis`, cache-aside no detalhe da OS
+- **Cache**: Valkey 9.1 (Amazon ElastiCache, fora do cluster) via `ioredis`, cache-aside no detalhe da OS
 - **Chamadas internas**: REST entre serviços pela rede do cluster, com `@nestjs/axios`
 - **Autenticação**: dois fluxos JWT isolados via `passport-jwt`, só com as chaves públicas — interno (RS256, emitido pelo Identity) e externo por CPF + senha (RS256, emitido por uma função serverless dedicada) — ver [Autenticação](#-autenticação)
 - **E-mail**: nenhum cliente SMTP neste serviço; os e-mails saem como mensagens `notification.email.send` pelo SNS e são enviados pela [função serverless de notificação](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-notification)
@@ -222,6 +345,10 @@ Execute todos os comandos a partir de `app/` (`cd app`) — não há `package.js
 
 ➡️ Detalhes completos em **[Arquitetura](docs/architecture.md)**.
 
+A infraestrutura da solução na AWS, com os quatro serviços no EKS, os bancos e caches de cada um, a mensageria, as duas Lambdas, o Mercado Pago e o Datadog, aparece no diagrama abaixo e é explicada em [Infra · Visão Geral](docs/infra/overview.md).
+
+![Infraestrutura da solução na AWS: o API Gateway recebe os clientes e o webhook do Mercado Pago, invoca a Lambda customer-auth e segue por VPC Link ao NLB interno, que tem um listener por serviço e o do SMTP; o cluster EKS tem os namespaces work-order, identity, billing, inventory e platform (MailHog e Datadog Agent); cada serviço tem seu RDS PostgreSQL e seu ElastiCache Valkey; os serviços publicam no tópico SNS oficina-events.fifo, que entrega às filas SQS FIFO work-order, billing, inventory e notification, e o identity não consome fila; a Lambda notification envia o e-mail ao MailHog; o billing chama o Mercado Pago e o platform envia a telemetria ao Datadog](docs/diagrams/infrastructure-diagram.png)
+
 ## 🔐 Autenticação
 
 Dois fluxos de autenticação **totalmente isolados**: os dois são RS256, mas cada um tem sua chave pública, seu emissor e sua audiência, e cada estratégia fixa `algorithms: ['RS256']`. Um token de um fluxo nunca passa no verificador do outro, e um token HS256 ou sem assinatura nunca passa em nenhum:
@@ -229,7 +356,7 @@ Dois fluxos de autenticação **totalmente isolados**: os dois são RS256, mas c
 | | Interno (funcionários) | Externo (Cliente da Oficina) |
 |---|---|---|
 | Quem | `ADMIN`, `MECHANIC`, `ATTENDANT` | Pessoa física dona do veículo, ou representante autorizado de uma empresa cliente |
-| Como autentica | `POST /api/auth/login` (e-mail + senha) no **Identity**, o serviço da solução dono dos usuários | CPF + senha, verificados por uma **função serverless dedicada** que consulta o banco diretamente — nunca um proxy do login interno |
+| Como autentica | `POST /api/auth/login` (e-mail + senha) no **Identity**, o serviço da solução dono dos usuários | CPF + senha, verificados por uma **função serverless dedicada**, que confere o CPF e a senha no Identity (`POST /internal/customer-authentications`) e lê os vínculos do usuário neste serviço (`GET /internal/users/:userId/customers`), sem acessar nenhum banco — nunca um proxy do login interno |
 | Algoritmo / chave | JWT **RS256** — esta API só guarda a chave **pública** (`STAFF_JWT_PUBLIC_KEY`); as privadas do access e do refresh vivem no Identity | JWT **RS256** assimétrico — esta API só guarda a chave **pública** (`CUSTOMER_JWT_PUBLIC_KEY`); a privada vive na função serverless |
 | Estratégia Passport | `jwt` (`JwtStrategy`) | `customer-jwt` (`CustomerJwtStrategy`) |
 | Guard HTTP | `JwtAuthGuard`, o padrão do guard global (+ `RolesGuard` por papel) | `CustomerJwtAuthGuard` por `@CustomerArea()` |
@@ -276,7 +403,7 @@ A função serverless de autenticação externa **não está neste repositório*
 | `GET /api/work-orders/:id/status-history` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
 | `GET /api/health/live`, `GET /api/health/ready` | `@Public()` | Público |
 | `GET /internal/work-orders/:id` | `@Public()` | Rede do cluster (fora do prefixo `/api`, não passa pelo API Gateway) |
-| `GET /internal/users/:userId/customers` | `@Public()` | Rede do cluster (chamada pelo Identity) |
+| `GET /internal/users/:userId/customers` | `@Public()` | Rede do cluster (chamada pelo Identity e pela customer-auth) |
 
 > A autenticação é negada por padrão: um guard global (`AuthenticationGuard`) exige o token de funcionário em toda rota sem marcação, `@Public()` dispensa o token e `@CustomerArea()` troca o token exigido. O `RolesGuard` restringe por papel depois dele.
 
@@ -292,23 +419,37 @@ A função serverless de autenticação externa **não está neste repositório*
 
 A solução é composta por **quinze repositórios especializados**, com responsabilidades separadas entre aplicação, rede, execução, mensageria, dados, entrada pública, autenticação, notificação e observabilidade. Este README funciona como índice central; os detalhes de provisionamento e operação permanecem nos repositórios responsáveis.
 
-| Repositório | Responsabilidade | Componente arquitetural | Tecnologias |
-|---|---|---|---|
-| **[oficina-mecanica-work-order-service](https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service)** *(este repositório)* | Aplicação, APIs, domínio e manifests dos workloads | API REST / container de aplicação no EKS | NestJS, TypeScript, Prisma, Jest, Docker |
-| **[oficina-mecanica-identity-service](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service)** | Usuários, papéis, credenciais e emissão do token de funcionário | API REST / container de aplicação no EKS | NestJS, TypeScript, Prisma |
-| **[oficina-mecanica-billing-service](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service)** | Orçamentos e pagamentos; cria o orçamento inicial da OS e publica as mudanças de status dos orçamentos | API REST / container de aplicação no EKS | NestJS, TypeScript, Prisma |
-| **[oficina-mecanica-inventory-service](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service)** | Catálogo de serviços e peças e estoque; reserva e baixa as peças das OS | API REST / container de aplicação no EKS | NestJS, TypeScript, Prisma |
-| **[oficina-mecanica-infra-base](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base)** | Fundação de rede compartilhada na AWS | VPC, subnets, IGW, NAT Gateway e rotas | Terraform, AWS VPC |
-| **[oficina-mecanica-infra-k8s](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s)** | Plataforma Kubernetes, registry e entrada privada do cluster | Amazon EKS, Node Group, ECR, NLB e `metrics-server` | Terraform, Helm, Amazon EKS 1.35 |
-| **[oficina-mecanica-infra-messaging](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-messaging)** | Tópico e filas da mensageria entre os serviços | Amazon SNS FIFO e uma fila Amazon SQS FIFO por serviço, com DLQ (fila de mensagens que falharam) | Terraform, Amazon SNS, Amazon SQS |
-| **[oficina-mecanica-infra-database-work-order](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order)** | Persistência relacional e cache gerenciados do `work-order`, fora do cluster | Amazon RDS PostgreSQL 18 e ElastiCache Valkey 9.1 em subnets privadas | Terraform, Amazon RDS, PostgreSQL 18, ElastiCache Valkey 9.1 |
-| **[oficina-mecanica-infra-database-identity](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-identity)** | Persistência relacional e cache gerenciados do `identity`, fora do cluster | Amazon RDS PostgreSQL 18 e ElastiCache Valkey 9.1 em subnets privadas | Terraform, Amazon RDS, PostgreSQL 18, ElastiCache Valkey 9.1 |
-| **[oficina-mecanica-infra-database-billing](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-billing)** | Persistência relacional e cache gerenciados do `billing`, fora do cluster | Amazon RDS PostgreSQL 18 e ElastiCache Valkey 9.1 em subnets privadas | Terraform, Amazon RDS, PostgreSQL 18, ElastiCache Valkey 9.1 |
-| **[oficina-mecanica-infra-database-inventory](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-inventory)** | Persistência relacional e cache gerenciados do `inventory`, fora do cluster | Amazon RDS PostgreSQL 18 e ElastiCache Valkey 9.1 em subnets privadas | Terraform, Amazon RDS, PostgreSQL 18, ElastiCache Valkey 9.1 |
-| **[oficina-mecanica-api-gateway](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway)** | Entrada pública, roteamento e integração privada com o EKS | AWS API Gateway HTTP API + VPC Link | Terraform, API Gateway, OpenAPI 3.0 |
-| **[oficina-mecanica-lambda-customer-auth](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth)** | Login externo por CPF e emissão de JWT RS256 | Função serverless de autenticação de clientes | TypeScript, AWS Lambda, Zod, Jest |
-| **[oficina-mecanica-lambda-notification](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-notification)** | Envio dos e-mails da solução, a partir das mensagens dos serviços | Função serverless de notificação | TypeScript, AWS Lambda, Zod, Nodemailer, Jest |
-| **[oficina-mecanica-custom-monitoring](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring)** | Dashboards, alertas e verificação sintética da solução | Camada de observabilidade no Datadog | Terraform, Datadog, OpenTelemetry |
+| Repositório | Responsabilidade | Componente arquitetural | Tecnologias | CI/CD | Sonar | ADRs |
+|---|---|---|---|---|---|---|
+| **[oficina-mecanica-work-order-service](https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service)** *(este repositório)* | Aplicação, APIs, domínio e manifests dos workloads | API REST / container de aplicação no EKS | NestJS, TypeScript, Prisma, Jest, Docker | [cd.yml](https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service/blob/main/.github/workflows/cd.yml) | [Sonar](https://sonarcloud.io/summary/new_code?id=FIAP-15SOAT_oficina-mecanica-work-order-service) [![Cobertura](https://sonarcloud.io/api/project_badges/measure?project=FIAP-15SOAT_oficina-mecanica-work-order-service&metric=coverage)](https://sonarcloud.io/summary/new_code?id=FIAP-15SOAT_oficina-mecanica-work-order-service) | [docs/adr](https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service/tree/main/docs/adr) |
+| **[oficina-mecanica-identity-service](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service)** | Usuários, papéis, credenciais e emissão do token de funcionário | API REST / container de aplicação no EKS | NestJS, TypeScript, Prisma | [cd.yml](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/.github/workflows/cd.yml) | [Sonar](https://sonarcloud.io/summary/new_code?id=FIAP-15SOAT_oficina-mecanica-identity-service) [![Cobertura](https://sonarcloud.io/api/project_badges/measure?project=FIAP-15SOAT_oficina-mecanica-identity-service&metric=coverage)](https://sonarcloud.io/summary/new_code?id=FIAP-15SOAT_oficina-mecanica-identity-service) | [docs/adr](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/tree/main/docs/adr) |
+| **[oficina-mecanica-billing-service](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service)** | Orçamentos e pagamentos; cria o orçamento inicial da OS e publica as mudanças de status dos orçamentos | API REST / container de aplicação no EKS | NestJS, TypeScript, Prisma | [cd.yml](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/blob/main/.github/workflows/cd.yml) | [Sonar](https://sonarcloud.io/summary/new_code?id=FIAP-15SOAT_oficina-mecanica-billing-service) [![Cobertura](https://sonarcloud.io/api/project_badges/measure?project=FIAP-15SOAT_oficina-mecanica-billing-service&metric=coverage)](https://sonarcloud.io/summary/new_code?id=FIAP-15SOAT_oficina-mecanica-billing-service) | [docs/adr](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/tree/main/docs/adr) |
+| **[oficina-mecanica-inventory-service](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service)** | Catálogo de serviços e peças e estoque; reserva e baixa as peças das OS | API REST / container de aplicação no EKS | NestJS, TypeScript, Prisma | [cd.yml](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service/blob/main/.github/workflows/cd.yml) | [Sonar](https://sonarcloud.io/summary/new_code?id=FIAP-15SOAT_oficina-mecanica-inventory-service) [![Cobertura](https://sonarcloud.io/api/project_badges/measure?project=FIAP-15SOAT_oficina-mecanica-inventory-service&metric=coverage)](https://sonarcloud.io/summary/new_code?id=FIAP-15SOAT_oficina-mecanica-inventory-service) | [docs/adr](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service/tree/main/docs/adr) |
+| **[oficina-mecanica-infra-base](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base)** | Fundação de rede compartilhada na AWS | VPC, subnets, IGW, NAT Gateway e rotas | Terraform, AWS VPC | [cd.yml](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base/blob/main/.github/workflows/cd.yml) | — | [docs/adr](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base/tree/main/docs/adr) |
+| **[oficina-mecanica-infra-k8s](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s)** | Plataforma Kubernetes, registry e entrada privada do cluster | Amazon EKS, Node Group, ECR, NLB e `metrics-server` | Terraform, Helm, Amazon EKS 1.35 | [cd.yml](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s/blob/main/.github/workflows/cd.yml) | — | [docs/adr](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s/tree/main/docs/adr) |
+| **[oficina-mecanica-infra-messaging](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-messaging)** | Tópico e filas da mensageria entre os serviços | Amazon SNS FIFO e uma fila Amazon SQS FIFO por consumidor (`work-order`, `billing`, `inventory` e `notification`), cada uma com DLQ (fila de mensagens que falharam) | Terraform, Amazon SNS, Amazon SQS | [cd.yml](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-messaging/blob/main/.github/workflows/cd.yml) | — | [docs/adr](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-messaging/tree/main/docs/adr) |
+| **[oficina-mecanica-infra-database-work-order](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order)** | Persistência relacional e cache gerenciados do `work-order`, fora do cluster | Amazon RDS PostgreSQL 18 e ElastiCache Valkey 9.1 em subnets privadas | Terraform, Amazon RDS, PostgreSQL 18, ElastiCache Valkey 9.1 | [cd.yml](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/.github/workflows/cd.yml) | — | [docs/adr](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/tree/main/docs/adr) |
+| **[oficina-mecanica-infra-database-identity](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-identity)** | Persistência relacional e cache gerenciados do `identity`, fora do cluster | Amazon RDS PostgreSQL 18 e ElastiCache Valkey 9.1 em subnets privadas | Terraform, Amazon RDS, PostgreSQL 18, ElastiCache Valkey 9.1 | [cd.yml](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-identity/blob/main/.github/workflows/cd.yml) | — | [docs/adr](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-identity/tree/main/docs/adr) |
+| **[oficina-mecanica-infra-database-billing](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-billing)** | Persistência relacional e cache gerenciados do `billing`, fora do cluster | Amazon RDS PostgreSQL 18 e ElastiCache Valkey 9.1 em subnets privadas | Terraform, Amazon RDS, PostgreSQL 18, ElastiCache Valkey 9.1 | [cd.yml](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-billing/blob/main/.github/workflows/cd.yml) | — | [docs/adr](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-billing/tree/main/docs/adr) |
+| **[oficina-mecanica-infra-database-inventory](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-inventory)** | Persistência relacional e cache gerenciados do `inventory`, fora do cluster | Amazon RDS PostgreSQL 18 e ElastiCache Valkey 9.1 em subnets privadas | Terraform, Amazon RDS, PostgreSQL 18, ElastiCache Valkey 9.1 | [cd.yml](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-inventory/blob/main/.github/workflows/cd.yml) | — | [docs/adr](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-inventory/tree/main/docs/adr) |
+| **[oficina-mecanica-api-gateway](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway)** | Entrada pública, roteamento e integração privada com o EKS | AWS API Gateway HTTP API + VPC Link | Terraform, API Gateway, OpenAPI 3.0 | [cd.yml](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway/blob/main/.github/workflows/cd.yml) | — | [docs/adr](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway/tree/main/docs/adr) |
+| **[oficina-mecanica-lambda-customer-auth](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth)** | Login externo por CPF e emissão de JWT RS256 | Função serverless de autenticação de clientes | TypeScript, AWS Lambda, Zod, Jest | [cd.yml](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/blob/main/.github/workflows/cd.yml) | [Sonar](https://sonarcloud.io/summary/new_code?id=FIAP-15SOAT_oficina-mecanica-lambda-customer-auth) [![Cobertura](https://sonarcloud.io/api/project_badges/measure?project=FIAP-15SOAT_oficina-mecanica-lambda-customer-auth&metric=coverage)](https://sonarcloud.io/summary/new_code?id=FIAP-15SOAT_oficina-mecanica-lambda-customer-auth) | [docs/adr](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/tree/main/docs/adr) |
+| **[oficina-mecanica-lambda-notification](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-notification)** | Envio dos e-mails da solução, a partir das mensagens dos serviços | Função serverless de notificação | TypeScript, AWS Lambda, Zod, Nodemailer, Jest | [cd.yml](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-notification/blob/main/.github/workflows/cd.yml) | [Sonar](https://sonarcloud.io/summary/new_code?id=FIAP-15SOAT_oficina-mecanica-lambda-notification) [![Cobertura](https://sonarcloud.io/api/project_badges/measure?project=FIAP-15SOAT_oficina-mecanica-lambda-notification&metric=coverage)](https://sonarcloud.io/summary/new_code?id=FIAP-15SOAT_oficina-mecanica-lambda-notification) | [docs/adr](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-notification/tree/main/docs/adr) |
+| **[oficina-mecanica-custom-monitoring](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring)** | Dashboards, alertas e verificação sintética da solução | Camada de observabilidade no Datadog | Terraform, Datadog, OpenTelemetry | [cd.yml](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring/blob/main/.github/workflows/cd.yml) | — | [docs/adr](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring/tree/main/docs/adr) |
+
+## 🧾 Decisões de arquitetura
+
+As decisões de cada repositório ficam em `docs/adr/` dele (coluna ADRs da tabela acima). O [índice de ADRs](docs/adr-index.md) lista as decisões dos quinze repositórios, com título, situação e substituta, e mostra, para cada decisão que os serviços repetem (como o outbox, a tabela das mensagens a publicar), a original no Work Order e as cópias no Identity, no Billing e no Inventory. Decisões que deixaram de valer, com a substituta:
+
+| Repositório | Decisão substituída | Substituta |
+|---|---|---|
+| Work Order | [0013, token de funcionário em JWT stateless](docs/adr/0013-autenticacao-interna-jwt-stateless.md) | [0022](docs/adr/0022-token-de-funcionario-em-rs256.md) |
+| Work Order | [0007, REST síncrono num monólito modular](docs/adr/0007-padrao-de-comunicacao-rest-monolito.md), superada em parte | [0018](docs/adr/0018-mensageria-sns-sqs-fifo-com-outbox.md) e [0020](docs/adr/0020-chamadas-internas-e-rotas-negadas-por-padrao.md) |
+| infra-k8s | [0001, HPA e dimensionamento do Node Group](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s/blob/main/docs/adr/0001-suporte-a-hpa-e-dimensionamento-do-node-group.md) | [0008](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s/blob/main/docs/adr/0008-escalonamento-do-node-group-para-2-nos-t3-medium.md) |
+| infra-k8s | [0006, namespace único](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s/blob/main/docs/adr/0006-namespace-unico-compartilhado.md) | [0007](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s/blob/main/docs/adr/0007-isolamento-por-namespace-e-ecr-por-bounded-context.md) |
+| api-gateway | [0003, integração privada com o EKS](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway/blob/main/docs/adr/0003-integracao-privada-com-o-eks.md) | [0005](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway/blob/main/docs/adr/0005-integracao-privada-por-servico-e-tabela-de-donos.md) |
+| customer-auth | [0001, banco por driver](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/blob/main/docs/adr/0001-driver-em-vez-de-orm.md) | [0007](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/blob/main/docs/adr/0007-credencial-e-vinculo-verificados-nos-servicos-donos.md) |
+| Os quatro `infra-database-*` | 0002, senha do banco por variável Terraform | 0003, senha gerenciada pelo RDS, em cada um deles |
 
 ## 📁 Estrutura do Repositório
 
@@ -352,6 +493,7 @@ A solução é composta por **quinze repositórios especializados**, com respons
 | 💻 [Como executar localmente](docs/local-setup.md) | Setup local, Valkey, LocalStack, Inventory, Billing e Identity locais, variáveis de ambiente, seed |
 | 🆔 [Ids canônicos do seed](docs/seed-ids.md) | UUIDs fixos de usuários, clientes, veículos, serviços e peças, compartilhados entre os serviços |
 | 🧪 [Testes](docs/testing.md) | Unitários, E2E (PostgreSQL, Valkey, LocalStack e stub do Inventory, do Billing e do Identity), BDD (Cucumber em pt-BR), cenários de falha F1 a F14, contrato das rotas /internal, Postman/Newman |
+| 🎬 [Manual de demonstração](docs/demo-manual.md) | Preparo do ambiente, fluxo completo da ordem de serviço, da abertura à entrega, pagamento no sandbox do Mercado Pago e falhas com compensação provocadas de fora |
 | 🔒 [Segurança](docs/security.md) | Mitigações no código, proteção de dados nos logs e relatórios (ZAP, SonarQube) |
 | 🔭 [Observabilidade](docs/observability.md) | Logs estruturados, correlação, traces, métricas e degradação segura |
 | 🏗️ [Infra · Visão Geral](docs/infra/overview.md) | Arquitetura da infra como sistema: componentes, ownership e fluxos |

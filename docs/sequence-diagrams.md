@@ -1,6 +1,6 @@
 # Diagramas de Sequência
 
-Quatro fluxos centrais da aplicação, em notação UML: abertura de Ordem de Serviço, autenticação externa do Cliente da Oficina por CPF, aprovação de orçamento com reserva de estoque e cobrança da OS. Gerados via draw.io a partir de Mermaid, com XML editável embutido nos PNGs.
+Quatro fluxos centrais da aplicação, em notação UML: abertura de Ordem de Serviço, autenticação externa do Cliente da Oficina por CPF, aprovação de orçamento com reserva de estoque e cobrança da OS. Gerados via draw.io a partir de Mermaid, com XML editável embutido nos PNGs. A visão das três Sagas entre os serviços, com os passos e as compensações numerados, está nos [diagramas dinâmicos das Sagas](c4/README.md#diagramas-dinâmicos-das-sagas) do modelo C4.
 
 O login do funcionário não está aqui: ele acontece no Identity, o serviço da solução dono dos usuários e das credenciais, e o diagrama dele fica na documentação daquele repositório ([`oficina-mecanica-identity-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service), `docs/diagrams/login-sequence.drawio.png`). Este serviço só valida o token que o Identity emite, como mostra o primeiro diagrama.
 

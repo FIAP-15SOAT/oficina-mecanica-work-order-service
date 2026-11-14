@@ -24,7 +24,7 @@ A automação está dividida por responsabilidade, em quatro workflows:
 
 O CD faz o fluxo de entrega **da aplicação**: publica a imagem, migra o banco e deploya. Não há acoplamento por `workflow_run` — a ordem é garantida pelas dependências entre jobs (`needs:`) dentro do próprio CD.
 
-**Infraestrutura não é provisionada por este repositório.** Rede, cluster, banco, API Gateway e a função serverless de autenticação externa vivem em stacks Terraform próprias, cada uma com o seu `plan` no CI e o seu `apply` no CD — ver [overview.md › Camadas](overview.md#as-sete-camadas-de-provisionamento).
+**Infraestrutura não é provisionada por este repositório.** Rede, cluster, banco, API Gateway e a função serverless de autenticação externa vivem em stacks Terraform próprias, cada uma com o seu `plan` no CI e o seu `apply` no CD — ver [overview.md › Camadas](overview.md#camadas-de-provisionamento).
 
 > **Como ler os diagramas.** Nos diagramas de **CI** e **CD**, cada caixa é um **job** (com os principais steps em bullets) e as setas seguem as dependências `needs:`. Nos de **SAST** e **DAST** — que têm um **único job** —, cada caixa é um **step**, executado em sequência no mesmo runner.
 
