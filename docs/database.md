@@ -6,7 +6,7 @@ Modelo relacional (PostgreSQL) da API, definido em [`prisma/schema.prisma`](../a
 
 <p align="center"><img src="diagrams/database-er.png" alt="Diagrama entidade-relacionamento dos 11 modelos em uso no schema Prisma: Customer, Address, Vehicle, WorkOrderStatusInfo, WorkOrder e seus itens de linha (WorkOrderService, WorkOrderPartSupply), StatusHistory, SagaInstance (tabela saga_instances), UserCustomer e OutboxMessage (tabela outbox); com tipos reais do Postgres, chaves primárias, estrangeiras e únicas; work_orders.assigned_user_id, status_history.changed_by_id e user_customers.user_id guardam o id de um usuário do Identity, sem chave estrangeira" width="100%"></p>
 
-O diagrama omite as duas tabelas legadas, `users` e `password_reset_codes`, que continuam no schema sem uso (ver [Tabelas legadas](#tabelas-legadas)). As colunas `work_orders.assigned_user_id`, `status_history.changed_by_id` e `user_customers.user_id` guardam o id de um usuário do Identity, o serviço da solução dono dos usuários, sem chave estrangeira.
+As colunas `work_orders.assigned_user_id`, `status_history.changed_by_id` e `user_customers.user_id` guardam o id de um usuário do Identity, o serviço da solução dono dos usuários, sem chave estrangeira.
 
 Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgres** (`VARCHAR(n)`, `TIMESTAMP(3)`, `DECIMAL(10,2)`, os enums nomeados, etc.), conferidos a partir das migrations — não os tipos abstratos do schema Prisma (`String`, `Int`, `DateTime`).
 
@@ -19,10 +19,6 @@ Os usuários (funcionários e usuários de acesso dos clientes) são do Identity
 - **`customers`** (`Customer`) — clientes da oficina (pessoa física ou jurídica, `type`). `document` (CPF/CNPJ) e `email` são únicos.
 - **`user_customers`** (`UserCustomer`) — vínculo N:N entre um usuário do Identity e `customers` que autoriza o acesso externo por CPF: um usuário pode acessar os dados de um ou mais `Customer` (ex.: um contador que acessa vários clientes PJ). Chave primária composta `(user_id, customer_id)`; `user_id` não tem chave estrangeira, e `customer_id` é apagado em cascata com o cliente.
 - **`customer_addresses`** (`Address`) — endereço 1:1 de um `Customer`. Chave primária é o próprio `customer_id` (sem id/timestamps próprios); apagado em cascata com o cliente.
-
-### Tabelas legadas
-
-- **`users`** (`User`) e **`password_reset_codes`** (`PasswordResetCode`) — os usuários e os códigos de redefinição de senha de quando este serviço era o dono dos usuários. O código não lê nem grava mais nessas tabelas, o seed não as preenche e nenhuma outra tabela as referencia; elas ficam no schema até uma migration as remover, num deploy seguinte. Até lá, `email` e `cpf` continuam únicos em `users`, e `password_reset_codes` continua apagada em cascata com o usuário.
 
 ### Veículos
 

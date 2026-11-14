@@ -261,7 +261,7 @@ O grupo **Autenticação** mantém os dois fluxos separados: o login interno gra
 Com apenas a API local em execução, ignore os logins serverless (`TC-AUTH-06`, `TC-ME-03B` e `TC-ME-04C`) e a troca de senha (`TC-ME-03` e `TC-ME-04B`), que invalidaria o token preenchido à mão, e preencha `customerJwtToken` por um destes caminhos:
 
 - **Token de teste manual** — use o mesmo mecanismo de `test/helpers/customer-jwt.helper.ts`, descrito acima; a Lambda não precisa estar em execução.
-- **Token real da Lambda local** — configure [`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth) contra o mesmo banco e execute `npm run invoke`, copiando o `accessToken` retornado para `customerJwtToken`. Ela confere o CPF e a senha na tabela `users` deste banco, que o seed não preenche mais, então só funciona com um usuário que já esteja nessa tabela.
+- **Token real da Lambda local** — configure [`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth) com os endereços do Identity e desta API e execute `npm run invoke`, copiando o `accessToken` retornado para `customerJwtToken`. Ela confere o CPF e a senha no Identity e lê os vínculos do cliente nesta API, então precisa das duas stacks de pé.
 
 Com o gateway implantado, basta trocar `baseUrl` e `identityBaseUrl` e executar também o login serverless; o script preenche `customerJwtToken` automaticamente.
 

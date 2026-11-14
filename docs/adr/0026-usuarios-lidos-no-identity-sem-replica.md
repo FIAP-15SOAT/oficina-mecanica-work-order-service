@@ -34,7 +34,7 @@ O work-order guarda só o id do usuário, sem chave estrangeira, e lê o resto p
 - **Contrato público** — o mecânico e o autor do histórico mantêm o formato `{ id, name, email, role }`. O usuário com acesso a um cliente passa ao formato do Identity, `{ id, name, email, role, isActive }`, sem `createdAt` e `updatedAt`.
 - **Rota oferecida ao Identity** — o work-order serve `GET /internal/users/:userId/customers`, os clientes ativos vinculados a um usuário, que o Identity lê para montar o perfil de `GET /api/me`.
 
-O work-order perde o login, o refresh, a redefinição de senha, o cadastro de usuários, `GET /api/me` e `PATCH /api/me/password`, que são do Identity. As três chaves estrangeiras para `users` saem numa migration; as tabelas `users` e `password_reset_codes` ficam no schema, sem uso, até uma migration seguinte, para que a versão anterior volte a subir se este deploy for desfeito.
+O work-order perde o login, o refresh, a redefinição de senha, o cadastro de usuários, `GET /api/me` e `PATCH /api/me/password`, que são do Identity. As três chaves estrangeiras para `users` saem numa migration e, em outra, as tabelas `users` e `password_reset_codes` e o tipo `UserRole`. As duas migrations são separadas porque a das tabelas só vai ao ar depois do deploy do serviço sem o código antigo, e uma versão anterior que ainda leia `users` deixa de subir depois dela.
 
 ### 2. Token validado só pelas claims
 
@@ -79,7 +79,7 @@ O work-order continuaria relendo o usuário a cada requisição, numa cópia loc
 - **Janela de revogação**: até 10 minutos para o token de funcionário e até 60 minutos para o de cliente depois de desativar o usuário ou trocar a senha (ver [Segurança](../security.md#janelas-de-revogação-aceitas)).
 - **Uma chamada por usuário distinto em cada resposta**: a lista de OS lê no Identity cada mecânico distinto da página, em paralelo. Aceito porque as páginas são pequenas (até 100 itens) e o Identity guarda o usuário em cache.
 - **Mudança no contrato dos usuários de um cliente**: `GET /api/customers/:customerId/users` e a resposta da concessão de acesso perdem `createdAt` e `updatedAt`.
-- **Tabelas legadas no schema**: `users` e `password_reset_codes` ficam sem uso até uma migration seguinte as remover.
+- **Remoção das tabelas sem volta**: depois da migration que apaga `users` e `password_reset_codes`, os usuários só existem no Identity; desfazer o deploy exige restaurar um backup do banco.
 
 ### Revisar se
 

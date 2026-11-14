@@ -302,13 +302,10 @@ describe('WorkOrder (E2E)', () => {
         .send({ customerId: customer.id, vehicleId: vehicle.id, assignedUserId: mechanic.user.id })
         .expect(201);
 
-      const localUsers = await ctx.prisma.$queryRaw<{ count: bigint }[]>`
-        SELECT count(*) FROM users WHERE id = ${mechanic.user.id}::uuid`;
       const saved = await ctx.prisma.workOrder.findUniqueOrThrow({
         where: { id: res.body.data.id },
       });
 
-      expect(Number(localUsers[0].count)).toBe(0);
       expect(saved.assignedUserId).toBe(mechanic.user.id);
     });
 
