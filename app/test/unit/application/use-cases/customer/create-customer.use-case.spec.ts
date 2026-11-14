@@ -99,12 +99,15 @@ describe('CreateCustomerUseCase', () => {
 
     expect(customerAccessUserProvisioner.ensureUser).toHaveBeenCalledWith(created);
     expect(unitOfWork.executeTransaction).toHaveBeenCalledTimes(2);
+
     expect(customerAccessUserProvisioner.ensureUser.mock.invocationCallOrder[0]).toBeLessThan(
       unitOfWork.executeTransaction.mock.invocationCallOrder[1],
     );
+
     expect(repos.userCustomer.create).toHaveBeenCalledWith(
       expect.objectContaining({ userId, customerId: created.id }),
     );
+
     expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.CUSTOMER_ACCESS_GRANTED, {
       subjectId: actingUserId,
       targetUserId: userId,

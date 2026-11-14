@@ -42,6 +42,7 @@ describe('ListActiveUserCustomersUseCase', () => {
         isActive: true,
       },
     ]);
+
     expect(userCustomerRepository.findActiveCustomersByUserId).toHaveBeenCalledWith(userId);
   });
 

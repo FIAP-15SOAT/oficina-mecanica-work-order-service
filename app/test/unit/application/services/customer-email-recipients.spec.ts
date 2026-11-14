@@ -1,4 +1,6 @@
-import { IRepositories, IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
+import { ICustomerRepository } from '@domain/interfaces/repositories/customer.repository.interface';
+import { IUserCustomerRepository } from '@domain/interfaces/repositories/user-customer.repository.interface';
+import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
 
 import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
 import {
@@ -7,13 +9,19 @@ import {
 } from '@application/services/customer-email-recipients';
 import { Email } from '@domain/value-objects/email.vo';
 
-import { createMockCustomer } from '../../../helpers/customer-mock.factory';
+import {
+  createMockCustomer,
+  createMockCustomerRepository,
+} from '../../../helpers/customer-mock.factory';
 import {
   createMockIdentityUserGatewayResponse,
   createMockIdentityUsersGateway,
 } from '../../../helpers/identity-users-gateway-mock.factory';
-import { createMockUnitOfWorkWithRepos } from '../../../helpers/unit-of-work-mock.factory';
-import { createMockWorkOrder } from '../../../helpers/work-order-mock.factory';
+import { createMockUserCustomerRepository } from '../../../helpers/unit-of-work-mock.factory';
+import {
+  createMockWorkOrder,
+  createMockWorkOrderRepository,
+} from '../../../helpers/work-order-mock.factory';
 
 describe('CustomerEmailRecipients', () => {
   const customer = createMockCustomer({
@@ -43,8 +51,9 @@ describe('CustomerEmailRecipients', () => {
 
 describe('CustomerEmailRecipientsResolver', () => {
   let resolver: CustomerEmailRecipientsResolver;
-  let unitOfWork: jest.Mocked<IUnitOfWork>;
-  let repos: jest.Mocked<IRepositories>;
+  let workOrderRepository: jest.Mocked<IWorkOrderRepository>;
+  let customerRepository: jest.Mocked<ICustomerRepository>;
+  let userCustomerRepository: jest.Mocked<IUserCustomerRepository>;
   let identityUsersGateway: jest.Mocked<IIdentityUsersGateway>;
 
   const customer = createMockCustomer({
@@ -54,16 +63,28 @@ describe('CustomerEmailRecipientsResolver', () => {
   const workOrder = createMockWorkOrder({ customerId: customer.id });
 
   beforeEach(() => {
-    ({ unitOfWork, repos } = createMockUnitOfWorkWithRepos());
-    identityUsersGateway = createMockIdentityUsersGateway();
-    resolver = new CustomerEmailRecipientsResolver(unitOfWork, identityUsersGateway);
+    workOrderRepository = createMockWorkOrderRepository();
 
-    jest.mocked(repos.workOrder.findById).mockResolvedValue(workOrder);
-    jest.mocked(repos.customer.findById).mockResolvedValue(customer);
+    customerRepository = createMockCustomerRepository();
+
+    userCustomerRepository = createMockUserCustomerRepository();
+
+    identityUsersGateway = createMockIdentityUsersGateway();
+
+    resolver = new CustomerEmailRecipientsResolver(
+      workOrderRepository,
+      customerRepository,
+      userCustomerRepository,
+      identityUsersGateway,
+    );
+
+    workOrderRepository.findById.mockResolvedValue(workOrder);
+    customerRepository.findById.mockResolvedValue(customer);
   });
 
   it('should return one recipient with access per active linked user', async () => {
-    jest.mocked(repos.userCustomer.findUserIdsByCustomerId).mockResolvedValue(['user-1', 'user-2']);
+    userCustomerRepository.findUserIdsByCustomerId.mockResolvedValue(['user-1', 'user-2']);
+
     identityUsersGateway.findByIds.mockResolvedValue([
       createMockIdentityUserGatewayResponse({ name: 'João Lima', email: 'joao@example.com' }),
       createMockIdentityUserGatewayResponse({ name: 'Ana Reis', email: 'ana@example.com' }),
@@ -75,25 +96,28 @@ describe('CustomerEmailRecipientsResolver', () => {
       { email: 'joao@example.com', name: 'João Lima', hasAccess: true },
       { email: 'ana@example.com', name: 'Ana Reis', hasAccess: true },
     ]);
-    expect(repos.workOrder.findById).toHaveBeenCalledWith(workOrder.id);
-    expect(repos.customer.findById).toHaveBeenCalledWith(customer.id);
-    expect(repos.userCustomer.findUserIdsByCustomerId).toHaveBeenCalledWith(customer.id);
+
+    expect(workOrderRepository.findById).toHaveBeenCalledWith(workOrder.id);
+    expect(customerRepository.findById).toHaveBeenCalledWith(customer.id);
+    expect(userCustomerRepository.findUserIdsByCustomerId).toHaveBeenCalledWith(customer.id);
     expect(identityUsersGateway.findByIds).toHaveBeenCalledWith(['user-1', 'user-2']);
   });
 
   it('should fall back to the customer without calling Identity when there is no link', async () => {
-    jest.mocked(repos.userCustomer.findUserIdsByCustomerId).mockResolvedValue([]);
+    userCustomerRepository.findUserIdsByCustomerId.mockResolvedValue([]);
 
     const recipients = await resolver.resolveForWorkOrder(workOrder.id);
 
     expect(recipients).toEqual([
       { email: 'maria@example.com', name: 'Maria Souza', hasAccess: false },
     ]);
+
     expect(identityUsersGateway.findByIds).not.toHaveBeenCalled();
   });
 
   it('should fall back to the customer when every linked user is inactive', async () => {
-    jest.mocked(repos.userCustomer.findUserIdsByCustomerId).mockResolvedValue(['user-1']);
+    userCustomerRepository.findUserIdsByCustomerId.mockResolvedValue(['user-1']);
+
     identityUsersGateway.findByIds.mockResolvedValue([
       createMockIdentityUserGatewayResponse({ isActive: false }),
     ]);
@@ -106,7 +130,7 @@ describe('CustomerEmailRecipientsResolver', () => {
   });
 
   it('should fall back to the customer when Identity returns no user', async () => {
-    jest.mocked(repos.userCustomer.findUserIdsByCustomerId).mockResolvedValue(['user-1']);
+    userCustomerRepository.findUserIdsByCustomerId.mockResolvedValue(['user-1']);
     identityUsersGateway.findByIds.mockResolvedValue([]);
 
     const recipients = await resolver.resolveForWorkOrder(workOrder.id);
@@ -117,9 +141,22 @@ describe('CustomerEmailRecipientsResolver', () => {
   });
 
   it('should let the gateway error propagate', async () => {
-    jest.mocked(repos.userCustomer.findUserIdsByCustomerId).mockResolvedValue(['user-1']);
+    userCustomerRepository.findUserIdsByCustomerId.mockResolvedValue(['user-1']);
     identityUsersGateway.findByIds.mockRejectedValue(new Error('identity down'));
 
     await expect(resolver.resolveForWorkOrder(workOrder.id)).rejects.toThrow('identity down');
+  });
+
+  it('should resolve the recipients of a customer without reading a work order', async () => {
+    userCustomerRepository.findUserIdsByCustomerId.mockResolvedValue([]);
+
+    const recipients = await resolver.resolveForCustomer(customer.id);
+
+    expect(recipients).toEqual([
+      { email: 'maria@example.com', name: 'Maria Souza', hasAccess: false },
+    ]);
+
+    expect(customerRepository.findById).toHaveBeenCalledWith(customer.id);
+    expect(workOrderRepository.findById).not.toHaveBeenCalled();
   });
 });

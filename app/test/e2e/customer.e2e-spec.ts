@@ -35,7 +35,9 @@ describe('Customer (E2E)', () => {
     await cleanDatabase(ctx.prisma);
     stub.customerUsers.calls.length = 0;
     accessUser = stubCustomerUser(stub);
+
     adminAuth = createStaffUser({ stub }, { name: 'Admin E2E' });
+
     attendantAuth = createStaffUser({ stub }, { name: 'Atendente E2E', role: UserRole.ATTENDANT });
   });
 
@@ -316,6 +318,7 @@ describe('Customer (E2E)', () => {
       expect(stub.customerUsers.calls).toEqual([
         { name: 'João da Silva', email: 'joao@email.com', cpf: '12345678909' },
       ]);
+
       expect(links).toEqual([{ userId: accessUser.id }]);
     });
 
@@ -339,6 +342,7 @@ describe('Customer (E2E)', () => {
       expect(res.body.message).toBe(
         'O e-mail informado já pertence a outro usuário. Verifique o cadastro do cliente',
       );
+
       expect(await ctx.prisma.customer.count()).toBe(0);
     });
 

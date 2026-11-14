@@ -13,7 +13,7 @@ import { FindCatalogItemsUseCase } from '@application/use-cases/catalog/find-cat
 import { IInventoryCatalogGateway } from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.interface';
 import { IBillingQuotesGateway } from '@application/ports/output/gateways/billing/billing-quotes-gateway.interface';
 import { IBillingPaymentsGateway } from '@application/ports/output/gateways/billing/billing-payments-gateway.interface';
-import { MechanicAssignmentPolicy } from '@application/services/mechanic-assignment-policy';
+import { MechanicAssignmentPolicy } from '@application/policies/mechanic-assignment.policy';
 
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
 import { ICustomerRepository } from '@domain/interfaces/repositories/customer.repository.interface';

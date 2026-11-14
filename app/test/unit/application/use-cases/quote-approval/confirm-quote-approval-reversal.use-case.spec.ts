@@ -32,7 +32,7 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
   let unitOfWork: jest.Mocked<IUnitOfWork>;
   let repos: jest.Mocked<IRepositories>;
   let sagaInstanceRepository: jest.Mocked<ISagaInstanceRepository>;
-  let recipientsResolver: jest.Mocked<CustomerEmailRecipientsResolver>;
+  let customerEmailRecipientsResolver: jest.Mocked<CustomerEmailRecipientsResolver>;
   let logger: jest.Mocked<ILogger>;
   let metrics: jest.Mocked<IMetrics>;
   let recipients: CustomerEmailRecipient[];
@@ -45,7 +45,7 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
 
     sagaInstanceRepository = createMockSagaInstanceRepository();
 
-    recipientsResolver = createMockCustomerEmailRecipientsResolver();
+    customerEmailRecipientsResolver = createMockCustomerEmailRecipientsResolver();
 
     logger = createMockLogger();
 
@@ -69,7 +69,7 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
 
     sagaInstanceRepository.findByTypeAndCorrelationId.mockResolvedValue(saga);
 
-    recipientsResolver.resolveForWorkOrder.mockResolvedValue(recipients);
+    customerEmailRecipientsResolver.resolveForWorkOrder.mockResolvedValue(recipients);
 
     jest.mocked(repos.sagaInstance.findByTypeAndCorrelationId).mockResolvedValue(saga);
 
@@ -78,7 +78,7 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
     useCase = new ConfirmQuoteApprovalReversalUseCase(
       unitOfWork,
       sagaInstanceRepository,
-      recipientsResolver,
+      customerEmailRecipientsResolver,
       logger,
       metrics,
     );
@@ -152,11 +152,11 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
       quoteId,
     );
 
-    expect(recipientsResolver.resolveForWorkOrder).toHaveBeenCalledWith(workOrder.id);
+    expect(customerEmailRecipientsResolver.resolveForWorkOrder).toHaveBeenCalledWith(workOrder.id);
 
-    expect(recipientsResolver.resolveForWorkOrder.mock.invocationCallOrder[0]).toBeLessThan(
-      unitOfWork.executeTransaction.mock.invocationCallOrder[0],
-    );
+    expect(
+      customerEmailRecipientsResolver.resolveForWorkOrder.mock.invocationCallOrder[0],
+    ).toBeLessThan(unitOfWork.executeTransaction.mock.invocationCallOrder[0]);
 
     expect(repos.outbox.add).toHaveBeenCalledTimes(2);
 
@@ -179,7 +179,9 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
   });
 
   it('should open no transaction when the recipients cannot be resolved', async () => {
-    recipientsResolver.resolveForWorkOrder.mockRejectedValue(new Error('identity down'));
+    customerEmailRecipientsResolver.resolveForWorkOrder.mockRejectedValue(
+      new Error('identity down'),
+    );
 
     await expect(useCase.execute(quoteId)).rejects.toThrow('identity down');
 
@@ -215,7 +217,7 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
       }),
     );
 
-    expect(recipientsResolver.resolveForWorkOrder).not.toHaveBeenCalled();
+    expect(customerEmailRecipientsResolver.resolveForWorkOrder).not.toHaveBeenCalled();
     expect(repos.workOrder.update).not.toHaveBeenCalled();
     expect(repos.outbox.add).not.toHaveBeenCalled();
 
@@ -239,7 +241,7 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
 
     await useCase.execute(quoteId);
 
-    expect(recipientsResolver.resolveForWorkOrder).not.toHaveBeenCalled();
+    expect(customerEmailRecipientsResolver.resolveForWorkOrder).not.toHaveBeenCalled();
     expect(repos.sagaInstance.update).not.toHaveBeenCalled();
     expect(repos.statusHistory.create).not.toHaveBeenCalled();
     expect(repos.outbox.add).not.toHaveBeenCalled();

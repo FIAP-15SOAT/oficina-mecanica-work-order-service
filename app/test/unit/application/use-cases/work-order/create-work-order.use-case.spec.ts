@@ -14,7 +14,7 @@ import { ICustomerRepository } from '@domain/interfaces/repositories/customer.re
 import { IVehicleRepository } from '@domain/interfaces/repositories/vehicle.repository.interface';
 import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
 import { IdentityUserGatewayResponse } from '@application/ports/output/gateways/identity/identity-users-gateway.response';
-import { MechanicAssignmentPolicy } from '@application/services/mechanic-assignment-policy';
+import { MechanicAssignmentPolicy } from '@application/policies/mechanic-assignment.policy';
 import { IBillingQuotesGateway } from '@application/ports/output/gateways/billing/billing-quotes-gateway.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';

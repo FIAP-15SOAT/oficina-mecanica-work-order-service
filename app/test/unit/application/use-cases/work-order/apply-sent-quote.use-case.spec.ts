@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { WorkOrder } from '@domain/entities/work-order.entity';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { IRepositories, IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
+import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
 
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
@@ -26,13 +27,17 @@ import {
   createMockStatusHistory,
 } from '../../../../helpers/status-history-mock.factory';
 import { createMockUnitOfWorkWithRepos } from '../../../../helpers/unit-of-work-mock.factory';
-import { createMockWorkOrder } from '../../../../helpers/work-order-mock.factory';
+import {
+  createMockWorkOrder,
+  createMockWorkOrderRepository,
+} from '../../../../helpers/work-order-mock.factory';
 
 describe('ApplySentQuoteUseCase', () => {
   let useCase: ApplySentQuoteUseCase;
   let unitOfWork: jest.Mocked<IUnitOfWork>;
   let repos: jest.Mocked<IRepositories>;
-  let recipientsResolver: jest.Mocked<CustomerEmailRecipientsResolver>;
+  let workOrderRepository: jest.Mocked<IWorkOrderRepository>;
+  let customerEmailRecipientsResolver: jest.Mocked<CustomerEmailRecipientsResolver>;
   let logger: jest.Mocked<ILogger>;
   let metrics: jest.Mocked<IMetrics>;
   let cache: jest.Mocked<ICache>;
@@ -43,7 +48,9 @@ describe('ApplySentQuoteUseCase', () => {
   beforeEach(() => {
     ({ unitOfWork, repos } = createMockUnitOfWorkWithRepos());
 
-    recipientsResolver = createMockCustomerEmailRecipientsResolver();
+    workOrderRepository = createMockWorkOrderRepository();
+
+    customerEmailRecipientsResolver = createMockCustomerEmailRecipientsResolver();
 
     logger = createMockLogger();
 
@@ -69,13 +76,14 @@ describe('ApplySentQuoteUseCase', () => {
       ],
     };
 
-    recipientsResolver.resolveForWorkOrder.mockResolvedValue(recipients);
+    customerEmailRecipientsResolver.resolveForCustomer.mockResolvedValue(recipients);
 
-    jest.mocked(repos.workOrder.findById).mockResolvedValue(workOrder);
+    workOrderRepository.findById.mockResolvedValue(workOrder);
 
     useCase = new ApplySentQuoteUseCase(
       unitOfWork,
-      recipientsResolver,
+      workOrderRepository,
+      customerEmailRecipientsResolver,
       logger,
       metrics,
       repos.statusHistory,
@@ -88,11 +96,11 @@ describe('ApplySentQuoteUseCase', () => {
     async (status) => {
       const sentWorkOrder = createMockWorkOrder({ status });
 
-      jest.mocked(repos.workOrder.findById).mockResolvedValue(sentWorkOrder);
+      workOrderRepository.findById.mockResolvedValue(sentWorkOrder);
 
       await useCase.execute({ ...input, workOrderId: sentWorkOrder.id });
 
-      expect(repos.workOrder.findById).toHaveBeenCalledWith(sentWorkOrder.id);
+      expect(workOrderRepository.findById).toHaveBeenCalledWith(sentWorkOrder.id);
       expect(sentWorkOrder.status).toBe(WorkOrderStatus.AWAITING_APPROVAL);
       expect(repos.workOrder.update).toHaveBeenCalledWith(sentWorkOrder);
 
@@ -110,11 +118,13 @@ describe('ApplySentQuoteUseCase', () => {
   it('should add one quote e-mail per recipient in the transaction of the transition', async () => {
     await useCase.execute(input);
 
-    expect(recipientsResolver.resolveForWorkOrder).toHaveBeenCalledWith(workOrder.id);
-
-    expect(recipientsResolver.resolveForWorkOrder.mock.invocationCallOrder[0]).toBeLessThan(
-      unitOfWork.executeTransaction.mock.invocationCallOrder[0],
+    expect(customerEmailRecipientsResolver.resolveForCustomer).toHaveBeenCalledWith(
+      workOrder.customerId,
     );
+
+    expect(
+      customerEmailRecipientsResolver.resolveForCustomer.mock.invocationCallOrder[0],
+    ).toBeLessThan(unitOfWork.executeTransaction.mock.invocationCallOrder[0]);
 
     expect(repos.outbox.add).toHaveBeenCalledTimes(2);
 
@@ -148,7 +158,7 @@ describe('ApplySentQuoteUseCase', () => {
   it('should keep a work order already awaiting approval and still add the quote e-mail', async () => {
     const awaitingWorkOrder = createMockWorkOrder({ status: WorkOrderStatus.AWAITING_APPROVAL });
 
-    jest.mocked(repos.workOrder.findById).mockResolvedValue(awaitingWorkOrder);
+    workOrderRepository.findById.mockResolvedValue(awaitingWorkOrder);
 
     await useCase.execute({ ...input, workOrderId: awaitingWorkOrder.id });
 
@@ -168,14 +178,13 @@ describe('ApplySentQuoteUseCase', () => {
     async (status) => {
       const outsideWorkOrder = createMockWorkOrder({ status });
 
-      jest.mocked(repos.workOrder.findById).mockResolvedValue(outsideWorkOrder);
+      workOrderRepository.findById.mockResolvedValue(outsideWorkOrder);
 
       await useCase.execute({ ...input, workOrderId: outsideWorkOrder.id });
 
       expect(outsideWorkOrder.status).toBe(status);
-      expect(repos.workOrder.update).not.toHaveBeenCalled();
-      expect(repos.statusHistory.create).not.toHaveBeenCalled();
-      expect(repos.outbox.add).not.toHaveBeenCalled();
+      expect(customerEmailRecipientsResolver.resolveForCustomer).not.toHaveBeenCalled();
+      expect(unitOfWork.executeTransaction).not.toHaveBeenCalled();
       expect(cache.delete).not.toHaveBeenCalled();
 
       expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.QUOTE_EVENT_SKIPPED, {
@@ -186,8 +195,10 @@ describe('ApplySentQuoteUseCase', () => {
     },
   );
 
-  it('should open no transaction when the recipients cannot be resolved', async () => {
-    recipientsResolver.resolveForWorkOrder.mockRejectedValue(new Error('identity down'));
+  it('should open no transaction when the recipients cannot be read', async () => {
+    customerEmailRecipientsResolver.resolveForCustomer.mockRejectedValue(
+      new Error('identity down'),
+    );
 
     await expect(useCase.execute(input)).rejects.toThrow('identity down');
 

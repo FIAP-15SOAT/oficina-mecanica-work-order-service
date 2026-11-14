@@ -39,7 +39,9 @@ describe('UpdateCustomerUseCase', () => {
 
   beforeEach(() => {
     customerRepository = createMockCustomerRepository();
+
     userCustomerRepository = { findUserIdsByCustomerId: jest.fn().mockResolvedValue([]) } as never;
+
     cache = createMockCache();
     workOrderRepository = createMockWorkOrderRepository();
     useCase = new UpdateCustomerUseCase(

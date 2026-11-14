@@ -4,7 +4,7 @@ import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
-import { MechanicAssignmentPolicy } from '@application/services/mechanic-assignment-policy';
+import { MechanicAssignmentPolicy } from '@application/policies/mechanic-assignment.policy';
 import {
   createMockWorkOrder,
   createMockWorkOrderRepository,
@@ -21,10 +21,12 @@ describe('UpdateWorkOrderUseCase', () => {
 
   beforeEach(() => {
     workOrderRepository = createMockWorkOrderRepository();
+
     mechanicAssignmentPolicy = {
       ensureAssignable: jest.fn(),
     } as unknown as jest.Mocked<MechanicAssignmentPolicy>;
     cache = createMockCache();
+
     useCase = new UpdateWorkOrderUseCase(workOrderRepository, mechanicAssignmentPolicy, cache);
   });
 
@@ -56,6 +58,7 @@ describe('UpdateWorkOrderUseCase', () => {
 
     expect(result.assignedUserId).toBe(userId);
     expect(mechanicAssignmentPolicy.ensureAssignable).toHaveBeenCalledWith(userId);
+
     expect(mechanicAssignmentPolicy.ensureAssignable.mock.invocationCallOrder[0]).toBeLessThan(
       workOrderRepository.update.mock.invocationCallOrder[0],
     );

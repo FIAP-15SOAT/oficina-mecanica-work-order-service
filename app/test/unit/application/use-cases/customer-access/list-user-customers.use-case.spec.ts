@@ -46,6 +46,7 @@ describe('ListUserCustomersUseCase', () => {
     expect(result).toEqual([
       { id: customer.id, name: customer.name, type: CustomerType.COMPANY, isActive: true },
     ]);
+
     expect(identityUsersGateway.findById).toHaveBeenCalledWith(user.id);
   });
 

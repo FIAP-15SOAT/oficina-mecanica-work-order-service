@@ -41,7 +41,9 @@ describe('Structured logging (E2E)', () => {
   beforeEach(async () => {
     await cleanDatabase(ctx.prisma);
     adminAuth = staffAuthHeader();
+
     mechanicId = randomUUID();
+
     mechanicAuth = staffAuthHeader({ sub: mechanicId, role: UserRole.MECHANIC });
     capture.clear();
   });

@@ -22,6 +22,7 @@ env:
   # Canonical ADMIN user (docs/seed-ids.md): a UUID sub, because it is stored in uuid columns such as status_history.changed_by_id.
   STAFF_ADMIN_ID: 1c905c27-4c5e-4d85-a53d-914ed8b87bbe
   STAFF_ADMIN_EMAIL: guilhermedarochasalvador@gmail.com
+  STAFF_ADMIN_NAME: Guilherme da Rocha Salvador
   STAFF_JWT_ISSUER: oficina-identity
   STAFF_JWT_AUDIENCE: oficina-services
   # Canonical id of the seeded customer user joao.silva@email.com (prisma/seeds/seed-ids.ts).
@@ -62,9 +63,11 @@ jobs:
           b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 
           now="$(date +%s)"
+          # One hour, not the ten minutes of a real access token: it is signed
+          # before the stack starts, and the whole run takes about nine minutes.
           exp="$((now + 3600))"
           header="{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"${STAFF_JWT_KEY_ID}\"}"
-          payload="{\"sub\":\"${STAFF_ADMIN_ID}\",\"email\":\"${STAFF_ADMIN_EMAIL}\",\"role\":\"ADMIN\",\"typ\":\"access\",\"iss\":\"${STAFF_JWT_ISSUER}\",\"aud\":\"${STAFF_JWT_AUDIENCE}\",\"iat\":${now},\"exp\":${exp}}"
+          payload="{\"sub\":\"${STAFF_ADMIN_ID}\",\"email\":\"${STAFF_ADMIN_EMAIL}\",\"name\":\"${STAFF_ADMIN_NAME}\",\"role\":\"ADMIN\",\"typ\":\"access\",\"iss\":\"${STAFF_JWT_ISSUER}\",\"aud\":\"${STAFF_JWT_AUDIENCE}\",\"iat\":${now},\"exp\":${exp}}"
 
           signing_input="$(printf '%s' "$header" | b64url).$(printf '%s' "$payload" | b64url)"
           signature="$(printf '%s' "$signing_input" | openssl dgst -sha256 -sign "$key_dir/private.pem" | b64url)"

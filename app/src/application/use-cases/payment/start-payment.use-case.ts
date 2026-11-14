@@ -5,8 +5,10 @@ import { SagaFailureReason } from '@domain/enums/saga-failure-reason.enum';
 import { SagaStatus } from '@domain/enums/saga-status.enum';
 import { SagaType } from '@domain/enums/saga-type.enum';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
+import { ISagaInstanceRepository } from '@domain/interfaces/repositories/saga-instance.repository.interface';
 import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
 import { IRepositories, IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
+import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
 
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
@@ -36,7 +38,9 @@ type PaymentStart =
 export class StartPaymentUseCase implements IStartPaymentUseCase {
   constructor(
     private readonly unitOfWork: IUnitOfWork,
-    private readonly recipientsResolver: CustomerEmailRecipientsResolver,
+    private readonly workOrderRepository: IWorkOrderRepository,
+    private readonly sagaInstanceRepository: ISagaInstanceRepository,
+    private readonly customerEmailRecipientsResolver: CustomerEmailRecipientsResolver,
     private readonly logger: ILogger,
     private readonly metrics: IMetrics,
     private readonly statusHistoryRepository: IStatusHistoryRepository,
@@ -44,11 +48,7 @@ export class StartPaymentUseCase implements IStartPaymentUseCase {
   ) {}
 
   async execute(input: StartPaymentInputDto): Promise<void> {
-    const recipients = await this.recipientsResolver.resolveForWorkOrder(input.workOrderId);
-
-    const start = await this.unitOfWork.executeTransaction((repos) =>
-      this.start(repos, input, recipients),
-    );
+    const start = await this.start(input);
 
     if (start.outcome === 'skipped') {
       this.logger.event(BUSINESS_EVENTS.SAGA_STEP_SKIPPED, {
@@ -80,12 +80,11 @@ export class StartPaymentUseCase implements IStartPaymentUseCase {
     );
   }
 
-  private async start(
-    repos: IRepositories,
-    input: StartPaymentInputDto,
-    recipients: CustomerEmailRecipient[],
-  ): Promise<PaymentStart> {
-    const saga = await repos.sagaInstance.findByTypeAndCorrelationId(
+  // Read once, outside the transaction: the writes carry the version of this read, so a change
+  // since then fails the commit and the message is redelivered. A duplicate of the same payment
+  // cannot run meanwhile, because the queue delivers one message per work order at a time.
+  private async start(input: StartPaymentInputDto): Promise<PaymentStart> {
+    const saga = await this.sagaInstanceRepository.findByTypeAndCorrelationId(
       SagaType.PAYMENT,
       input.paymentId,
     );
@@ -94,14 +93,23 @@ export class StartPaymentUseCase implements IStartPaymentUseCase {
       return { outcome: 'skipped', sagaStatus: saga.status };
     }
 
-    const workOrder = (await repos.workOrder.findById(input.workOrderId))!;
+    const workOrder = (await this.workOrderRepository.findById(input.workOrderId))!;
 
     // The work order may have moved (e.g. started) between the payment creation and this event.
     if (!workOrder.canChangeStatusTo(WorkOrderStatus.AWAITING_PAYMENT)) {
-      return this.requestPaymentCancellation(repos, workOrder, input);
+      return this.unitOfWork.executeTransaction((repos) =>
+        this.requestPaymentCancellation(repos, workOrder, input),
+      );
     }
 
-    return this.holdWorkOrder(repos, workOrder, input, recipients);
+    // Only the hold sends the link e-mail, so only it waits on the identity for the recipients.
+    const recipients = await this.customerEmailRecipientsResolver.resolveForCustomer(
+      workOrder.customerId,
+    );
+
+    return this.unitOfWork.executeTransaction((repos) =>
+      this.holdWorkOrder(repos, workOrder, input, recipients),
+    );
   }
 
   private async requestPaymentCancellation(

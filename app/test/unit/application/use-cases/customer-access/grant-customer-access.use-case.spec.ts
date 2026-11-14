@@ -61,9 +61,11 @@ describe('GrantCustomerAccessUseCase', () => {
 
       expect(customerAccessUserProvisioner.ensureUser).toHaveBeenCalledWith(customer, undefined);
       expect(unitOfWork.executeTransaction).toHaveBeenCalledTimes(2);
+
       expect(customerAccessUserProvisioner.ensureUser.mock.invocationCallOrder[0]).toBeLessThan(
         unitOfWork.executeTransaction.mock.invocationCallOrder[1],
       );
+
       expect(identityUsersGateway.findById.mock.invocationCallOrder[0]).toBeLessThan(
         unitOfWork.executeTransaction.mock.invocationCallOrder[1],
       );
@@ -113,7 +115,9 @@ describe('GrantCustomerAccessUseCase', () => {
           },
           initialPasswordSent: created,
         });
+
         expect(identityUsersGateway.findById).toHaveBeenCalledWith(user.id);
+
         expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.CUSTOMER_ACCESS_GRANTED, {
           subjectId: actingUserId,
           targetUserId: user.id,
@@ -164,6 +168,7 @@ describe('GrantCustomerAccessUseCase', () => {
       const result = useCase.execute(customer.id, randomUUID());
 
       await expect(result).rejects.toThrow(ResourceNotFoundException);
+
       await expect(result).rejects.toThrow(
         `Usuário não encontrado(a) com identificador: ${userId}`,
       );

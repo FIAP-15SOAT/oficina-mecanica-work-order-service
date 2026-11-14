@@ -37,7 +37,7 @@ export class ConfirmQuoteApprovalReversalUseCase implements IConfirmQuoteApprova
   constructor(
     private readonly unitOfWork: IUnitOfWork,
     private readonly sagaInstanceRepository: ISagaInstanceRepository,
-    private readonly recipientsResolver: CustomerEmailRecipientsResolver,
+    private readonly customerEmailRecipientsResolver: CustomerEmailRecipientsResolver,
     private readonly logger: ILogger,
     private readonly metrics: IMetrics,
   ) {}
@@ -82,7 +82,7 @@ export class ConfirmQuoteApprovalReversalUseCase implements IConfirmQuoteApprova
       return [];
     }
 
-    return this.recipientsResolver.resolveForWorkOrder(saga.workOrderId);
+    return this.customerEmailRecipientsResolver.resolveForWorkOrder(saga.workOrderId);
   }
 
   private async confirm(

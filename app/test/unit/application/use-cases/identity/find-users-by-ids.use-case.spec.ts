@@ -14,6 +14,7 @@ describe('FindUsersByIdsUseCase', () => {
 
   beforeEach(() => {
     identityUsersGateway = createMockIdentityUsersGateway();
+
     useCase = new FindUsersByIdsUseCase(identityUsersGateway);
   });
 

@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common';
 
+import { ICustomerRepository } from '@domain/interfaces/repositories/customer.repository.interface';
 import { ISagaInstanceRepository } from '@domain/interfaces/repositories/saga-instance.repository.interface';
 import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
+import { IUserCustomerRepository } from '@domain/interfaces/repositories/user-customer.repository.interface';
+import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
 
 import { IBillingQuotesGateway } from '@application/ports/output/gateways/billing/billing-quotes-gateway.interface';
 import { ICache } from '@application/ports/output/services/cache.service.interface';
@@ -32,6 +35,9 @@ import { QuoteApprovalMessageHandlers } from './quote-approval-message-handlers'
         sagaInstanceRepository: ISagaInstanceRepository,
         billingQuotesGateway: IBillingQuotesGateway,
         identityUsersGateway: IIdentityUsersGateway,
+        workOrderRepository: IWorkOrderRepository,
+        customerRepository: ICustomerRepository,
+        userCustomerRepository: IUserCustomerRepository,
       ) =>
         new QuoteApprovalMessageHandlers(
           registry,
@@ -59,7 +65,12 @@ import { QuoteApprovalMessageHandlers } from './quote-approval-message-handlers'
           new ConfirmQuoteApprovalReversalUseCase(
             unitOfWork,
             sagaInstanceRepository,
-            new CustomerEmailRecipientsResolver(unitOfWork, identityUsersGateway),
+            new CustomerEmailRecipientsResolver(
+              workOrderRepository,
+              customerRepository,
+              userCustomerRepository,
+              identityUsersGateway,
+            ),
             logger.forContext(ConfirmQuoteApprovalReversalUseCase.name),
             metrics,
           ),
@@ -74,6 +85,9 @@ import { QuoteApprovalMessageHandlers } from './quote-approval-message-handlers'
         'ISagaInstanceRepository',
         'IBillingQuotesGateway',
         'IIdentityUsersGateway',
+        'IWorkOrderRepository',
+        'ICustomerRepository',
+        'IUserCustomerRepository',
       ],
     },
   ],

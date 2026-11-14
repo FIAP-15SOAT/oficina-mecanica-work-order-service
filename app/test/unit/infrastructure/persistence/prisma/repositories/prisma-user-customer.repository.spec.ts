@@ -134,6 +134,7 @@ describe('PrismaUserCustomerRepository', () => {
       const result = await repository.findUserIdsByCustomerId(customerId);
 
       expect(result).toEqual([userId]);
+
       expect(prisma.userCustomer.findMany).toHaveBeenCalledWith({
         where: { customerId },
         select: { userId: true },
@@ -174,6 +175,7 @@ describe('PrismaUserCustomerRepository', () => {
       const result = await repository.findActiveCustomersByUserId(userId);
 
       expect(result.map((item) => item.id)).toEqual([customer.id]);
+
       expect(prisma.userCustomer.findMany).toHaveBeenCalledWith({
         where: { userId, customer: { isActive: true } },
         include: { customer: { include: { address: true } } },

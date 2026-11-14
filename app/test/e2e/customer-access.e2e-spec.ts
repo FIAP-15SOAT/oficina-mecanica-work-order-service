@@ -36,7 +36,9 @@ describe('Customer Access (E2E)', () => {
     await cleanDatabase(ctx.prisma);
     stub.customerUsers.calls.length = 0;
     adminAuth = createStaffUser({ stub }, { name: 'Admin E2E' });
+
     attendantAuth = createStaffUser({ stub }, { name: 'Atendente E2E', role: UserRole.ATTENDANT });
+
     mechanicAuth = createStaffUser({ stub }, { name: 'Mecânico E2E', role: UserRole.MECHANIC });
   });
 
@@ -161,9 +163,11 @@ describe('Customer Access (E2E)', () => {
         },
         initialPasswordSent: true,
       });
+
       expect(stub.customerUsers.calls).toEqual([
         { name: customer.name, email: customer.email, cpf: customer.document },
       ]);
+
       expect(await findLinks(customer.id)).toEqual([{ userId: user.id }]);
     });
 
@@ -217,6 +221,7 @@ describe('Customer Access (E2E)', () => {
         .expect(201);
 
       expect(res.body.data.initialPasswordSent).toBe(true);
+
       expect(stub.customerUsers.calls).toEqual([
         { name: 'Operador da Empresa', email: 'operador@test.com', cpf: '52998224725' },
       ]);
@@ -231,6 +236,32 @@ describe('Customer Access (E2E)', () => {
         .send({})
         .expect(409);
 
+      expect(stub.customerUsers.calls).toEqual([]);
+    });
+
+    it.each([
+      [
+        'a name shorter than 3 characters',
+        { name: 'Jo' },
+        'O nome deve ter no mínimo 3 caracteres',
+      ],
+      ['a cpf without digits', { cpf: 'abc' }, 'CPF inválido'],
+      ['a cpf with wrong check digits', { cpf: '529.982.247-26' }, 'CPF inválido'],
+    ])('should return 400 without calling the identity for %s', async (_label, field, message) => {
+      const company = await createCompanyCustomer();
+
+      const res = await request(httpServer)
+        .post(`/api/customers/${company.id}/users`)
+        .set('Authorization', adminAuth.authorization)
+        .send({
+          name: 'Operador da Empresa',
+          email: 'operador@test.com',
+          cpf: '529.982.247-25',
+          ...field,
+        })
+        .expect(400);
+
+      expect(res.body.message).toContain(message);
       expect(stub.customerUsers.calls).toEqual([]);
     });
 

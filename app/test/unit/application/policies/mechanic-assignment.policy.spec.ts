@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { MechanicAssignmentPolicy } from '@application/services/mechanic-assignment-policy';
+import { MechanicAssignmentPolicy } from '@application/policies/mechanic-assignment.policy';
 import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
@@ -18,6 +18,7 @@ describe('MechanicAssignmentPolicy', () => {
 
   beforeEach(() => {
     identityUsersGateway = createMockIdentityUsersGateway();
+
     policy = new MechanicAssignmentPolicy(identityUsersGateway);
   });
 
@@ -47,6 +48,7 @@ describe('MechanicAssignmentPolicy', () => {
     const result = policy.ensureAssignable(user.id);
 
     await expect(result).rejects.toThrow(BusinessRuleViolationException);
+
     await expect(result).rejects.toThrow(
       'Apenas mecânicos ativos podem ser atribuídos a uma ordem de serviço',
     );

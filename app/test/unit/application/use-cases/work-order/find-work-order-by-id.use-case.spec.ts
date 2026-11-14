@@ -32,6 +32,7 @@ describe('FindWorkOrderByIdUseCase', () => {
   beforeEach(() => {
     workOrderRepository = createMockWorkOrderRepository();
     cache = createMockCache();
+
     useCase = new FindWorkOrderByIdUseCase(workOrderRepository, cache);
   });
 

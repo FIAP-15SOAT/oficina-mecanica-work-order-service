@@ -61,6 +61,7 @@ describe('WorkOrderController', () => {
     updateServiceStatusUseCase = { execute: jest.fn() };
     findStatusHistoryUseCase = { execute: jest.fn() };
     findCatalogItemsUseCase = { execute: jest.fn() };
+
     findUsersByIdsUseCase = { execute: jest.fn().mockResolvedValue([]) };
 
     controller = new WorkOrderController(
@@ -221,6 +222,7 @@ describe('WorkOrderController', () => {
       const result = await controller.findOne(workOrder.id);
 
       expect(findUsersByIdsUseCase.execute).toHaveBeenCalledWith([mechanic.id]);
+
       expect(result).toEqual(
         WorkOrderPresenter.toDataResponse(workOrder, emptyCatalog, [mechanic]),
       );

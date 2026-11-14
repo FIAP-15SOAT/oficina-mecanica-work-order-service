@@ -14,7 +14,7 @@ import { ILogger } from '@application/ports/output/services/logger.service.inter
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { BUSINESS_METRICS } from '@application/metrics/business-metric.catalog';
-import { MechanicAssignmentPolicy } from '@application/services/mechanic-assignment-policy';
+import { MechanicAssignmentPolicy } from '@application/policies/mechanic-assignment.policy';
 import { CreateWorkOrderDto } from '@application/ports/input/work-order/dto/create-work-order.dto';
 
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';

@@ -80,3 +80,9 @@ O work-order continuaria relendo o usuário a cada requisição, numa cópia loc
 - **Uma chamada por usuário distinto em cada resposta**: a lista de OS lê no Identity cada mecânico distinto da página, em paralelo. Aceito porque as páginas são pequenas (até 100 itens) e o Identity guarda o usuário em cache.
 - **Mudança no contrato dos usuários de um cliente**: `GET /api/customers/:customerId/users` e a resposta da concessão de acesso perdem `createdAt` e `updatedAt`.
 - **Tabelas legadas no schema**: `users` e `password_reset_codes` ficam sem uso até uma migration seguinte as remover.
+
+### Revisar se
+
+- O Identity ficar fora do ar com frequência a ponto de os 503 pesarem na operação da oficina (aí, rever a réplica `UserView`).
+- A janela de revogação deixar de ser aceitável (aí, revogação imediata por lista de bloqueio ou introspecção, valendo para todos os serviços que validam o token).
+- As páginas de OS crescerem a ponto de a leitura de um usuário por chamada pesar na latência (aí, uma rota de leitura em lote no Identity).

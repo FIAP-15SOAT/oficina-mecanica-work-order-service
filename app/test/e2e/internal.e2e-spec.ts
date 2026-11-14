@@ -199,6 +199,7 @@ describe('Internal routes (E2E)', () => {
           expect.objectContaining({ id: COMPANY_ID, document: '12345678000195' }),
         ]),
       });
+
       expect(res.body.data).toHaveLength(2);
       expect(jsonShape(res.body)).toEqual(jsonShape(userCustomersFixture));
     });

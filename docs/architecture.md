@@ -80,10 +80,10 @@ app/src/
 │   ├── logging/                     # LogEventDefinition + catálogo tipado e fechado
 │   │                                # de eventos de NEGÓCIO (nomes lógicos, sem chave física)
 │   ├── policies/                    # CustomerAccessPolicy — autorização por vínculo,
-│   │                                # reutilizável por qualquer caso de uso de /api/me/*
-│   ├── services/                    # MechanicAssignmentPolicy — confere no Identity que
-│   │                                # o usuário atribuído é um mecânico ativo;
-│   │                                # CustomerEmailRecipientsResolver — destinatários
+│   │                                # reutilizável por qualquer caso de uso de /api/me/*;
+│   │                                # MechanicAssignmentPolicy — confere no Identity que
+│   │                                # o usuário atribuído é um mecânico ativo
+│   ├── services/                    # CustomerEmailRecipientsResolver — destinatários
 │   │                                # dos e-mails ao cliente (usuários vinculados ativos
 │   │                                # no Identity ou o e-mail do cadastro);
 │   │                                # CustomerAccessUserProvisioner — localiza ou cria no
@@ -639,8 +639,9 @@ Este serviço não envia e-mail. Os três e-mails ao cliente são mensagens `not
 | Link de pagamento | `billing.payment.requested` bloqueia a OS em `AWAITING_PAYMENT` | `payment_link` | `Pagamento da Ordem de Serviço <número>` | `StartPaymentUseCase` |
 | Falta de estoque | `billing.quote.approval_reverted` confirma a reversão de uma Saga de aprovação compensada por `INSUFFICIENT_STOCK` | `quote_approval_reverted` | `Orçamento da Ordem de Serviço <número> - Estoque insuficiente` | `ConfirmQuoteApprovalReversalUseCase` |
 
-- **Destinatários:** antes da transação, o `CustomerEmailRecipientsResolver` (`application/services/`) lê a OS, o cliente e os ids dos usuários vinculados a ele, e busca esses usuários no Identity pelo `IIdentityUsersGateway` (`GET /internal/users/:id`). Recebem os usuários ativos. Sem nenhum, o e-mail vai ao e-mail do cadastro do cliente, e o do orçamento diz que ele ainda não tem acesso e deve pedir à oficina a criação do acesso. Na reversão, os destinatários só são lidos quando a Saga está compensando por falta de estoque.
-- **Identity fora do ar:** o handler falha antes de gravar qualquer coisa, e a mensagem que chegou volta à fila, até a DLQ na quinta entrega.
+- **Destinatários:** antes da transação, o `CustomerEmailRecipientsResolver` (`application/services/`) lê o cliente e os ids dos usuários vinculados a ele, e busca esses usuários no Identity pelo `IIdentityUsersGateway` (`GET /internal/users/:id`). Recebem os usuários ativos. Sem nenhum, o e-mail vai ao e-mail do cadastro do cliente, e o do orçamento diz que ele ainda não tem acesso e deve pedir à oficina a criação do acesso.
+- **Leitura única:** no orçamento enviado e no link de pagamento, o caso de uso lê a Saga e a OS uma vez, antes da transação, e decide o caminho com essa leitura. Só o caminho que grava o e-mail chama o resolvedor. A transação grava a OS com a `version` lida: se a OS mudou nesse meio-tempo, a gravação falha e a mensagem volta à fila, para ser decidida de novo. Duas mensagens da mesma OS não são processadas ao mesmo tempo, porque a fila entrega uma por OS por vez. Na reversão, os destinatários só são lidos quando a Saga está compensando por falta de estoque.
+- **Identity fora do ar:** o passo que grava o e-mail falha antes de abrir a transação, sem nada gravado, e a mensagem que chegou volta à fila, até a DLQ na quinta entrega. O passo que não grava e-mail não consulta o Identity e segue normalmente: a entrega repetida, o `billing.quote.sent` de uma OS que não aceita mais o orçamento e o `billing.payment.requested` de uma OS que não aceita mais a cobrança, que pede o cancelamento ao Billing.
 - **Conteúdo:** o `WorkOrderEmailComposer` (`application/notifications/`) monta o assunto, o texto e o HTML. No HTML, os valores que vêm de fora (nomes do destinatário e dos itens e o número da OS) são escapados, e o link de pagamento entra serializado como URL, para que nenhum deles injete marcação. O `purpose` é o rótulo do e-mail que a função de notificação registra no log, no lugar do assunto.
 - **Por que pelo outbox:** o e-mail só é publicado se a mudança da OS foi confirmada, e toda mudança confirmada publica o e-mail. Uma falha no envio fica com a função de notificação, a fila e a DLQ dela, e não desfaz o passo deste serviço.
 - **Ordem:** o passo grava a OS com a `version` antes de gravar o e-mail, mesmo quando ela já está em `AWAITING_APPROVAL` (envio repetido do orçamento e confirmação da reversão), pela regra da [ordem por OS](#outbox-e-relay).
@@ -749,7 +750,7 @@ Decisões arquiteturais relevantes são registradas em [`docs/adr/`](./adr) no f
 
 - [ADR 0001 — Uso do PostgreSQL como Banco de Dados Relacional](./adr/0001-uso-do-postgresql-como-banco-de-dados.md)
 - [ADR 0002 — Logging Estruturado em JSON com Nomenclatura OpenTelemetry](./adr/0002-logging-estruturado.md) *(parcialmente superado pelos ADRs 0003 e 0005)*
-- [ADR 0003 — Health Checks: Liveness e Readiness como Endpoints Dedicados](./adr/0003-health-checks.md) *(política de volume das probes contrariada pelo 0005)*
+- [ADR 0003 — Health Checks: Liveness e Readiness como Endpoints Dedicados](./adr/0003-health-checks.md) *(política de volume das probes contrariada pelo 0005; emendado pelo 0026)*
 - [ADR 0004 — Autenticação externa de clientes por CPF via função serverless](./adr/0004-autenticacao-de-clientes.md) *(emendado pelo 0026)*
 - [ADR 0005 — Instrumentação OpenTelemetry: traces, correlação e métricas de negócio](./adr/0005-opentelemetry.md) *(emendado pelo 0021)*
 - [ADR 0006 — Escolha de nuvem: AWS (EKS + RDS) no ambiente `prod-simulated`](./adr/0006-escolha-de-nuvem-aws.md)

@@ -3,6 +3,7 @@ import { WorkOrder } from '@domain/entities/work-order.entity';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
 import { IRepositories, IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
+import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
 
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
@@ -18,38 +19,44 @@ import {
   CustomerEmailRecipientsResolver,
 } from '@application/services/customer-email-recipients';
 
-type SentQuoteApplication =
-  | { applied: false; currentWorkOrderStatus: WorkOrderStatus }
-  | { applied: true; workOrderStatusTransition?: StatusHistory };
-
 export class ApplySentQuoteUseCase implements IApplySentQuoteUseCase {
   constructor(
     private readonly unitOfWork: IUnitOfWork,
-    private readonly recipientsResolver: CustomerEmailRecipientsResolver,
+    private readonly workOrderRepository: IWorkOrderRepository,
+    private readonly customerEmailRecipientsResolver: CustomerEmailRecipientsResolver,
     private readonly logger: ILogger,
     private readonly metrics: IMetrics,
     private readonly statusHistoryRepository: IStatusHistoryRepository,
     private readonly cache: ICache,
   ) {}
 
+  // Read once, outside the transaction: the writes carry the version of this read, so a change
+  // since then fails the commit and the message is redelivered.
   async execute(input: ApplySentQuoteInputDto): Promise<void> {
-    const recipients = await this.recipientsResolver.resolveForWorkOrder(input.workOrderId);
+    const workOrder = (await this.workOrderRepository.findById(input.workOrderId))!;
 
-    const application = await this.unitOfWork.executeTransaction((repos) =>
-      this.apply(repos, input, recipients),
-    );
-
-    if (!application.applied) {
+    // The work order may have changed (e.g. been cancelled) between the send and this event.
+    if (
+      workOrder.status !== WorkOrderStatus.AWAITING_APPROVAL &&
+      !workOrder.canChangeStatusTo(WorkOrderStatus.AWAITING_APPROVAL)
+    ) {
       this.logger.event(BUSINESS_EVENTS.QUOTE_EVENT_SKIPPED, {
         quoteId: input.quoteId,
         workOrderId: input.workOrderId,
-        currentWorkOrderStatus: application.currentWorkOrderStatus,
+        currentWorkOrderStatus: workOrder.status,
       });
 
       return;
     }
 
-    const { workOrderStatusTransition } = application;
+    // Only a work order that receives the quote waits on the identity for the recipients.
+    const recipients = await this.customerEmailRecipientsResolver.resolveForCustomer(
+      workOrder.customerId,
+    );
+
+    const workOrderStatusTransition = await this.unitOfWork.executeTransaction((repos) =>
+      this.apply(repos, workOrder, input, recipients),
+    );
 
     if (workOrderStatusTransition) {
       await this.cache.delete([workOrderCacheKey(input.workOrderId)]);
@@ -64,23 +71,17 @@ export class ApplySentQuoteUseCase implements IApplySentQuoteUseCase {
 
   private async apply(
     repos: IRepositories,
+    workOrder: WorkOrder,
     input: ApplySentQuoteInputDto,
     recipients: CustomerEmailRecipient[],
-  ): Promise<SentQuoteApplication> {
-    const workOrder = (await repos.workOrder.findById(input.workOrderId))!;
-
+  ): Promise<StatusHistory | undefined> {
     if (workOrder.status === WorkOrderStatus.AWAITING_APPROVAL) {
       // Updating the work order with its version orders its outbox rows against concurrent writers.
       await repos.workOrder.update(workOrder);
 
       await this.addQuoteEmails(repos, workOrder, input, recipients);
 
-      return { applied: true };
-    }
-
-    // The work order may have changed (e.g. been cancelled) between the send and this event.
-    if (!workOrder.canChangeStatusTo(WorkOrderStatus.AWAITING_APPROVAL)) {
-      return { applied: false, currentWorkOrderStatus: workOrder.status };
+      return undefined;
     }
 
     const workOrderStatusTransition = await this.moveWorkOrderToAwaitingApproval(
@@ -91,7 +92,7 @@ export class ApplySentQuoteUseCase implements IApplySentQuoteUseCase {
 
     await this.addQuoteEmails(repos, workOrder, input, recipients);
 
-    return { applied: true, workOrderStatusTransition };
+    return workOrderStatusTransition;
   }
 
   private async moveWorkOrderToAwaitingApproval(

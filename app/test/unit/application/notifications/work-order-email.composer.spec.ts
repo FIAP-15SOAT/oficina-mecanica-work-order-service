@@ -27,6 +27,7 @@ describe('WorkOrderEmailComposer', () => {
 
       expect(message.type).toBe('notification.email.send');
       expect(message.workOrderId).toBe(workOrderId);
+
       expect(message.payload).toEqual({
         to: ['maria@example.com'],
         purpose: 'quote_sent',
@@ -104,6 +105,7 @@ describe('WorkOrderEmailComposer', () => {
 
       expect(message.type).toBe('notification.email.send');
       expect(message.workOrderId).toBe(workOrderId);
+
       expect(message.payload).toEqual({
         to: ['maria@example.com'],
         purpose: 'payment_link',
@@ -153,6 +155,7 @@ describe('WorkOrderEmailComposer', () => {
 
       expect(message.type).toBe('notification.email.send');
       expect(message.workOrderId).toBe(workOrderId);
+
       expect(message.payload).toEqual({
         to: ['maria@example.com'],
         purpose: 'quote_approval_reverted',

@@ -1,7 +1,11 @@
 import { Module } from '@nestjs/common';
 
+import { ICustomerRepository } from '@domain/interfaces/repositories/customer.repository.interface';
+import { ISagaInstanceRepository } from '@domain/interfaces/repositories/saga-instance.repository.interface';
 import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
+import { IUserCustomerRepository } from '@domain/interfaces/repositories/user-customer.repository.interface';
+import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
 
 import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
@@ -26,12 +30,23 @@ import { PaymentMessageHandlers } from './payment-message-handlers';
         statusHistoryRepository: IStatusHistoryRepository,
         cache: ICache,
         identityUsersGateway: IIdentityUsersGateway,
+        workOrderRepository: IWorkOrderRepository,
+        sagaInstanceRepository: ISagaInstanceRepository,
+        customerRepository: ICustomerRepository,
+        userCustomerRepository: IUserCustomerRepository,
       ) =>
         new PaymentMessageHandlers(
           registry,
           new StartPaymentUseCase(
             unitOfWork,
-            new CustomerEmailRecipientsResolver(unitOfWork, identityUsersGateway),
+            workOrderRepository,
+            sagaInstanceRepository,
+            new CustomerEmailRecipientsResolver(
+              workOrderRepository,
+              customerRepository,
+              userCustomerRepository,
+              identityUsersGateway,
+            ),
             logger.forContext(StartPaymentUseCase.name),
             metrics,
             statusHistoryRepository,
@@ -53,6 +68,10 @@ import { PaymentMessageHandlers } from './payment-message-handlers';
         'IStatusHistoryRepository',
         'ICache',
         'IIdentityUsersGateway',
+        'IWorkOrderRepository',
+        'ISagaInstanceRepository',
+        'ICustomerRepository',
+        'IUserCustomerRepository',
       ],
     },
   ],

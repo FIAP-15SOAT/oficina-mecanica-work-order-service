@@ -4,8 +4,6 @@ import { CustomerAccessUserProvisioner } from '@application/services/customer-ac
 import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
 import { CustomerType } from '@domain/enums/customer-type.enum';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
-import { Document } from '@domain/value-objects/document.vo';
-import { Email } from '@domain/value-objects/email.vo';
 
 import { createMockCustomer } from '../../../helpers/customer-mock.factory';
 import { createMockIdentityUsersGateway } from '../../../helpers/identity-users-gateway-mock.factory';
@@ -22,17 +20,9 @@ describe('CustomerAccessUserProvisioner', () => {
 
   beforeEach(() => {
     identityUsersGateway = createMockIdentityUsersGateway();
+
     provisioner = new CustomerAccessUserProvisioner(identityUsersGateway);
   });
-
-  function createCompanyCustomer() {
-    return createMockCustomer({
-      name: 'Oficina Parceira LTDA',
-      type: CustomerType.COMPANY,
-      document: Document.create('12345678000195', CustomerType.COMPANY),
-      email: Email.create('contato@parceira.com.br'),
-    });
-  }
 
   it('should ensure the user of an individual customer by its document', async () => {
     const customer = createMockCustomer();
@@ -43,6 +33,7 @@ describe('CustomerAccessUserProvisioner', () => {
     const result = await provisioner.ensureUser(customer);
 
     expect(result).toEqual(ensured);
+
     expect(identityUsersGateway.ensureCustomerUser).toHaveBeenCalledWith({
       name: customer.name,
       email: customer.email.value,
@@ -51,7 +42,7 @@ describe('CustomerAccessUserProvisioner', () => {
   });
 
   it('should send the person data of the body with the cpf in digits only for a company customer', async () => {
-    const customer = createCompanyCustomer();
+    const customer = createMockCustomer({ type: CustomerType.COMPANY });
 
     identityUsersGateway.ensureCustomerUser.mockResolvedValue({
       userId: randomUUID(),
@@ -73,11 +64,12 @@ describe('CustomerAccessUserProvisioner', () => {
     ['no cpf', { name: 'Operador', email: 'operador@parceira.com.br' }],
     ['no name', { email: 'operador@parceira.com.br', cpf: '12345678909' }],
   ])('should require name, email and cpf of a company customer given %s', async (_label, input) => {
-    const customer = createCompanyCustomer();
+    const customer = createMockCustomer({ type: CustomerType.COMPANY });
 
     const result = provisioner.ensureUser(customer, input);
 
     await expect(result).rejects.toThrow(BusinessRuleViolationException);
+
     await expect(result).rejects.toThrow(
       'Nome, e-mail e CPF são obrigatórios para conceder acesso a um cliente do tipo COMPANY',
     );
