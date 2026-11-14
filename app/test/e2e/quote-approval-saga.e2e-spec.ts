@@ -3,16 +3,18 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { GetQueueUrlCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
+import { MessageEnvelope } from '@application/messaging/message-envelope';
+import { IdentityUserGatewayResponse } from '@application/ports/output/gateways/identity/identity-users-gateway.response';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { StaffUser, createStaffUser } from '../helpers/auth.helper';
 import { readInternalQuoteFixture } from '../helpers/billing-quotes-gateway-mock.factory';
 import {
   InternalServicesStub,
   startInternalServicesStub,
+  stubIdentityUser,
   stubPartSupply,
   stubService,
 } from '../helpers/internal-services-stub';
-import { findEmails } from '../helpers/mailhog.helper';
 import { receiveCommands } from '../helpers/sqs-commands.helper';
 import { waitFor } from '../helpers/wait-for.helper';
 
@@ -20,7 +22,8 @@ const CUSTOMER_EMAIL = 'saga@e2e.test';
 
 // Every test runs on its own work order. The Billing events and the Inventory replies are written
 // to this service's outbox, which the work order queue filter delivers back to it; the commands
-// are read from the billing and inventory queues, which have no consumer here.
+// and the e-mails are read from the billing, inventory and notification queues, which have no
+// consumer here.
 describe('Quote approval saga (E2E)', () => {
   let ctx: TestContext;
   let httpServer: Server;
@@ -30,21 +33,32 @@ describe('Quote approval saga (E2E)', () => {
   let sqs: SQSClient;
   let inventoryQueueUrl: string;
   let billingQueueUrl: string;
+  let notificationQueueUrl: string;
+  let linkedUsers: IdentityUserGatewayResponse[];
   let customerId: string;
   let vehicleId: string;
 
   beforeAll(async () => {
     stub = await startInternalServicesStub();
-    ctx = await setupTestApp({ withMessaging: true, internalServicesUrl: stub.url });
+    // Captured so the Identity outage test can see the handler fail.
+    ctx = await setupTestApp({
+      withMessaging: true,
+      internalServicesUrl: stub.url,
+      captureLogs: true,
+    });
     httpServer = ctx.httpServer;
     unitOfWork = ctx.app.get<IUnitOfWork>('IUnitOfWork');
     sqs = ctx.app.get(SQSClient);
 
     const inventoryQueue = await sqs.send(new GetQueueUrlCommand({ QueueName: 'inventory.fifo' }));
     const billingQueue = await sqs.send(new GetQueueUrlCommand({ QueueName: 'billing.fifo' }));
+    const notificationQueue = await sqs.send(
+      new GetQueueUrlCommand({ QueueName: 'notification.fifo' }),
+    );
 
     inventoryQueueUrl = inventoryQueue.QueueUrl as string;
     billingQueueUrl = billingQueue.QueueUrl as string;
+    notificationQueueUrl = notificationQueue.QueueUrl as string;
 
     adminAuth = createStaffUser({ stub }, { name: 'Admin Saga' });
 
@@ -59,6 +73,16 @@ describe('Quote approval saga (E2E)', () => {
 
     const vehicle = await ctx.prisma.vehicle.create({
       data: { customerId: customer.id, plate: 'SAG1A23', brand: 'Fiat', model: 'Uno', year: 2020 },
+    });
+
+    // The two active users linked to the customer, served by the Identity, receive the e-mails.
+    linkedUsers = [
+      stubIdentityUser(stub, { name: 'Ana Saga', email: 'ana.saga@e2e.test', role: null }),
+      stubIdentityUser(stub, { name: 'Bruno Saga', email: 'bruno.saga@e2e.test', role: null }),
+    ];
+
+    await ctx.prisma.userCustomer.createMany({
+      data: linkedUsers.map((user) => ({ userId: user.id, customerId: customer.id })),
     });
 
     customerId = customer.id;
@@ -87,6 +111,18 @@ describe('Quote approval saga (E2E)', () => {
   }
 
   async function sendQuote(workOrderId: string): Promise<string> {
+    const quoteId = await publishSentQuote(workOrderId);
+
+    await waitFor(
+      async () =>
+        (await ctx.prisma.workOrder.findUniqueOrThrow({ where: { id: workOrderId } })).status ===
+        'AWAITING_APPROVAL',
+    );
+
+    return quoteId;
+  }
+
+  async function publishSentQuote(workOrderId: string): Promise<string> {
     const quoteId = randomUUID();
 
     await unitOfWork.executeTransaction((repositories) =>
@@ -103,12 +139,6 @@ describe('Quote approval saga (E2E)', () => {
           ],
         },
       }),
-    );
-
-    await waitFor(
-      async () =>
-        (await ctx.prisma.workOrder.findUniqueOrThrow({ where: { id: workOrderId } })).status ===
-        'AWAITING_APPROVAL',
     );
 
     return quoteId;
@@ -135,14 +165,22 @@ describe('Quote approval saga (E2E)', () => {
     );
   }
 
-  async function waitForEmail(workOrderNumber: string, subjectPart: string): Promise<void> {
-    await waitFor(async () => {
-      const emails = await findEmails(ctx.mailhogContainer, CUSTOMER_EMAIL);
+  // One e-mail per linked user, in any order.
+  function expectEmailsToLinkedUsers(emails: MessageEnvelope[], purpose: string): void {
+    const [first, second] = linkedUsers;
 
-      return emails.some(
-        ({ subject }) => subject.includes(workOrderNumber) && subject.includes(subjectPart),
-      );
-    }, 10_000);
+    expect(emails).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'notification.email.send',
+          payload: expect.objectContaining({ to: [first.email], purpose }),
+        }),
+        expect.objectContaining({
+          type: 'notification.email.send',
+          payload: expect.objectContaining({ to: [second.email], purpose }),
+        }),
+      ]),
+    );
   }
 
   it('should approve the work order with the items of the approved quote when the Inventory confirms the reservation', async () => {
@@ -313,7 +351,11 @@ describe('Quote approval saga (E2E)', () => {
 
     expect(compensatedWorkOrder.status).toBe('AWAITING_APPROVAL');
 
-    await waitForEmail(workOrder.number, 'Estoque');
+    // The quote e-mails of the send come before the stock shortage ones.
+    const emails = await receiveCommands(sqs, notificationQueueUrl, workOrder.id, 4);
+
+    expect(emails).toHaveLength(4);
+    expectEmailsToLinkedUsers(emails, 'quote_approval_reverted');
 
     await approveQuote(workOrder.id, quoteId, serviceId, partSupplyId);
 
@@ -389,7 +431,53 @@ describe('Quote approval saga (E2E)', () => {
       changedById: adminAuth.user.id,
     });
 
-    await waitForEmail(workOrder.number, 'Aguardando');
+    const emails = await receiveCommands(sqs, notificationQueueUrl, workOrder.id, 2);
+
+    expect(emails).toHaveLength(2);
+    expectEmailsToLinkedUsers(emails, 'quote_sent');
+  });
+
+  it('should keep the work order and add no e-mail while the Identity is unavailable, and apply the redelivered event', async () => {
+    const workOrder = await createWorkOrderInDiagnosis();
+    const recipientLookup = `GET /internal/users/${linkedUsers[0].id}`;
+
+    stub.nextResponses.set(recipientLookup, {
+      status: 503,
+      body: { statusCode: 503, error: 'Service Unavailable', message: 'Serviço indisponível' },
+    });
+
+    await publishSentQuote(workOrder.id);
+
+    await waitFor(() =>
+      ctx
+        .logCapture!.lines()
+        .some(
+          (line) =>
+            line['oficina.event.name'] === 'messaging.message.failed' &&
+            line['oficina.work_order.id'] === workOrder.id,
+        ),
+    );
+
+    expect(stub.nextResponses.has(recipientLookup)).toBe(false);
+
+    const unchangedWorkOrder = await ctx.prisma.workOrder.findUniqueOrThrow({
+      where: { id: workOrder.id },
+    });
+
+    const emailRows = await ctx.prisma.outboxMessage.count({
+      where: { workOrderId: workOrder.id, type: 'notification.email.send' },
+    });
+
+    expect(unchangedWorkOrder.status).toBe('IN_DIAGNOSIS');
+    expect(emailRows).toBe(0);
+
+    // SQS hands the failed message back after its 30 s visibility timeout.
+    await waitFor(
+      async () =>
+        (await ctx.prisma.workOrder.findUniqueOrThrow({ where: { id: workOrder.id } })).status ===
+        'AWAITING_APPROVAL',
+      45_000,
+    );
   });
 
   it('should reject the work order when no sent quote remains', async () => {

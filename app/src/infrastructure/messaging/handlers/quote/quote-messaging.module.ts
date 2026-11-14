@@ -5,19 +5,16 @@ import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interf
 
 import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
-import { IEmailSenderService } from '@application/ports/output/services/email-sender.service.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
+import { CustomerEmailRecipientsResolver } from '@application/services/customer-email-recipients';
 import { ApplyRejectedQuoteUseCase } from '@application/use-cases/work-order/apply-rejected-quote.use-case';
 import { ApplySentQuoteUseCase } from '@application/use-cases/work-order/apply-sent-quote.use-case';
-
-import { InfrastructureServicesModule } from '@infrastructure/services/infrastructure-services.module';
 
 import { MessageHandlerRegistry } from '../../message-handler.registry';
 import { QuoteMessageHandlers } from './quote-message-handlers';
 
 @Module({
-  imports: [InfrastructureServicesModule],
   providers: [
     {
       provide: QuoteMessageHandlers,
@@ -28,19 +25,17 @@ import { QuoteMessageHandlers } from './quote-message-handlers';
         metrics: IMetrics,
         statusHistoryRepository: IStatusHistoryRepository,
         cache: ICache,
-        emailSender: IEmailSenderService,
         identityUsersGateway: IIdentityUsersGateway,
       ) =>
         new QuoteMessageHandlers(
           registry,
           new ApplySentQuoteUseCase(
             unitOfWork,
-            emailSender,
+            new CustomerEmailRecipientsResolver(unitOfWork, identityUsersGateway),
             logger.forContext(ApplySentQuoteUseCase.name),
             metrics,
             statusHistoryRepository,
             cache,
-            identityUsersGateway,
           ),
           new ApplyRejectedQuoteUseCase(
             unitOfWork,
@@ -57,7 +52,6 @@ import { QuoteMessageHandlers } from './quote-message-handlers';
         'IMetrics',
         'IStatusHistoryRepository',
         'ICache',
-        'IEmailSenderService',
         'IIdentityUsersGateway',
       ],
     },

@@ -55,8 +55,6 @@ services:
       CUSTOMER_JWT_PUBLIC_KEY: ${CUSTOMER_JWT_PUBLIC_KEY:------BEGIN PUBLIC KEY-----\nMIIB...\n-----END PUBLIC KEY-----}
       CUSTOMER_JWT_ISSUER: ${CUSTOMER_JWT_ISSUER:-oficina-customer-auth}
       CUSTOMER_JWT_AUDIENCE: ${CUSTOMER_JWT_AUDIENCE:-oficina-api}
-      MAIL_HOST: mailhog
-      MAIL_PORT: 1025
       AWS_REGION: us-east-1
       AWS_ENDPOINT_URL: http://localstack:4566
       AWS_ACCESS_KEY_ID: test
@@ -119,14 +117,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-
-  mailhog:
-    image: mailhog/mailhog:v1.0.1
-    container_name: work-order-mailhog
-    restart: unless-stopped
-    ports:
-      - "1025:1025" # SMTP
-      - "8025:8025" # Web UI
 
 volumes:
   postgres_data:

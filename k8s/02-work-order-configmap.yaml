@@ -11,8 +11,6 @@ data:
   PORT: "3000"
   STAFF_JWT_ISSUER: "oficina-identity"
   STAFF_JWT_AUDIENCE: "oficina-services"
-  MAIL_HOST: "mailhog.platform.svc.cluster.local"
-  MAIL_PORT: "1025"
   TZ: "America/Sao_Paulo"
   LOG_LEVEL: "info"
   OTEL_SERVICE_NAME: "oficina-mecanica-work-order-service"

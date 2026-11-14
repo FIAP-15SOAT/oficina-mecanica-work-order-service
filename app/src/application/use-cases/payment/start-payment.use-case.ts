@@ -12,20 +12,16 @@ import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { recordSagaTransition } from '@application/metrics/saga-metrics';
 import { recordWorkOrderTransition } from '@application/metrics/work-order-metrics';
+import { WorkOrderEmailComposer } from '@application/notifications/work-order-email.composer';
 import { StartPaymentInputDto } from '@application/ports/input/payment/dto/start-payment.dto';
 import { IStartPaymentUseCase } from '@application/ports/input/payment/start-payment.use-case.interface';
 import { ICache } from '@application/ports/output/services/cache.service.interface';
-import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
-import {
-  CustomerEmailRecipient,
-  CustomerEmailRecipients,
-} from '@application/services/customer-email-recipients';
-import {
-  IEmailSenderService,
-  SendEmailInput,
-} from '@application/ports/output/services/email-sender.service.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
+import {
+  CustomerEmailRecipient,
+  CustomerEmailRecipientsResolver,
+} from '@application/services/customer-email-recipients';
 
 type PaymentStart =
   | { outcome: 'skipped'; sagaStatus: SagaStatus }
@@ -34,23 +30,25 @@ type PaymentStart =
       outcome: 'held';
       saga: SagaInstance;
       workOrderNumber: string;
-      recipients: CustomerEmailRecipient[];
       workOrderStatusTransition: StatusHistory;
     };
 
 export class StartPaymentUseCase implements IStartPaymentUseCase {
   constructor(
     private readonly unitOfWork: IUnitOfWork,
-    private readonly emailSender: IEmailSenderService,
+    private readonly recipientsResolver: CustomerEmailRecipientsResolver,
     private readonly logger: ILogger,
     private readonly metrics: IMetrics,
     private readonly statusHistoryRepository: IStatusHistoryRepository,
     private readonly cache: ICache,
-    private readonly identityUsersGateway: IIdentityUsersGateway,
   ) {}
 
   async execute(input: StartPaymentInputDto): Promise<void> {
-    const start = await this.unitOfWork.executeTransaction((repos) => this.start(repos, input));
+    const recipients = await this.recipientsResolver.resolveForWorkOrder(input.workOrderId);
+
+    const start = await this.unitOfWork.executeTransaction((repos) =>
+      this.start(repos, input, recipients),
+    );
 
     if (start.outcome === 'skipped') {
       this.logger.event(BUSINESS_EVENTS.SAGA_STEP_SKIPPED, {
@@ -80,16 +78,13 @@ export class StartPaymentUseCase implements IStartPaymentUseCase {
       this.statusHistoryRepository,
       start.workOrderStatusTransition,
     );
-
-    // The mailer adapter logs each failure; a lost e-mail does not undo the hold.
-    await Promise.allSettled(
-      start.recipients.map((recipient) =>
-        this.emailSender.send(this.buildEmailContent(input, recipient, start.workOrderNumber)),
-      ),
-    );
   }
 
-  private async start(repos: IRepositories, input: StartPaymentInputDto): Promise<PaymentStart> {
+  private async start(
+    repos: IRepositories,
+    input: StartPaymentInputDto,
+    recipients: CustomerEmailRecipient[],
+  ): Promise<PaymentStart> {
     const saga = await repos.sagaInstance.findByTypeAndCorrelationId(
       SagaType.PAYMENT,
       input.paymentId,
@@ -106,7 +101,7 @@ export class StartPaymentUseCase implements IStartPaymentUseCase {
       return this.requestPaymentCancellation(repos, workOrder, input);
     }
 
-    return this.holdWorkOrder(repos, workOrder, input);
+    return this.holdWorkOrder(repos, workOrder, input, recipients);
   }
 
   private async requestPaymentCancellation(
@@ -143,7 +138,8 @@ export class StartPaymentUseCase implements IStartPaymentUseCase {
   private async holdWorkOrder(
     repos: IRepositories,
     workOrder: WorkOrder,
-    { paymentId }: StartPaymentInputDto,
+    { paymentId, amount, checkoutUrl, expiresAt }: StartPaymentInputDto,
+    recipients: CustomerEmailRecipient[],
   ): Promise<PaymentStart> {
     // Only APPROVED and COMPLETED reach AWAITING_PAYMENT, as checked by the caller.
     const originStatus = workOrder.status as PaymentOriginStatus;
@@ -171,52 +167,24 @@ export class StartPaymentUseCase implements IStartPaymentUseCase {
       }),
     );
 
-    const customer = (await repos.customer.findById(workOrder.customerId))!;
-    const linkedUserIds = await repos.userCustomer.findUserIdsByCustomerId(customer.id);
-    const linkedUsers = await this.identityUsersGateway.findByIds(linkedUserIds);
+    for (const recipient of recipients) {
+      await repos.outbox.add(
+        WorkOrderEmailComposer.paymentLink({
+          recipient,
+          workOrderId: workOrder.id,
+          workOrderNumber: workOrder.number.toString(),
+          amount,
+          checkoutUrl,
+          expiresAt,
+        }),
+      );
+    }
 
     return {
       outcome: 'held',
       saga,
       workOrderNumber: workOrder.number.toString(),
-      recipients: CustomerEmailRecipients.fromActiveLinkedUsersOrCustomer(customer, linkedUsers),
       workOrderStatusTransition,
-    };
-  }
-
-  private buildEmailContent(
-    { amount, checkoutUrl, expiresAt }: StartPaymentInputDto,
-    recipient: CustomerEmailRecipient,
-    workOrderNumber: string,
-  ): SendEmailInput {
-    const expiresAtText = new Date(expiresAt).toLocaleString('pt-BR', {
-      dateStyle: 'short',
-      timeStyle: 'short',
-      timeZone: 'America/Sao_Paulo',
-    });
-
-    // The serialized URL percent-encodes quotes, so the link cannot break out of the href.
-    const checkoutLink = new URL(checkoutUrl).href;
-
-    return {
-      toEmail: recipient.email,
-      toName: recipient.name,
-      subject: `Pagamento da Ordem de Serviço ${workOrderNumber}`,
-      message: {
-        text:
-          `Olá ${recipient.name},\n\n` +
-          `O pagamento da Ordem de Serviço ${workOrderNumber} está disponível.\n` +
-          `Valor: R$ ${amount}\n` +
-          `Link para pagamento: ${checkoutLink}\n` +
-          `Válido até ${expiresAtText}\n\n` +
-          `Atenciosamente,\nEquipe da Oficina Mecânica`,
-        html:
-          `<p>Olá <strong>${recipient.name}</strong>,</p>` +
-          `<p>O pagamento da Ordem de Serviço <strong>${workOrderNumber}</strong> está disponível.</p>` +
-          `<p><strong>Valor:</strong> R$ ${amount}</p>` +
-          `<p><a href="${checkoutLink}">Pagar agora</a> (válido até ${expiresAtText})</p>` +
-          `<p>Atenciosamente,<br/>Equipe da Oficina Mecânica</p>`,
-      },
     };
   }
 }

@@ -6,21 +6,19 @@ import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interf
 
 import { IBillingQuotesGateway } from '@application/ports/output/gateways/billing/billing-quotes-gateway.interface';
 import { ICache } from '@application/ports/output/services/cache.service.interface';
-import { IEmailSenderService } from '@application/ports/output/services/email-sender.service.interface';
+import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
+import { CustomerEmailRecipientsResolver } from '@application/services/customer-email-recipients';
 import { CompensateQuoteApprovalUseCase } from '@application/use-cases/quote-approval/compensate-quote-approval.use-case';
 import { CompleteQuoteApprovalUseCase } from '@application/use-cases/quote-approval/complete-quote-approval.use-case';
 import { ConfirmQuoteApprovalReversalUseCase } from '@application/use-cases/quote-approval/confirm-quote-approval-reversal.use-case';
 import { StartQuoteApprovalUseCase } from '@application/use-cases/quote-approval/start-quote-approval.use-case';
 
-import { InfrastructureServicesModule } from '@infrastructure/services/infrastructure-services.module';
-
 import { MessageHandlerRegistry } from '../../message-handler.registry';
 import { QuoteApprovalMessageHandlers } from './quote-approval-message-handlers';
 
 @Module({
-  imports: [InfrastructureServicesModule],
   providers: [
     {
       provide: QuoteApprovalMessageHandlers,
@@ -31,9 +29,9 @@ import { QuoteApprovalMessageHandlers } from './quote-approval-message-handlers'
         metrics: IMetrics,
         statusHistoryRepository: IStatusHistoryRepository,
         cache: ICache,
-        emailSender: IEmailSenderService,
         sagaInstanceRepository: ISagaInstanceRepository,
         billingQuotesGateway: IBillingQuotesGateway,
+        identityUsersGateway: IIdentityUsersGateway,
       ) =>
         new QuoteApprovalMessageHandlers(
           registry,
@@ -60,8 +58,9 @@ import { QuoteApprovalMessageHandlers } from './quote-approval-message-handlers'
           ),
           new ConfirmQuoteApprovalReversalUseCase(
             unitOfWork,
+            sagaInstanceRepository,
+            new CustomerEmailRecipientsResolver(unitOfWork, identityUsersGateway),
             logger.forContext(ConfirmQuoteApprovalReversalUseCase.name),
-            emailSender,
             metrics,
           ),
         ),
@@ -72,9 +71,9 @@ import { QuoteApprovalMessageHandlers } from './quote-approval-message-handlers'
         'IMetrics',
         'IStatusHistoryRepository',
         'ICache',
-        'IEmailSenderService',
         'ISagaInstanceRepository',
         'IBillingQuotesGateway',
+        'IIdentityUsersGateway',
       ],
     },
   ],

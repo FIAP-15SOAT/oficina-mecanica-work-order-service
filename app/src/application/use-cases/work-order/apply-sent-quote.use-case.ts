@@ -7,44 +7,36 @@ import { IRepositories, IUnitOfWork } from '@domain/interfaces/repositories/unit
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { recordWorkOrderTransition } from '@application/metrics/work-order-metrics';
+import { WorkOrderEmailComposer } from '@application/notifications/work-order-email.composer';
 import { IApplySentQuoteUseCase } from '@application/ports/input/work-order/apply-sent-quote.use-case.interface';
 import { ApplySentQuoteInputDto } from '@application/ports/input/work-order/dto/apply-sent-quote.dto';
 import { ICache } from '@application/ports/output/services/cache.service.interface';
-import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
-import {
-  CustomerEmailRecipient,
-  CustomerEmailRecipients,
-} from '@application/services/customer-email-recipients';
-import {
-  IEmailSenderService,
-  SendEmailInput,
-} from '@application/ports/output/services/email-sender.service.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
+import {
+  CustomerEmailRecipient,
+  CustomerEmailRecipientsResolver,
+} from '@application/services/customer-email-recipients';
 
 type SentQuoteApplication =
   | { applied: false; currentWorkOrderStatus: WorkOrderStatus }
-  | {
-      applied: true;
-      workOrderNumber: string;
-      recipients: CustomerEmailRecipient[];
-      workOrderStatusTransition?: StatusHistory;
-    };
+  | { applied: true; workOrderStatusTransition?: StatusHistory };
 
 export class ApplySentQuoteUseCase implements IApplySentQuoteUseCase {
   constructor(
     private readonly unitOfWork: IUnitOfWork,
-    private readonly emailSender: IEmailSenderService,
+    private readonly recipientsResolver: CustomerEmailRecipientsResolver,
     private readonly logger: ILogger,
     private readonly metrics: IMetrics,
     private readonly statusHistoryRepository: IStatusHistoryRepository,
     private readonly cache: ICache,
-    private readonly identityUsersGateway: IIdentityUsersGateway,
   ) {}
 
   async execute(input: ApplySentQuoteInputDto): Promise<void> {
+    const recipients = await this.recipientsResolver.resolveForWorkOrder(input.workOrderId);
+
     const application = await this.unitOfWork.executeTransaction((repos) =>
-      this.apply(repos, input),
+      this.apply(repos, input, recipients),
     );
 
     if (!application.applied) {
@@ -57,7 +49,7 @@ export class ApplySentQuoteUseCase implements IApplySentQuoteUseCase {
       return;
     }
 
-    const { workOrderNumber, recipients, workOrderStatusTransition } = application;
+    const { workOrderStatusTransition } = application;
 
     if (workOrderStatusTransition) {
       await this.cache.delete([workOrderCacheKey(input.workOrderId)]);
@@ -68,23 +60,22 @@ export class ApplySentQuoteUseCase implements IApplySentQuoteUseCase {
       this.statusHistoryRepository,
       workOrderStatusTransition,
     );
-
-    // The mailer adapter logs each failure; a lost e-mail does not undo the transition.
-    await Promise.allSettled(
-      recipients.map((recipient) =>
-        this.emailSender.send(this.buildEmailContent(input, recipient, workOrderNumber)),
-      ),
-    );
   }
 
   private async apply(
     repos: IRepositories,
-    { workOrderId, sentBy }: ApplySentQuoteInputDto,
+    input: ApplySentQuoteInputDto,
+    recipients: CustomerEmailRecipient[],
   ): Promise<SentQuoteApplication> {
-    const workOrder = (await repos.workOrder.findById(workOrderId))!;
+    const workOrder = (await repos.workOrder.findById(input.workOrderId))!;
 
     if (workOrder.status === WorkOrderStatus.AWAITING_APPROVAL) {
-      return this.buildSentQuoteApplication(repos, workOrder);
+      // Updating the work order with its version orders its outbox rows against concurrent writers.
+      await repos.workOrder.update(workOrder);
+
+      await this.addQuoteEmails(repos, workOrder, input, recipients);
+
+      return { applied: true };
     }
 
     // The work order may have changed (e.g. been cancelled) between the send and this event.
@@ -95,27 +86,12 @@ export class ApplySentQuoteUseCase implements IApplySentQuoteUseCase {
     const workOrderStatusTransition = await this.moveWorkOrderToAwaitingApproval(
       repos,
       workOrder,
-      sentBy,
+      input.sentBy,
     );
 
-    return this.buildSentQuoteApplication(repos, workOrder, workOrderStatusTransition);
-  }
+    await this.addQuoteEmails(repos, workOrder, input, recipients);
 
-  private async buildSentQuoteApplication(
-    repos: IRepositories,
-    workOrder: WorkOrder,
-    workOrderStatusTransition?: StatusHistory,
-  ): Promise<SentQuoteApplication> {
-    const customer = (await repos.customer.findById(workOrder.customerId))!;
-    const linkedUserIds = await repos.userCustomer.findUserIdsByCustomerId(customer.id);
-    const linkedUsers = await this.identityUsersGateway.findByIds(linkedUserIds);
-
-    return {
-      applied: true,
-      workOrderNumber: workOrder.number.toString(),
-      recipients: CustomerEmailRecipients.fromActiveLinkedUsersOrCustomer(customer, linkedUsers),
-      workOrderStatusTransition,
-    };
+    return { applied: true, workOrderStatusTransition };
   }
 
   private async moveWorkOrderToAwaitingApproval(
@@ -139,41 +115,22 @@ export class ApplySentQuoteUseCase implements IApplySentQuoteUseCase {
     );
   }
 
-  private buildEmailContent(
+  private async addQuoteEmails(
+    repos: IRepositories,
+    workOrder: WorkOrder,
     { total, items }: ApplySentQuoteInputDto,
-    recipient: CustomerEmailRecipient,
-    workOrderNumber: string,
-  ): SendEmailInput {
-    const instructionText = recipient.hasAccess
-      ? 'Acesse o sistema autenticando com seu CPF e senha para aprovar ou rejeitar.'
-      : 'Você ainda não possui acesso ao sistema. Entre em contato com a oficina para solicitar a criação do seu acesso e poder aprovar ou rejeitar este orçamento.';
-
-    const instructionHtml = recipient.hasAccess
-      ? '<p>Acesse o sistema autenticando com seu CPF e senha para aprovar ou rejeitar.</p>'
-      : '<p>Você ainda não possui acesso ao sistema. <strong>Entre em contato com a oficina</strong> para solicitar a criação do seu acesso e poder aprovar ou rejeitar este orçamento.</p>';
-
-    const itemLines = items.map((item) => `${item.name}: ${item.quantity} x R$ ${item.unitPrice}`);
-
-    return {
-      toEmail: recipient.email,
-      toName: recipient.name,
-      subject: `Orçamento para Ordem de Serviço ${workOrderNumber} - Aguardando sua aprovação`,
-      message: {
-        text:
-          `Olá ${recipient.name},\n\n` +
-          `Um orçamento para a Ordem de Serviço ${workOrderNumber} está disponível para sua aprovação.\n` +
-          itemLines.map((line) => `${line}\n`).join('') +
-          `Valor total: R$ ${total}\n\n` +
-          `${instructionText}\n\n` +
-          `Atenciosamente,\nEquipe da Oficina Mecânica`,
-        html:
-          `<p>Olá <strong>${recipient.name}</strong>,</p>` +
-          `<p>Um orçamento para a Ordem de Serviço <strong>${workOrderNumber}</strong> está disponível para sua aprovação.</p>` +
-          `<ul>${itemLines.map((line) => `<li>${line}</li>`).join('')}</ul>` +
-          `<p><strong>Valor total:</strong> R$ ${total}</p>` +
-          `${instructionHtml}` +
-          `<p>Atenciosamente,<br/>Equipe da Oficina Mecânica</p>`,
-      },
-    };
+    recipients: CustomerEmailRecipient[],
+  ): Promise<void> {
+    for (const recipient of recipients) {
+      await repos.outbox.add(
+        WorkOrderEmailComposer.quoteSent({
+          recipient,
+          workOrderId: workOrder.id,
+          workOrderNumber: workOrder.number.toString(),
+          total,
+          items,
+        }),
+      );
+    }
   }
 }

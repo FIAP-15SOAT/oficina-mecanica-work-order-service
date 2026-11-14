@@ -70,6 +70,7 @@ BeforeAll({ timeout: 300_000 }, async function () {
     queueUrls: {
       billing: await queueUrl('billing.fifo'),
       inventory: await queueUrl('inventory.fifo'),
+      notification: await queueUrl('notification.fifo'),
     },
     staffToken: signTestStaffToken({ sub: admin.id, email: admin.email, role: UserRole.ADMIN }),
     staffUserId: admin.id,

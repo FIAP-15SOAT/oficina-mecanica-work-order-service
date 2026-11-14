@@ -2,9 +2,11 @@ import { Logger as NestLogger, PinoLogger } from 'nestjs-pino';
 
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { defineLogEvent } from '@application/logging/log-event';
+import * as fieldRegistry from '@infrastructure/logging/field-registry';
 import { buildLoggerParams } from '@infrastructure/logging/logging.module';
 import * as payloadSanitizer from '@infrastructure/logging/redaction/payload-sanitizer';
 import { PinoLoggerAdapter } from '@infrastructure/logging/pino-logger.adapter';
+import { TECHNICAL_EVENTS } from '@infrastructure/logging/technical-event.catalog';
 import { REDACTED } from '@infrastructure/logging/redaction/text-sanitizer';
 import { captureDiagnostics } from '../../../helpers/diagnostics-capture';
 
@@ -101,18 +103,23 @@ describe('PinoLoggerAdapter', () => {
   });
 
   it('should mask a field the registry classifies as personal data', () => {
-    const mailed = defineLogEvent<{ subjectId: string; mailRecipient: string }>({
-      name: 'mail.sent',
-      message: 'mail sent',
-      level: 'info',
+    // The work order vocabulary declares no personal data, so one declared key is reclassified.
+    const resolve = jest.spyOn(fieldRegistry, 'resolveLogicalField').mockReturnValueOnce({
+      key: 'oficina.dependency.name',
+      type: 'string',
+      cardinality: 'fixed',
+      owner: 'infrastructure-service',
+      sensitivity: 'pii',
     });
 
-    adapter.event(mailed, { subjectId: 'user-1', mailRecipient: 'maria.silva@gmail.com' });
-
-    expect(lines[0]).toMatchObject({
-      'oficina.auth.subject.id': 'user-1',
-      'oficina.mail.recipient': 'ma***va@gmail.com',
+    adapter.event(TECHNICAL_EVENTS.HEALTH_DEGRADED, {
+      dependencyName: 'maria.silva@gmail.com',
+      healthFailureCategory: 'timeout',
     });
+    resolve.mockRestore();
+
+    expect(lines[0]['oficina.dependency.name']).toBe('ma***va@gmail.com');
+    expect(lines[0]['oficina.health.failure.category']).toBe('timeout');
   });
 
   it('should omit optional event fields that are not provided', () => {

@@ -134,7 +134,6 @@ describe('Health endpoints (E2E)', () => {
    */
   afterAll(async () => {
     await ctx.postgresContainer.stop();
-    await ctx.mailhogContainer.stop();
   });
 
   beforeEach(() => {
@@ -236,7 +235,6 @@ describe('Health endpoints with the database unreachable (E2E)', () => {
    */
   afterAll(async () => {
     await ctx.app.close();
-    await ctx.mailhogContainer.stop();
     await ctx.postgresContainer.stop();
   });
 
@@ -349,7 +347,6 @@ describe('Health endpoints during graceful shutdown (E2E)', () => {
     process.env.NODE_ENV = previousEnvironment;
 
     await ctx.postgresContainer.stop();
-    await ctx.mailhogContainer.stop();
   });
 
   it('should report unavailable readiness and successful liveness during the window', async () => {

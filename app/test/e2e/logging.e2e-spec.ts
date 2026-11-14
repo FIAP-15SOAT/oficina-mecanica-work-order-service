@@ -9,7 +9,6 @@ import * as payloadSanitizer from '@infrastructure/logging/redaction/payload-san
 
 import { DECLARED_FIELD_NAMES, FIELD_DICTIONARY } from '@infrastructure/logging/field-registry';
 import { CLIENT_ABORTED_ERROR_TYPE } from '@infrastructure/logging/access-log.builder';
-import { MessageHandlerRegistry } from '@infrastructure/messaging/message-handler.registry';
 
 import { staffAuthHeader } from '../helpers/auth.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
@@ -150,54 +149,6 @@ describe('Structured logging (E2E)', () => {
       expect(businessEvent).toBeDefined();
       expect(businessEvent!['request.id']).toBe(access['request.id']);
       expect(businessEvent!['otel.scope.name']).toBe('UpdateCustomerStatusUseCase');
-    });
-
-    it('should mask the recipient the e-mail event carries', async () => {
-      const customer = await ctx.prisma.customer.create({
-        data: {
-          name: 'Maria Silva',
-          document: '52998224725',
-          email: 'maria.silva@gmail.com',
-          phone: '11999999999',
-        },
-      });
-      const vehicle = await ctx.prisma.vehicle.create({
-        data: {
-          customerId: customer.id,
-          plate: 'LOG1A23',
-          brand: 'Fiat',
-          model: 'Uno',
-          year: 2020,
-        },
-      });
-      const workOrder = await ctx.prisma.workOrder.create({
-        data: {
-          number: '900301',
-          customerId: customer.id,
-          vehicleId: vehicle.id,
-          status: 'IN_DIAGNOSIS',
-        },
-      });
-
-      capture.clear();
-
-      await ctx.app
-        .get(MessageHandlerRegistry)
-        .find('billing.quote.sent')!
-        .handler({
-          messageId: randomUUID(),
-          type: 'billing.quote.sent',
-          occurredAt: new Date().toISOString(),
-          workOrderId: workOrder.id,
-          payload: { quoteId: randomUUID(), sentBy: randomUUID(), total: '100.00', items: [] },
-        });
-
-      const mailEvent = capture
-        .lines()
-        .find((line) => line['oficina.event.name'] === 'mail.send.succeeded')!;
-
-      expect(mailEvent['oficina.mail.recipient']).toBe('ma***va@gmail.com');
-      expect(JSON.stringify(capture.lines())).not.toContain('maria.silva@gmail.com');
     });
   });
 

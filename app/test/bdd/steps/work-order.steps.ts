@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { Given, Then, When } from '@cucumber/cucumber';
 import request from 'supertest';
 
-import { findEmails } from '../../helpers/mailhog.helper';
+import { MessageEnvelope } from '@application/messaging/message-envelope';
+import { receiveCommands } from '../../helpers/sqs-commands.helper';
 import { waitFor } from '../../helpers/wait-for.helper';
 import { OficinaWorld, bdd } from '../support/world';
 
@@ -88,11 +89,19 @@ Then('o histórico da OS mostra {string}', async function (this: OficinaWorld, s
 });
 
 Then('o cliente recebe o e-mail com o link de pagamento', async function (this: OficinaWorld) {
-  await waitFor(async () => (await countPaymentEmails(this)) === 1, 10_000);
+  const emails: EmailEnvelope[] = [];
+
+  await waitFor(async () => {
+    emails.push(...(await receiveEmails(this)));
+
+    return countPaymentEmails(this, emails) > 0;
+  }, 10_000);
+
+  assert.equal(countPaymentEmails(this, emails), 1);
 });
 
 Then('nenhum e-mail com o link de pagamento é enviado', async function (this: OficinaWorld) {
-  assert.equal(await countPaymentEmails(this), 0);
+  assert.equal(countPaymentEmails(this, await receiveEmails(this)), 0);
 });
 
 async function changeServiceStatus(
@@ -108,10 +117,27 @@ async function changeServiceStatus(
     .expect(200);
 }
 
-// The subject is RFC 2047 encoded and may split the work order number, so the e-mail is found by
-// its link, which is unique per payment.
-async function countPaymentEmails(world: OficinaWorld): Promise<number> {
-  const emails = await findEmails(bdd.context.ctx.mailhogContainer, ACCESS_USER_EMAIL);
+type EmailEnvelope = MessageEnvelope<'notification.email.send'>;
 
-  return emails.filter(({ body }) => body.includes(world.payment.checkoutUrl)).length;
+// The notification queue only receives e-mails, and receiving deletes them, so a caller that
+// polls keeps what each call returns.
+async function receiveEmails(world: OficinaWorld): Promise<EmailEnvelope[]> {
+  const { sqs, queueUrls } = bdd.context;
+
+  return (await receiveCommands(
+    sqs,
+    queueUrls.notification,
+    world.workOrderId,
+    0,
+  )) as EmailEnvelope[];
+}
+
+// The link is unique per payment, so it tells this payment's e-mail apart from a repeated one.
+function countPaymentEmails(world: OficinaWorld, emails: EmailEnvelope[]): number {
+  return emails.filter(
+    ({ payload }) =>
+      payload.purpose === 'payment_link' &&
+      payload.to.includes(ACCESS_USER_EMAIL) &&
+      payload.text.includes(world.payment.checkoutUrl),
+  ).length;
 }

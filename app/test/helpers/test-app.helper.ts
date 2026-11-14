@@ -3,13 +3,12 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { Test } from '@nestjs/testing';
 import { Logger } from 'nestjs-pino';
 import { join } from 'path';
-import { GenericContainer, StartedTestContainer, Wait } from 'testcontainers';
+import { Wait } from 'testcontainers';
 import { LocalstackContainer, StartedLocalStackContainer } from '@testcontainers/localstack';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { StartedValkeyContainer, ValkeyContainer } from '@testcontainers/valkey';
 import type { Server } from 'http';
 import { execSync } from 'child_process';
-import { lookup } from 'dns/promises';
 import type { DestinationStream } from 'pino';
 
 import { AppModule } from '../../src/app.module';
@@ -41,7 +40,6 @@ export interface TestContext {
   httpServer: Server;
   prisma: PrismaService;
   postgresContainer: StartedPostgreSqlContainer;
-  mailhogContainer: StartedTestContainer;
   valkeyContainer: StartedValkeyContainer;
   localstackContainer?: StartedLocalStackContainer;
   logCapture?: LogCapture;
@@ -118,10 +116,6 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
     .withPassword('test')
     .start();
 
-  const mailhogContainer = await new GenericContainer('mailhog/mailhog:v1.0.1')
-    .withExposedPorts(1025, 8025)
-    .start();
-
   const valkeyContainer = await new ValkeyContainer('valkey/valkey:9.1')
     .withPassword('test')
     .start();
@@ -151,10 +145,6 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
   const databaseUrl = postgresContainer.getConnectionUri();
 
   process.env.DATABASE_URL = databaseUrl;
-  // nodemailer resolves hostnames through DNS servers, not the hosts file: with 15 suites booting
-  // at once a dropped query for "localhost" costs a 5 s retry and expires the 5 s Prisma transaction.
-  process.env.MAIL_HOST = (await lookup(mailhogContainer.getHost(), { family: 4 })).address;
-  process.env.MAIL_PORT = mailhogContainer.getMappedPort(1025).toString();
   process.env.CACHE_URL = valkeyContainer.getConnectionUrl();
   process.env.CACHE_TTL_SECONDS = '43200';
   process.env.STAFF_JWT_PUBLIC_KEY = STAFF_JWT_TEST_PUBLIC_KEY;
@@ -223,7 +213,6 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
     httpServer,
     prisma,
     postgresContainer,
-    mailhogContainer,
     valkeyContainer,
     localstackContainer,
     logCapture: logCaptureSeam?.capture,
@@ -233,7 +222,6 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
 export async function teardownTestApp(ctx: TestContext): Promise<void> {
   if (ctx?.app) await ctx.app.close();
   if (ctx?.postgresContainer) await ctx.postgresContainer.stop();
-  if (ctx?.mailhogContainer) await ctx.mailhogContainer.stop();
   if (ctx?.valkeyContainer) await ctx.valkeyContainer.stop();
   if (ctx?.localstackContainer) await ctx.localstackContainer.stop();
 }

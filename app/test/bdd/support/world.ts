@@ -22,7 +22,7 @@ export interface BddContext {
   stub: InternalServicesStub;
   sns: SNSClient;
   sqs: SQSClient;
-  queueUrls: { billing: string; inventory: string };
+  queueUrls: { billing: string; inventory: string; notification: string };
   staffToken: string;
   staffUserId: string;
   customerId: string;

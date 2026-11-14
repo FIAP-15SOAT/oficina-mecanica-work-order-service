@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { MailerModule } from '@nestjs-modules/mailer';
+import { ConfigModule } from '@nestjs/config';
 
 import { AllExceptionsFilter } from './infrastructure/http/filters/all-exceptions.filter';
 import { ApplicationExceptionFilter } from './infrastructure/http/filters/application-exception.filter';
@@ -37,20 +36,6 @@ import { GatewaysModule } from './infrastructure/gateways/gateways.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-    }),
-    MailerModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        transport: {
-          host: config.get<string>('MAIL_HOST', 'localhost'),
-          port: Number.parseInt(config.get<string>('MAIL_PORT', '1025'), 10),
-          ignoreTLS: true,
-          secure: false,
-        },
-        defaults: {
-          from: config.get<string>('MAIL_FROM', '"Oficina Mecânica" <noreply@oficina.local>'),
-        },
-      }),
     }),
     LoggingModule,
     TelemetryModule,
