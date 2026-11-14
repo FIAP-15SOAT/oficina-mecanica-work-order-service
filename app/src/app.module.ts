@@ -7,18 +7,17 @@ import { AllExceptionsFilter } from './infrastructure/http/filters/all-exception
 import { ApplicationExceptionFilter } from './infrastructure/http/filters/application-exception.filter';
 import { DomainExceptionFilter } from './infrastructure/http/filters/domain-exception.filter';
 import { InfrastructureExceptionFilter } from './infrastructure/http/filters/infrastructure-exception.filter';
-import { AnyAuthGuard } from './infrastructure/http/guards/any-auth.guard';
 import { AuthenticationGuard } from './infrastructure/http/guards/authentication.guard';
 import { CustomerJwtAuthGuard } from './infrastructure/http/guards/customer-jwt-auth.guard';
 import { JwtAuthGuard } from './infrastructure/http/guards/jwt-auth.guard';
+import { JwtStrategy } from './infrastructure/http/strategies/jwt.strategy';
+import { CustomerJwtStrategy } from './infrastructure/http/strategies/customer-jwt.strategy';
 
 import { LoggingModule } from './infrastructure/logging/logging.module';
 import { TelemetryModule } from './infrastructure/telemetry/telemetry.module';
 import { PrismaModule } from './infrastructure/persistence/prisma/prisma.module';
 import { RepositoriesModule } from './infrastructure/persistence/prisma/repositories/repositories.module';
 import { HealthModule } from './infrastructure/http/controllers/health/health.module';
-import { AuthModule } from './infrastructure/http/controllers/auth/auth.module';
-import { UserModule } from './infrastructure/http/controllers/user/user.module';
 import { ServiceModule } from './infrastructure/http/controllers/service/service.module';
 import { CustomerModule } from './infrastructure/http/controllers/customer/customer.module';
 import { CustomerAccessModule } from './infrastructure/http/controllers/customer-access/customer-access.module';
@@ -62,8 +61,6 @@ import { GatewaysModule } from './infrastructure/gateways/gateways.module';
     ClientsModule,
     GatewaysModule,
     HealthModule,
-    AuthModule,
-    UserModule,
     ServiceModule,
     CustomerModule,
     CustomerAccessModule,
@@ -92,9 +89,10 @@ import { GatewaysModule } from './infrastructure/gateways/gateways.module';
       provide: APP_FILTER,
       useClass: InfrastructureExceptionFilter,
     },
+    JwtStrategy,
+    CustomerJwtStrategy,
     JwtAuthGuard,
     CustomerJwtAuthGuard,
-    AnyAuthGuard,
     {
       provide: APP_GUARD,
       useClass: AuthenticationGuard,

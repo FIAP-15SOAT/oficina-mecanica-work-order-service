@@ -1,12 +1,10 @@
 import { WorkOrder } from '@domain/entities/work-order.entity';
-import { User } from '@domain/entities/user.entity';
 import { WorkOrderNumber } from '@domain/value-objects/work-order-number.vo';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { WorkOrderServiceStatus } from '@domain/enums/work-order-service-status.enum';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
 import { EntityNotFoundException } from '@domain/exceptions/entity-not-found.exception';
 import { DomainValidationException } from '@domain/exceptions/domain-validation.exception';
-import { UserRole } from '@domain/enums/user-role.enum';
 import { createMockWorkOrderService } from '../../../helpers/work-order-service-mock.factory';
 import { createMockWorkOrder } from '../../../helpers/work-order-mock.factory';
 import { randomUUID } from 'node:crypto';
@@ -88,28 +86,17 @@ describe('WorkOrder Entity', () => {
         DomainValidationException,
       );
     });
-    it('should throw BusinessRuleViolationException when assigned user is not a mechanic', () => {
-      const nonMechanic = { id: 'u1', name: 'John', role: UserRole.ADMIN, isActive: true };
-      expect(() =>
-        WorkOrder.create({ ...baseProps, assignedUser: nonMechanic as unknown as User }),
-      ).toThrow(BusinessRuleViolationException);
+
+    it('should keep the assigned user id', () => {
+      const assignedUserId = randomUUID();
+
+      const workOrder = WorkOrder.create({ ...baseProps, assignedUserId });
+
+      expect(workOrder.assignedUserId).toBe(assignedUserId);
     });
 
-    it('should throw BusinessRuleViolationException when assigned user is inactive', () => {
-      const inactiveMechanic = { id: 'u1', name: 'John', role: UserRole.MECHANIC, isActive: false };
-      expect(() =>
-        WorkOrder.create({ ...baseProps, assignedUser: inactiveMechanic as unknown as User }),
-      ).toThrow(BusinessRuleViolationException);
-    });
-
-    it('should allow creating with mechanic', () => {
-      const mechanic = { id: 'u1', name: 'John', role: UserRole.MECHANIC, isActive: true };
-      const workOrder = WorkOrder.create({
-        ...baseProps,
-        assignedUser: mechanic as unknown as User,
-      });
-      expect(workOrder.assignedUserId).toBe(mechanic.id);
-      expect(workOrder.assignedUser).toEqual(mechanic);
+    it('should leave the work order unassigned by default', () => {
+      expect(WorkOrder.create(baseProps).assignedUserId).toBeNull();
     });
   });
 
@@ -145,41 +132,30 @@ describe('WorkOrder Entity', () => {
       expect(workOrder.updatedAt.getTime()).toBeGreaterThanOrEqual(before.getTime());
     });
 
-    it('should update assignedUserId and assignedUser', () => {
+    it('should update assignedUserId', () => {
       const workOrder = WorkOrder.create(baseProps);
-      const mechanic = { id: 'u3', name: 'Joe', role: UserRole.MECHANIC, isActive: true };
-      workOrder.update({ assignedUser: mechanic as unknown as User });
-      expect(workOrder.assignedUserId).toBe(mechanic.id);
+      const assignedUserId = randomUUID();
+
+      workOrder.update({ assignedUserId });
+
+      expect(workOrder.assignedUserId).toBe(assignedUserId);
     });
 
-    it('should throw BusinessRuleViolationException when updating with non-mechanic', () => {
-      const workOrder = WorkOrder.create(baseProps);
-      const nonMechanic = { id: 'u3', name: 'Joe', role: UserRole.ADMIN, isActive: true };
-      expect(() => workOrder.update({ assignedUser: nonMechanic as unknown as User })).toThrow(
-        BusinessRuleViolationException,
-      );
+    it('should keep assignedUserId when it is not informed', () => {
+      const assignedUserId = randomUUID();
+      const workOrder = WorkOrder.create({ ...baseProps, assignedUserId });
+
+      workOrder.update({ mileageAtService: 10 });
+
+      expect(workOrder.assignedUserId).toBe(assignedUserId);
     });
 
-    it('should throw BusinessRuleViolationException when updating with inactive mechanic', () => {
-      const workOrder = WorkOrder.create(baseProps);
-      const inactiveMechanic = { id: 'u3', name: 'Joe', role: UserRole.MECHANIC, isActive: false };
-      expect(() => workOrder.update({ assignedUser: inactiveMechanic as unknown as User })).toThrow(
-        BusinessRuleViolationException,
-      );
-    });
+    it('should clear assignedUserId when null is passed', () => {
+      const workOrder = WorkOrder.create({ ...baseProps, assignedUserId: randomUUID() });
 
-    it('should clear assignedUser when null is passed', () => {
-      const mechanic = { id: 'u4', name: 'Joe', role: UserRole.MECHANIC, isActive: true };
-      const workOrder = WorkOrder.create({
-        ...baseProps,
-        assignedUser: mechanic as unknown as User,
-      });
-      expect(workOrder.assignedUserId).toBe('u4');
-
-      workOrder.update({ assignedUser: null });
+      workOrder.update({ assignedUserId: null });
 
       expect(workOrder.assignedUserId).toBeNull();
-      expect(workOrder.assignedUser).toBeNull();
     });
 
     it('should throw DomainValidationException for invalid fields on update', () => {

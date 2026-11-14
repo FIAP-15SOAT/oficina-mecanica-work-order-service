@@ -1,9 +1,5 @@
-import { randomUUID } from 'node:crypto';
-
 import { MePresenter } from '@interface-adapters/me/me.presenter';
 import { CustomerType } from '@domain/enums/customer-type.enum';
-import { UserRole } from '@domain/enums/user-role.enum';
-import { FindUserByIdOutput } from '@application/ports/input/user/dto/find-user-by-id.dto';
 
 import { createMockWorkOrder } from '../../../helpers/work-order-mock.factory';
 import { createMockVehicle } from '../../../helpers/vehicle-mock.factory';
@@ -15,65 +11,6 @@ import {
 import { readInternalWorkOrderPaymentsFixture } from '../../../helpers/billing-payments-gateway-mock.factory';
 
 describe('MePresenter', () => {
-  describe('toMeDataResponse', () => {
-    it('should not list the principal own INDIVIDUAL customer', () => {
-      const ownIndividual = createMockCustomer({ type: CustomerType.INDIVIDUAL });
-      const user: FindUserByIdOutput = {
-        id: randomUUID(),
-        name: 'João da Silva',
-        email: 'joao@example.com',
-        role: null,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        customers: [ownIndividual],
-      };
-
-      expect(MePresenter.toMeDataResponse(user)).toEqual({
-        data: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          customers: [],
-        },
-      });
-    });
-
-    it('should list only the COMPANY customers and omit isActive/createdAt/updatedAt', () => {
-      const ownIndividual = createMockCustomer({ type: CustomerType.INDIVIDUAL });
-      const company = createMockCustomer({
-        type: CustomerType.COMPANY,
-        name: 'Oficina Parceira LTDA',
-      });
-      const user: FindUserByIdOutput = {
-        id: randomUUID(),
-        name: 'Ana',
-        email: 'ana@example.com',
-        role: UserRole.ATTENDANT,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        customers: [ownIndividual, company],
-      };
-
-      const response = MePresenter.toMeDataResponse(user);
-
-      expect(response).toEqual({
-        data: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          customers: [{ id: company.id, name: company.name, type: CustomerType.COMPANY }],
-        },
-      });
-      expect(response.data).not.toHaveProperty('isActive');
-      expect(response.data).not.toHaveProperty('createdAt');
-      expect(response.data).not.toHaveProperty('updatedAt');
-    });
-  });
-
   describe('toWorkOrderResponse', () => {
     it('should map a work order with a vehicle', () => {
       const vehicle = createMockVehicle({ brand: 'Toyota', model: 'Corolla' });

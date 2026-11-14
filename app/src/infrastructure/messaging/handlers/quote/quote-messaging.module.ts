@@ -4,6 +4,7 @@ import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 
 import { ICache } from '@application/ports/output/services/cache.service.interface';
+import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
 import { IEmailSenderService } from '@application/ports/output/services/email-sender.service.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
@@ -28,6 +29,7 @@ import { QuoteMessageHandlers } from './quote-message-handlers';
         statusHistoryRepository: IStatusHistoryRepository,
         cache: ICache,
         emailSender: IEmailSenderService,
+        identityUsersGateway: IIdentityUsersGateway,
       ) =>
         new QuoteMessageHandlers(
           registry,
@@ -38,6 +40,7 @@ import { QuoteMessageHandlers } from './quote-message-handlers';
             metrics,
             statusHistoryRepository,
             cache,
+            identityUsersGateway,
           ),
           new ApplyRejectedQuoteUseCase(
             unitOfWork,
@@ -55,6 +58,7 @@ import { QuoteMessageHandlers } from './quote-message-handlers';
         'IStatusHistoryRepository',
         'ICache',
         'IEmailSenderService',
+        'IIdentityUsersGateway',
       ],
     },
   ],

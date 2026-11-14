@@ -42,8 +42,6 @@ describe('CustomerAccessController', () => {
           email: 'operador@example.com',
           role: null,
           isActive: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
         },
         customer: {
           id: customerId,
@@ -73,8 +71,6 @@ describe('CustomerAccessController', () => {
           email: 'joao@example.com',
           role: UserRole.ATTENDANT,
           isActive: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
         },
       ];
 

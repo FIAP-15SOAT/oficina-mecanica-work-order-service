@@ -1,6 +1,6 @@
-// Stands in for the Inventory and the Billing during the DAST scan: without it the routes that
-// read the catalog, open a work order with items or deliver one would answer 503 and ZAP would
-// flag every 5xx.
+// Stands in for the Inventory, the Billing and the Identity during the DAST scan: without it the
+// routes that read the catalog or the users, open a work order with items or deliver one would
+// answer 503 and ZAP would flag every 5xx.
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -21,6 +21,8 @@ const partSupply = readFixtureData('inventory/internal-part-supply.json');
 const quoteSummary = readFixtureData('billing/internal-quote-summary.json');
 const balance = readFixtureData('billing/internal-work-order-balance.json');
 const payments = readFixtureData('billing/internal-work-order-payments.json');
+const user = readFixtureData('identity/internal-user.json');
+const customerUser = readFixtureData('identity/internal-customer-user.json');
 
 const notFound = {
   status: 404,
@@ -61,6 +63,12 @@ const handlers = {
     status: 200,
     body: { data: payments.map((payment) => ({ ...payment, workOrderId })) },
   }),
+  'GET /internal/users/:id': ({ id }) => ({ status: 200, body: { data: { ...user, id } } }),
+  'POST /internal/customer-users': async (_params, req) => {
+    await readBody(req);
+
+    return { status: 200, body: { data: customerUser } };
+  },
 };
 
 const routes = Object.entries(handlers).map(([route, handle]) => {

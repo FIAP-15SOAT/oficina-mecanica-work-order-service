@@ -1,268 +1,270 @@
 import { randomUUID } from 'node:crypto';
+
 import { GrantCustomerAccessUseCase } from '@application/use-cases/customer-access/grant-customer-access.use-case';
-import { Customer } from '@domain/entities/customer.entity';
-import { User } from '@domain/entities/user.entity';
-import { CustomerType } from '@domain/enums/customer-type.enum';
-import { UserRole } from '@domain/enums/user-role.enum';
+import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { ResourceConflictException } from '@application/exceptions/resource-conflict.exception';
-import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
+import { ServiceRequestRejectedException } from '@application/exceptions/service-request-rejected.exception';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
+import { CustomerType } from '@domain/enums/customer-type.enum';
+import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
+import { IRepositories, IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
+import { Document } from '@domain/value-objects/document.vo';
+import { Email } from '@domain/value-objects/email.vo';
 
-function buildIndividualCustomer(): Customer {
-  return Customer.create({
-    name: 'João da Silva',
-    document: '12345678909',
-    type: CustomerType.INDIVIDUAL,
-    email: 'joao@example.com',
-    phone: '11999990000',
-    address: { street: 'Rua A', city: 'São Paulo', state: 'SP', zipCode: '01001000' },
-  });
-}
-
-function buildCompanyCustomer(): Customer {
-  return Customer.create({
-    name: 'Oficina Parceira LTDA',
-    document: '12345678000195',
-    type: CustomerType.COMPANY,
-    email: 'contato@parceira.com.br',
-    phone: '1133330000',
-    address: { street: 'Av B', city: 'São Paulo', state: 'SP', zipCode: '02002000' },
-  });
-}
+import { createMockCustomer } from '../../../../helpers/customer-mock.factory';
+import {
+  createMockIdentityUserGatewayResponse,
+  createMockIdentityUsersGateway,
+} from '../../../../helpers/identity-users-gateway-mock.factory';
+import { createMockLogger } from '../../../../helpers/logger-mock.factory';
+import { createMockUnitOfWorkWithRepos } from '../../../../helpers/unit-of-work-mock.factory';
 
 describe('GrantCustomerAccessUseCase', () => {
-  let unitOfWork: {
-    executeTransaction: jest.Mock;
-  };
-  let repos: {
-    customer: { findById: jest.Mock };
-    user: { findByCpf: jest.Mock; findByEmail: jest.Mock; create: jest.Mock; update: jest.Mock };
-    userCustomer: { exists: jest.Mock; create: jest.Mock };
-  };
-  let hashService: { hash: jest.Mock };
-  let emailSender: { send: jest.Mock };
-  let logger: { event: jest.Mock; forContext: jest.Mock; error: jest.Mock };
   let useCase: GrantCustomerAccessUseCase;
+  let unitOfWork: jest.Mocked<IUnitOfWork>;
+  let repos: jest.Mocked<IRepositories>;
+  let identityUsersGateway: jest.Mocked<IIdentityUsersGateway>;
+  let logger: jest.Mocked<ILogger>;
+
+  const companyInput = {
+    name: 'Operador',
+    email: 'operador@parceira.com.br',
+    cpf: '123.456.789-09',
+  };
 
   beforeEach(() => {
-    repos = {
-      customer: { findById: jest.fn() },
-      user: { findByCpf: jest.fn(), findByEmail: jest.fn(), create: jest.fn(), update: jest.fn() },
-      userCustomer: { exists: jest.fn(), create: jest.fn() },
-    };
-    unitOfWork = {
-      executeTransaction: jest.fn((work: (repositories: typeof repos) => unknown) => work(repos)),
-    };
-    hashService = { hash: jest.fn().mockResolvedValue('hashed-password') };
-    emailSender = { send: jest.fn().mockResolvedValue(undefined) };
-    logger = { event: jest.fn(), forContext: jest.fn(), error: jest.fn() };
+    ({ unitOfWork, repos } = createMockUnitOfWorkWithRepos());
 
-    useCase = new GrantCustomerAccessUseCase(
-      unitOfWork as never,
-      hashService as never,
-      emailSender,
-      logger as never,
-    );
+    identityUsersGateway = createMockIdentityUsersGateway();
+
+    logger = createMockLogger();
+
+    useCase = new GrantCustomerAccessUseCase(unitOfWork, identityUsersGateway, logger);
   });
 
-  it('should create a new user and link for an individual customer with no body', async () => {
-    const customer = buildIndividualCustomer();
-    repos.customer.findById.mockResolvedValue(customer);
-    repos.user.findByCpf.mockResolvedValue(null);
-    repos.user.findByEmail.mockResolvedValue(null);
-    repos.user.create.mockImplementation((user: User) => Promise.resolve(user));
-    repos.userCustomer.exists.mockResolvedValue(false);
-    repos.userCustomer.create.mockImplementation((link) => Promise.resolve(link));
-
-    const result = await useCase.execute(customer.id, randomUUID());
-
-    expect(result.initialPasswordSent).toBe(true);
-    expect(result.customer).toEqual({
-      id: customer.id,
-      name: customer.name,
-      type: customer.type,
-      isActive: customer.isActive,
+  function createCompanyCustomer() {
+    return createMockCustomer({
+      name: 'Oficina Parceira LTDA',
+      type: CustomerType.COMPANY,
+      document: Document.create('12345678000195', CustomerType.COMPANY),
+      email: Email.create('contato@parceira.com.br'),
     });
-    expect(result.user).toEqual(
-      expect.objectContaining({ name: customer.name, email: customer.email.value }),
+  }
+
+  describe('execute', () => {
+    it('should ensure the user of an active individual customer in the identity before the transaction that writes the link', async () => {
+      const customer = createMockCustomer();
+      const user = createMockIdentityUserGatewayResponse({ role: null });
+
+      jest.mocked(repos.customer.findById).mockResolvedValue(customer);
+      identityUsersGateway.ensureCustomerUser.mockResolvedValue({ userId: user.id, created: true });
+      identityUsersGateway.findById.mockResolvedValue(user);
+
+      await useCase.execute(customer.id, randomUUID());
+
+      expect(identityUsersGateway.ensureCustomerUser).toHaveBeenCalledWith({
+        name: customer.name,
+        email: customer.email.value,
+        cpf: customer.document.value,
+      });
+      expect(unitOfWork.executeTransaction).toHaveBeenCalledTimes(2);
+      expect(identityUsersGateway.ensureCustomerUser.mock.invocationCallOrder[0]).toBeLessThan(
+        unitOfWork.executeTransaction.mock.invocationCallOrder[1],
+      );
+      expect(identityUsersGateway.findById.mock.invocationCallOrder[0]).toBeLessThan(
+        unitOfWork.executeTransaction.mock.invocationCallOrder[1],
+      );
+    });
+
+    it('should write the link with the user id the identity returns', async () => {
+      const customer = createMockCustomer();
+      const user = createMockIdentityUserGatewayResponse({ role: null });
+
+      jest.mocked(repos.customer.findById).mockResolvedValue(customer);
+      identityUsersGateway.ensureCustomerUser.mockResolvedValue({ userId: user.id, created: true });
+      identityUsersGateway.findById.mockResolvedValue(user);
+
+      await useCase.execute(customer.id, randomUUID());
+
+      expect(repos.userCustomer.create).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: user.id, customerId: customer.id }),
+      );
+    });
+
+    it.each([
+      ['a new user', true],
+      ['a user reused by the cpf', false],
+    ])(
+      'should answer with the user read in the identity and the initial password flag of %s',
+      async (_label, created) => {
+        const customer = createMockCustomer();
+        const actingUserId = randomUUID();
+        const user = createMockIdentityUserGatewayResponse({ role: null });
+
+        jest.mocked(repos.customer.findById).mockResolvedValue(customer);
+        identityUsersGateway.ensureCustomerUser.mockResolvedValue({ userId: user.id, created });
+        identityUsersGateway.findById.mockResolvedValue(user);
+
+        const result = await useCase.execute(customer.id, actingUserId);
+
+        expect(result).toEqual({
+          user,
+          customer: {
+            id: customer.id,
+            name: customer.name,
+            type: customer.type,
+            isActive: true,
+          },
+          initialPasswordSent: created,
+        });
+        expect(identityUsersGateway.findById).toHaveBeenCalledWith(user.id);
+        expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.CUSTOMER_ACCESS_GRANTED, {
+          subjectId: actingUserId,
+          targetUserId: user.id,
+          customerId: customer.id,
+          accessUserCreated: created,
+          initialPasswordSent: created,
+        });
+      },
     );
-    expect(emailSender.send).toHaveBeenCalledWith(
-      expect.objectContaining({ toEmail: customer.email.value }),
-    );
-  });
 
-  it('should require name, email and cpf for a company customer', async () => {
-    const customer = buildCompanyCustomer();
-    repos.customer.findById.mockResolvedValue(customer);
+    it('should send the person data of the body with the cpf in digits only for a company customer', async () => {
+      const customer = createCompanyCustomer();
+      const user = createMockIdentityUserGatewayResponse({ role: null });
 
-    await expect(useCase.execute(customer.id, randomUUID())).rejects.toThrow(
-      BusinessRuleViolationException,
-    );
-  });
+      jest.mocked(repos.customer.findById).mockResolvedValue(customer);
+      identityUsersGateway.ensureCustomerUser.mockResolvedValue({ userId: user.id, created: true });
+      identityUsersGateway.findById.mockResolvedValue(user);
 
-  it('should require the email of a company customer even when the name is given', async () => {
-    const customer = buildCompanyCustomer();
-    repos.customer.findById.mockResolvedValue(customer);
+      await useCase.execute(customer.id, randomUUID(), companyInput);
 
-    await expect(
-      useCase.execute(customer.id, randomUUID(), { name: 'Operador', cpf: '12345678909' }),
-    ).rejects.toThrow(BusinessRuleViolationException);
-  });
-
-  it('should require the cpf of a company customer even when name and email are given', async () => {
-    const customer = buildCompanyCustomer();
-    repos.customer.findById.mockResolvedValue(customer);
-
-    await expect(
-      useCase.execute(customer.id, randomUUID(), {
+      expect(identityUsersGateway.ensureCustomerUser).toHaveBeenCalledWith({
         name: 'Operador',
         email: 'operador@parceira.com.br',
-      }),
-    ).rejects.toThrow(BusinessRuleViolationException);
-  });
-
-  it('should take the person data from the body for a company customer and strip the cpf mask', async () => {
-    const customer = buildCompanyCustomer();
-    repos.customer.findById.mockResolvedValue(customer);
-    repos.user.findByCpf.mockResolvedValue(null);
-    repos.user.findByEmail.mockResolvedValue(null);
-    repos.user.create.mockImplementation((user: User) => Promise.resolve(user));
-    repos.userCustomer.exists.mockResolvedValue(false);
-    repos.userCustomer.create.mockImplementation((link) => Promise.resolve(link));
-
-    const result = await useCase.execute(customer.id, randomUUID(), {
-      name: 'Operador',
-      email: 'operador@parceira.com.br',
-      cpf: '123.456.789-09',
+        cpf: '12345678909',
+      });
     });
 
-    expect(repos.user.findByCpf).toHaveBeenCalledWith('12345678909');
-    expect(result.user).toEqual(
-      expect.objectContaining({ name: 'Operador', email: 'operador@parceira.com.br' }),
+    it.each([
+      ['no body', undefined],
+      ['no email', { name: 'Operador', cpf: '12345678909' }],
+      ['no cpf', { name: 'Operador', email: 'operador@parceira.com.br' }],
+      ['no name', { email: 'operador@parceira.com.br', cpf: '12345678909' }],
+    ])(
+      'should require name, email and cpf of a company customer given %s',
+      async (_label, input) => {
+        const customer = createCompanyCustomer();
+
+        jest.mocked(repos.customer.findById).mockResolvedValue(customer);
+
+        const result = useCase.execute(customer.id, randomUUID(), input);
+
+        await expect(result).rejects.toThrow(BusinessRuleViolationException);
+        await expect(result).rejects.toThrow(
+          'Nome, e-mail e CPF são obrigatórios para conceder acesso a um cliente do tipo COMPANY',
+        );
+
+        expect(identityUsersGateway.ensureCustomerUser).not.toHaveBeenCalled();
+      },
     );
-    expect(emailSender.send).toHaveBeenCalledWith(
-      expect.objectContaining({ toEmail: 'operador@parceira.com.br' }),
-    );
-  });
 
-  it('should reject an inactive customer', async () => {
-    const customer = buildIndividualCustomer();
-    customer.deactivate();
-    repos.customer.findById.mockResolvedValue(customer);
+    it('should refuse a customer that does not exist without calling the identity', async () => {
+      jest.mocked(repos.customer.findById).mockResolvedValue(null);
 
-    await expect(useCase.execute(customer.id, randomUUID())).rejects.toThrow(
-      BusinessRuleViolationException,
-    );
-  });
+      await expect(useCase.execute(randomUUID(), randomUUID())).rejects.toThrow(
+        ResourceNotFoundException,
+      );
 
-  it('should throw when the customer does not exist', async () => {
-    repos.customer.findById.mockResolvedValue(null);
-
-    await expect(useCase.execute(randomUUID(), randomUUID())).rejects.toThrow(
-      ResourceNotFoundException,
-    );
-  });
-
-  it('should reuse an existing user found by cpf instead of creating a new one', async () => {
-    const customer = buildIndividualCustomer();
-    const existingUser = User.create({
-      name: 'João da Silva',
-      email: 'joao.antigo@example.com',
-      passwordHash: 'existing-hash',
-      role: null,
-      cpf: '12345678909',
+      expect(identityUsersGateway.ensureCustomerUser).not.toHaveBeenCalled();
     });
-    repos.customer.findById.mockResolvedValue(customer);
-    repos.user.findByCpf.mockResolvedValue(existingUser);
-    repos.user.findByEmail.mockResolvedValue(null);
-    repos.userCustomer.create.mockImplementation((link) => Promise.resolve(link));
 
-    const result = await useCase.execute(customer.id, randomUUID());
+    it('should refuse an inactive customer without calling the identity', async () => {
+      const customer = createMockCustomer({ isActive: false });
 
-    expect(repos.user.create).not.toHaveBeenCalled();
-    expect(repos.userCustomer.create).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: existingUser.id, customerId: customer.id }),
-    );
-    expect(emailSender.send).not.toHaveBeenCalled();
-    expect(result.initialPasswordSent).toBe(false);
-    expect(result.user).toEqual(expect.objectContaining({ id: existingUser.id }));
-  });
+      jest.mocked(repos.customer.findById).mockResolvedValue(customer);
 
-  it('should reuse the user without conflict when both cpf and email point to the same existing user', async () => {
-    const customer = buildIndividualCustomer();
-    const existingUser = User.create({
-      name: 'João da Silva',
-      email: customer.email.value,
-      passwordHash: 'existing-hash',
-      role: null,
-      cpf: customer.document.value,
+      const result = useCase.execute(customer.id, randomUUID());
+
+      await expect(result).rejects.toThrow(BusinessRuleViolationException);
+      await expect(result).rejects.toThrow('Cliente inativo não pode receber novos acessos');
+
+      expect(identityUsersGateway.ensureCustomerUser).not.toHaveBeenCalled();
     });
-    repos.customer.findById.mockResolvedValue(customer);
-    repos.user.findByCpf.mockResolvedValue(existingUser);
-    repos.user.findByEmail.mockResolvedValue(existingUser);
-    repos.userCustomer.create.mockImplementation((link) => Promise.resolve(link));
 
-    const result = await useCase.execute(customer.id, randomUUID());
+    it.each([
+      [409, 'O e-mail informado já pertence a outro usuário. Verifique o cadastro do cliente'],
+      [422, 'CPF inválido'],
+    ])(
+      'should let the %i of the identity through without writing a link',
+      async (statusCode, message) => {
+        const customer = createMockCustomer();
+        const error = new ServiceRequestRejectedException(statusCode, message);
 
-    expect(repos.user.create).not.toHaveBeenCalled();
-    expect(repos.userCustomer.create).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: existingUser.id, customerId: customer.id }),
+        jest.mocked(repos.customer.findById).mockResolvedValue(customer);
+        identityUsersGateway.ensureCustomerUser.mockRejectedValue(error);
+
+        await expect(useCase.execute(customer.id, randomUUID())).rejects.toBe(error);
+
+        expect(repos.userCustomer.create).not.toHaveBeenCalled();
+        expect(logger.event).not.toHaveBeenCalled();
+      },
     );
-    expect(result.initialPasswordSent).toBe(false);
-  });
 
-  it('should conflict when a user already exists with the given email, regardless of role', async () => {
-    const customer = buildIndividualCustomer();
-    const staffUser = User.create({
-      name: 'Funcionário Interno',
-      email: 'joao@example.com',
-      passwordHash: 'existing-hash',
-      role: UserRole.ATTENDANT,
+    it('should answer 404 without writing a link when the identity does not find the ensured user', async () => {
+      const customer = createMockCustomer();
+      const userId = randomUUID();
+
+      jest.mocked(repos.customer.findById).mockResolvedValue(customer);
+      identityUsersGateway.ensureCustomerUser.mockResolvedValue({ userId, created: true });
+      identityUsersGateway.findById.mockResolvedValue(null);
+
+      const result = useCase.execute(customer.id, randomUUID());
+
+      await expect(result).rejects.toThrow(ResourceNotFoundException);
+      await expect(result).rejects.toThrow(
+        `Usuário não encontrado(a) com identificador: ${userId}`,
+      );
+
+      expect(repos.userCustomer.create).not.toHaveBeenCalled();
     });
-    repos.customer.findById.mockResolvedValue(customer);
-    repos.user.findByCpf.mockResolvedValue(null);
-    repos.user.findByEmail.mockResolvedValue(staffUser);
 
-    await expect(useCase.execute(customer.id, randomUUID())).rejects.toThrow(
-      ResourceConflictException,
-    );
-    expect(repos.user.create).not.toHaveBeenCalled();
-    expect(repos.userCustomer.create).not.toHaveBeenCalled();
-  });
+    it('should let a duplicate link conflict through without auditing the grant', async () => {
+      const customer = createMockCustomer();
+      const user = createMockIdentityUserGatewayResponse({ role: null });
+      const error = new ResourceConflictException('Usuário já possui acesso a este cliente');
 
-  it('should still respond successfully when the initial password email fails to send', async () => {
-    const customer = buildIndividualCustomer();
-    repos.customer.findById.mockResolvedValue(customer);
-    repos.user.findByCpf.mockResolvedValue(null);
-    repos.user.findByEmail.mockResolvedValue(null);
-    repos.user.create.mockImplementation((user: User) => Promise.resolve(user));
-    repos.userCustomer.exists.mockResolvedValue(false);
-    repos.userCustomer.create.mockImplementation((link) => Promise.resolve(link));
-    emailSender.send.mockRejectedValue(new Error('smtp down'));
+      jest.mocked(repos.customer.findById).mockResolvedValue(customer);
+      identityUsersGateway.ensureCustomerUser.mockResolvedValue({
+        userId: user.id,
+        created: false,
+      });
+      identityUsersGateway.findById.mockResolvedValue(user);
+      jest.mocked(repos.userCustomer.create).mockRejectedValue(error);
 
-    const result = await useCase.execute(customer.id, randomUUID());
+      await expect(useCase.execute(customer.id, randomUUID())).rejects.toBe(error);
 
-    expect(result.initialPasswordSent).toBe(false);
-    expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.USER_INITIAL_PASSWORD_SEND_FAILED, {
-      targetUserId: result.user.id,
+      expect(logger.event).not.toHaveBeenCalled();
     });
-    expect(logger.error).not.toHaveBeenCalled();
   });
 
-  it('should participate in a caller-supplied transaction instead of opening its own', async () => {
-    const customer = buildIndividualCustomer();
-    repos.customer.findById.mockResolvedValue(customer);
-    repos.user.findByCpf.mockResolvedValue(null);
-    repos.user.findByEmail.mockResolvedValue(null);
-    repos.user.create.mockImplementation((user: User) => Promise.resolve(user));
-    repos.userCustomer.exists.mockResolvedValue(false);
-    repos.userCustomer.create.mockImplementation((link) => Promise.resolve(link));
+  describe('ensureUser', () => {
+    it('should ensure the user of an individual customer by its document', async () => {
+      const customer = createMockCustomer();
+      const ensured = { userId: randomUUID(), created: true };
 
-    const result = await useCase.execute(customer.id, randomUUID(), undefined, repos as never);
+      identityUsersGateway.ensureCustomerUser.mockResolvedValue(ensured);
 
-    expect(unitOfWork.executeTransaction).not.toHaveBeenCalled();
-    expect(repos.user.create).toHaveBeenCalledTimes(1);
-    expect(result.initialPasswordSent).toBe(true);
+      const result = await useCase.ensureUser(customer);
+
+      expect(result).toEqual(ensured);
+      expect(identityUsersGateway.ensureCustomerUser).toHaveBeenCalledWith({
+        name: customer.name,
+        email: customer.email.value,
+        cpf: customer.document.value,
+      });
+      expect(unitOfWork.executeTransaction).not.toHaveBeenCalled();
+    });
   });
 });

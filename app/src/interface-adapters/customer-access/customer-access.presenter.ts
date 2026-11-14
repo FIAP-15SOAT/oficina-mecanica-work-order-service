@@ -1,6 +1,10 @@
-import { UserPublicView } from '@domain/entities/user.entity';
-import { GrantCustomerAccessOutputDto } from '@application/ports/input/customer-access/dto/grant-customer-access.dto';
+import {
+  AccessUserOutputDto,
+  GrantCustomerAccessOutputDto,
+} from '@application/ports/input/customer-access/dto/grant-customer-access.dto';
 import { LinkedCustomerOutputDto } from '@application/ports/input/customer-access/dto/list-user-customers.dto';
+import { ActiveUserCustomerOutputDto } from '@application/ports/input/customer-access/dto/list-active-user-customers.dto';
+import { InternalUserCustomerListResponse } from './responses/internal-user-customer.response';
 import {
   AccessUserListResponse,
   CustomerAccessDataResponse,
@@ -12,13 +16,19 @@ export class CustomerAccessPresenter {
     return { data: result };
   }
 
-  static toAccessUserListResponse(users: UserPublicView[]): AccessUserListResponse {
+  static toAccessUserListResponse(users: AccessUserOutputDto[]): AccessUserListResponse {
     return { data: users };
   }
 
   static toLinkedCustomerListResponse(
     customers: LinkedCustomerOutputDto[],
   ): LinkedCustomerListResponse {
+    return { data: customers };
+  }
+
+  static toInternalUserCustomerListResponse(
+    customers: ActiveUserCustomerOutputDto[],
+  ): InternalUserCustomerListResponse {
     return { data: customers };
   }
 }

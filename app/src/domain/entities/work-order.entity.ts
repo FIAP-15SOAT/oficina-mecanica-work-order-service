@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
 import { validate as isUuid } from 'uuid';
-import { UserRole } from '../enums/user-role.enum';
 import { WorkOrderStatus } from '../enums/work-order-status.enum';
 import { WorkOrderServiceStatus } from '../enums/work-order-service-status.enum';
 import { DomainValidationException } from '../exceptions/domain-validation.exception';
@@ -8,7 +7,6 @@ import { BusinessRuleViolationException } from '../exceptions/business-rule-viol
 import { EntityNotFoundException } from '../exceptions/entity-not-found.exception';
 import { Customer } from './customer.entity';
 import { Vehicle } from './vehicle.entity';
-import { User } from './user.entity';
 import { WorkOrderService } from './work-order-service.entity';
 import { WorkOrderPartSupply } from './work-order-part-supply.entity';
 import { WorkOrderNumber } from '../value-objects/work-order-number.vo';
@@ -26,7 +24,7 @@ export interface CreateWorkOrderProps {
   problemDescription?: string | null;
   internalNotes?: string | null;
   mileageAtService?: number | null;
-  assignedUser?: User | null;
+  assignedUserId?: string | null;
 }
 
 export interface ApprovedQuoteItems {
@@ -38,7 +36,7 @@ export interface UpdateWorkOrderProps {
   problemDescription?: string | null;
   internalNotes?: string | null;
   mileageAtService?: number | null;
-  assignedUser?: User | null;
+  assignedUserId?: string | null;
 }
 
 export interface WorkOrderProps {
@@ -95,7 +93,6 @@ export class WorkOrder {
 
   customer?: Customer;
   vehicle?: Vehicle;
-  assignedUser?: User | null;
   private _services: WorkOrderService[];
   private _partSupplies: WorkOrderPartSupply[];
 
@@ -132,7 +129,6 @@ export class WorkOrder {
     WorkOrder.validateMileage(props.mileageAtService ?? null);
     WorkOrder.validateProblemDescription(props.problemDescription ?? null);
     WorkOrder.validateInternalNotes(props.internalNotes ?? null);
-    WorkOrder.validateAssignedUser(props.assignedUser ?? null);
 
     const workOrder = new WorkOrder({
       id: props.id ?? randomUUID(),
@@ -145,7 +141,7 @@ export class WorkOrder {
       mileageAtService: props.mileageAtService ?? null,
       totalAmount: 0,
       version: 1,
-      assignedUserId: props.assignedUser?.id ?? null,
+      assignedUserId: props.assignedUserId ?? null,
       approvedAt: null,
       rejectedAt: null,
       startedAt: null,
@@ -154,8 +150,6 @@ export class WorkOrder {
       createdAt: new Date(),
       updatedAt: new Date(),
     });
-
-    workOrder.assignedUser = props.assignedUser ?? null;
 
     return workOrder;
   }
@@ -274,20 +268,16 @@ export class WorkOrder {
         : (props.internalNotes?.trim() ?? null);
     const nextMileageAtService =
       props.mileageAtService === undefined ? this.mileageAtService : props.mileageAtService;
-    const nextAssignedUser =
-      props.assignedUser === undefined ? (this.assignedUser ?? null) : (props.assignedUser ?? null);
     const nextAssignedUserId =
-      props.assignedUser === undefined ? this.assignedUserId : (props.assignedUser?.id ?? null);
+      props.assignedUserId === undefined ? this.assignedUserId : props.assignedUserId;
 
     WorkOrder.validateMileage(nextMileageAtService);
     WorkOrder.validateProblemDescription(nextProblemDescription);
     WorkOrder.validateInternalNotes(nextInternalNotes);
-    WorkOrder.validateAssignedUser(nextAssignedUser);
 
     this.problemDescription = nextProblemDescription;
     this.internalNotes = nextInternalNotes;
     this.mileageAtService = nextMileageAtService;
-    this.assignedUser = nextAssignedUser;
     this.assignedUserId = nextAssignedUserId;
 
     this.updatedAt = new Date();
@@ -449,16 +439,6 @@ export class WorkOrder {
       throw new DomainValidationException(
         `Notas internas devem ter no máximo ${MAX_INTERNAL_NOTES_LENGTH} caracteres.`,
       );
-    }
-  }
-
-  static validateAssignedUser(assignedUser: User | null): void {
-    if (assignedUser) {
-      if (assignedUser.role !== UserRole.MECHANIC || !assignedUser.isActive) {
-        throw new BusinessRuleViolationException(
-          'Apenas mecânicos ativos podem ser atribuídos a uma ordem de serviço',
-        );
-      }
     }
   }
 

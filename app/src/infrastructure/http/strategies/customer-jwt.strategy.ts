@@ -2,15 +2,15 @@ import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
+import { validate as isUuid } from 'uuid';
 
-import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IUserCustomerRepository } from '@domain/interfaces/repositories/user-customer.repository.interface';
 import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
 import { AuthFlow } from '@domain/enums/auth-flow.enum';
 import { readPemKey } from '@infrastructure/utils/read-pem-key.util';
 
 interface CustomerJwtClaims {
-  sub: string;
+  sub?: unknown;
   iss: string;
   aud: string;
   iat: number;
@@ -26,15 +26,13 @@ interface CustomerJwtClaims {
 export class CustomerJwtStrategy extends PassportStrategy(Strategy, 'customer-jwt') {
   constructor(
     configService: ConfigService,
-    @Inject('IUserRepository')
-    private readonly userRepository: IUserRepository,
     @Inject('IUserCustomerRepository')
     private readonly userCustomerRepository: IUserCustomerRepository,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: readPemKey(configService, 'CUSTOMER_JWT_PUBLIC_KEY', 'PUBLIC'),
+      secretOrKey: readPemKey(configService, 'CUSTOMER_JWT_PUBLIC_KEY'),
       algorithms: ['RS256'],
       issuer: configService.getOrThrow<string>('CUSTOMER_JWT_ISSUER'),
       audience: configService.getOrThrow<string>('CUSTOMER_JWT_AUDIENCE'),
@@ -46,27 +44,19 @@ export class CustomerJwtStrategy extends PassportStrategy(Strategy, 'customer-jw
       throw new UnauthorizedException('Token sem expiração');
     }
 
-    const user = await this.userRepository.findById(payload.sub);
-
-    if (!user?.isActive) {
-      throw new UnauthorizedException('Usuário inválido ou desativado');
-    }
-
-    if (
-      typeof payload.iat !== 'number' ||
-      payload.iat < Math.floor(user.passwordChangedAt.getTime() / 1000)
-    ) {
-      throw new UnauthorizedException('Sessão expirada. Autentique-se novamente.');
+    // The link queries would drop an undefined sub from the where and match every user.
+    if (typeof payload.sub !== 'string' || !isUuid(payload.sub)) {
+      throw new UnauthorizedException('Token inválido');
     }
 
     const activeCustomerIds = await this.userCustomerRepository.findActiveCustomerIdsByUserId(
-      user.id,
+      payload.sub,
     );
 
     if (activeCustomerIds.length === 0) {
       throw new UnauthorizedException('Nenhum cliente ativo vinculado');
     }
 
-    return { sub: user.id, authFlow: AuthFlow.CUSTOMER, email: user.email.value };
+    return { sub: payload.sub, authFlow: AuthFlow.CUSTOMER };
   }
 }

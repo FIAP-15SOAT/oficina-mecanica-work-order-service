@@ -6,13 +6,11 @@ import { FindCustomerByIdUseCase } from '@application/use-cases/customer/find-cu
 import { UpdateCustomerUseCase } from '@application/use-cases/customer/update-customer.use-case';
 import { DeleteCustomerUseCase } from '@application/use-cases/customer/delete-customer.use-case';
 import { GrantCustomerAccessUseCase } from '@application/use-cases/customer-access/grant-customer-access.use-case';
-import { InfrastructureServicesModule } from '@infrastructure/services/infrastructure-services.module';
 
 import { ICustomerRepository } from '@domain/interfaces/repositories/customer.repository.interface';
 import { IUserCustomerRepository } from '@domain/interfaces/repositories/user-customer.repository.interface';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
-import { IHashService } from '@application/ports/output/services/hash.service.interface';
-import { IEmailSenderService } from '@application/ports/output/services/email-sender.service.interface';
+import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
 import { ICache } from '@application/ports/output/services/cache.service.interface';
@@ -21,7 +19,6 @@ import { CustomerController as CustomerCleanController } from '@interface-adapte
 import { CustomerController } from './customer.controller';
 
 @Module({
-  imports: [InfrastructureServicesModule],
   controllers: [CustomerController],
   providers: [
     {
@@ -30,8 +27,7 @@ import { CustomerController } from './customer.controller';
         customerRepository: ICustomerRepository,
         userCustomerRepository: IUserCustomerRepository,
         unitOfWork: IUnitOfWork,
-        hashService: IHashService,
-        emailSender: IEmailSenderService,
+        identityUsersGateway: IIdentityUsersGateway,
         logger: ILogger,
         workOrderRepository: IWorkOrderRepository,
         cache: ICache,
@@ -41,10 +37,10 @@ import { CustomerController } from './customer.controller';
             unitOfWork,
             new GrantCustomerAccessUseCase(
               unitOfWork,
-              hashService,
-              emailSender,
+              identityUsersGateway,
               logger.forContext(GrantCustomerAccessUseCase.name),
             ),
+            logger.forContext(CreateCustomerUseCase.name),
           ),
           new FindAllCustomersUseCase(customerRepository),
           new FindCustomerByIdUseCase(customerRepository),
@@ -60,8 +56,7 @@ import { CustomerController } from './customer.controller';
         'ICustomerRepository',
         'IUserCustomerRepository',
         'IUnitOfWork',
-        'IHashService',
-        'IEmailSenderService',
+        'IIdentityUsersGateway',
         'ILogger',
         'IWorkOrderRepository',
         'ICache',

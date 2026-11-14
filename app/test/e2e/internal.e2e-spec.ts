@@ -1,10 +1,11 @@
 import type { Server } from 'http';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
-import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
+import { StaffUser, createStaffUser } from '../helpers/auth.helper';
 
 const UNKNOWN_ID = 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11';
 
@@ -29,10 +30,14 @@ function jsonShape(value: unknown): unknown {
   return value === null ? 'null' : typeof value;
 }
 
+const userCustomersFixture: unknown = JSON.parse(
+  readFileSync(join(__dirname, '../contracts/internal-user-customers.json'), 'utf8'),
+);
+
 describe('Internal routes (E2E)', () => {
   let ctx: TestContext;
   let httpServer: Server;
-  let adminAuth: AuthTokens;
+  let adminAuth: StaffUser;
 
   beforeAll(async () => {
     ctx = await setupTestApp({ withSwagger: true });
@@ -46,15 +51,11 @@ describe('Internal routes (E2E)', () => {
   beforeEach(async () => {
     await cleanDatabase(ctx.prisma);
 
-    adminAuth = await registerAndLogin(
-      httpServer,
-      { name: 'Admin E2E', email: 'admin@e2e.test', role: 'ADMIN' },
-      ctx.prisma,
-    );
+    adminAuth = createStaffUser({}, { name: 'Admin E2E' });
   });
 
   async function createWorkOrder() {
-    const auth = { Authorization: `Bearer ${adminAuth.accessToken}` };
+    const auth = { Authorization: adminAuth.authorization };
 
     const customer = await request(httpServer)
       .post('/api/customers')
@@ -63,6 +64,7 @@ describe('Internal routes (E2E)', () => {
         name: 'Cliente Interno',
         document: '52998224725',
         type: 'INDIVIDUAL',
+        createAccess: false,
         email: 'cliente.interno@test.com',
         phone: '11999999999',
         address: {
@@ -101,7 +103,7 @@ describe('Internal routes (E2E)', () => {
 
       const publicRes = await request(httpServer)
         .get(`/api/work-orders/${workOrder.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       const res = await request(httpServer)
@@ -145,6 +147,92 @@ describe('Internal routes (E2E)', () => {
       );
 
       expect(internalPaths).toEqual([]);
+    });
+  });
+
+  describe('GET /internal/users/:userId/customers', () => {
+    const INDIVIDUAL_ID = '70bb2668-aa3a-4412-afca-198286ca98db';
+    const COMPANY_ID = 'c37a755d-9257-43ad-ae38-890efe884d63';
+
+    async function createLinkedCustomer(
+      id: string,
+      overrides: {
+        name: string;
+        document: string;
+        type: 'INDIVIDUAL' | 'COMPANY';
+        isActive?: boolean;
+      },
+    ) {
+      await ctx.prisma.customer.create({
+        data: {
+          id,
+          email: `${id}@e2e.test`,
+          phone: '11999999999',
+          ...overrides,
+        },
+      });
+
+      await ctx.prisma.userCustomer.create({
+        data: { userId: adminAuth.user.id, customerId: id },
+      });
+    }
+
+    it('should answer as in the contract fixture without authentication', async () => {
+      await createLinkedCustomer(INDIVIDUAL_ID, {
+        name: 'João da Silva',
+        document: '12345678909',
+        type: 'INDIVIDUAL',
+      });
+      await createLinkedCustomer(COMPANY_ID, {
+        name: 'Oficina Parceira LTDA',
+        document: '12345678000195',
+        type: 'COMPANY',
+      });
+
+      const res = await request(httpServer)
+        .get(`/internal/users/${adminAuth.user.id}/customers`)
+        .expect(200);
+
+      expect(res.body).toEqual({
+        data: expect.arrayContaining([
+          expect.objectContaining({ id: INDIVIDUAL_ID, document: '12345678909' }),
+          expect.objectContaining({ id: COMPANY_ID, document: '12345678000195' }),
+        ]),
+      });
+      expect(res.body.data).toHaveLength(2);
+      expect(jsonShape(res.body)).toEqual(jsonShape(userCustomersFixture));
+    });
+
+    it('should leave out the inactive customers', async () => {
+      await createLinkedCustomer(INDIVIDUAL_ID, {
+        name: 'João da Silva',
+        document: '12345678909',
+        type: 'INDIVIDUAL',
+      });
+      await createLinkedCustomer(COMPANY_ID, {
+        name: 'Oficina Parceira LTDA',
+        document: '12345678000195',
+        type: 'COMPANY',
+        isActive: false,
+      });
+
+      const res = await request(httpServer)
+        .get(`/internal/users/${adminAuth.user.id}/customers`)
+        .expect(200);
+
+      expect(res.body.data.map((customer: { id: string }) => customer.id)).toEqual([INDIVIDUAL_ID]);
+    });
+
+    it('should answer an empty list for an unknown user', async () => {
+      const res = await request(httpServer)
+        .get(`/internal/users/${randomUUID()}/customers`)
+        .expect(200);
+
+      expect(res.body).toEqual({ data: [] });
+    });
+
+    it('should answer 400 for a user id that is not a UUID', async () => {
+      await request(httpServer).get('/internal/users/not-a-uuid/customers').expect(400);
     });
   });
 });

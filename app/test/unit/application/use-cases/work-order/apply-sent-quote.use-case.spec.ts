@@ -10,6 +10,7 @@ import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { ApplySentQuoteInputDto } from '@application/ports/input/work-order/dto/apply-sent-quote.dto';
 import { ICache } from '@application/ports/output/services/cache.service.interface';
+import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
 import { IEmailSenderService } from '@application/ports/output/services/email-sender.service.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
@@ -23,8 +24,11 @@ import {
   arrangeStatusHistory,
   createMockStatusHistory,
 } from '../../../../helpers/status-history-mock.factory';
+import {
+  createMockIdentityUserGatewayResponse,
+  createMockIdentityUsersGateway,
+} from '../../../../helpers/identity-users-gateway-mock.factory';
 import { createMockUnitOfWorkWithRepos } from '../../../../helpers/unit-of-work-mock.factory';
-import { createMockUser } from '../../../../helpers/user-mock.factory';
 import { createMockWorkOrder } from '../../../../helpers/work-order-mock.factory';
 
 describe('ApplySentQuoteUseCase', () => {
@@ -35,6 +39,7 @@ describe('ApplySentQuoteUseCase', () => {
   let logger: jest.Mocked<ILogger>;
   let metrics: jest.Mocked<IMetrics>;
   let cache: jest.Mocked<ICache>;
+  let identityUsersGateway: jest.Mocked<IIdentityUsersGateway>;
   let customer: Customer;
   let workOrder: WorkOrder;
   let input: ApplySentQuoteInputDto;
@@ -49,6 +54,8 @@ describe('ApplySentQuoteUseCase', () => {
     metrics = createMockMetrics();
 
     cache = createMockCache();
+
+    identityUsersGateway = createMockIdentityUsersGateway();
 
     customer = createMockCustomer({
       name: 'Maria Souza',
@@ -75,7 +82,9 @@ describe('ApplySentQuoteUseCase', () => {
 
     jest.mocked(repos.customer.findById).mockResolvedValue(customer);
 
-    jest.mocked(repos.userCustomer.findUsersByCustomerId).mockResolvedValue([]);
+    jest.mocked(repos.userCustomer.findUserIdsByCustomerId).mockResolvedValue([]);
+
+    identityUsersGateway.findByIds.mockResolvedValue([]);
 
     useCase = new ApplySentQuoteUseCase(
       unitOfWork,
@@ -84,6 +93,7 @@ describe('ApplySentQuoteUseCase', () => {
       metrics,
       repos.statusHistory,
       cache,
+      identityUsersGateway,
     );
   });
 
@@ -131,16 +141,20 @@ describe('ApplySentQuoteUseCase', () => {
   });
 
   it('should e-mail the active linked users with the items and total of the event', async () => {
+    const linkedUsers = [
+      createMockIdentityUserGatewayResponse({ name: 'João Lima', email: 'joao@example.com' }),
+      createMockIdentityUserGatewayResponse({ email: 'inactive@example.com', isActive: false }),
+    ];
+
     jest
-      .mocked(repos.userCustomer.findUsersByCustomerId)
-      .mockResolvedValue([
-        createMockUser({ name: 'João Lima', email: Email.create('joao@example.com') }),
-        createMockUser({ email: Email.create('inactive@example.com'), isActive: false }),
-      ]);
+      .mocked(repos.userCustomer.findUserIdsByCustomerId)
+      .mockResolvedValue(linkedUsers.map((user) => user.id));
+    identityUsersGateway.findByIds.mockResolvedValue(linkedUsers);
 
     await useCase.execute(input);
 
-    expect(repos.userCustomer.findUsersByCustomerId).toHaveBeenCalledWith(customer.id);
+    expect(repos.userCustomer.findUserIdsByCustomerId).toHaveBeenCalledWith(customer.id);
+    expect(identityUsersGateway.findByIds).toHaveBeenCalledWith(linkedUsers.map((user) => user.id));
     expect(emailSender.send).toHaveBeenCalledTimes(1);
 
     const [email] = emailSender.send.mock.calls[0];
@@ -182,12 +196,15 @@ describe('ApplySentQuoteUseCase', () => {
   });
 
   it('should keep the transition when an e-mail fails', async () => {
+    const linkedUsers = [
+      createMockIdentityUserGatewayResponse({ email: 'first@example.com' }),
+      createMockIdentityUserGatewayResponse({ email: 'second@example.com' }),
+    ];
+
     jest
-      .mocked(repos.userCustomer.findUsersByCustomerId)
-      .mockResolvedValue([
-        createMockUser({ email: Email.create('first@example.com') }),
-        createMockUser({ email: Email.create('second@example.com') }),
-      ]);
+      .mocked(repos.userCustomer.findUserIdsByCustomerId)
+      .mockResolvedValue(linkedUsers.map((user) => user.id));
+    identityUsersGateway.findByIds.mockResolvedValue(linkedUsers);
 
     emailSender.send.mockRejectedValueOnce(new Error('smtp down'));
 

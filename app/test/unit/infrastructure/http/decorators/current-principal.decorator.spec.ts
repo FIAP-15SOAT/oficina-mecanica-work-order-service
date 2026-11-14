@@ -51,7 +51,6 @@ describe('CurrentPrincipalDecorator', () => {
     const principal: AuthenticatedPrincipal = {
       sub: 'user-uuid-456',
       authFlow: AuthFlow.CUSTOMER,
-      email: 'cliente@example.com',
     };
 
     const result = factory(null, buildContext(principal));

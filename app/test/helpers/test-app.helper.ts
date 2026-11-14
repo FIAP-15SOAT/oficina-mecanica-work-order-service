@@ -27,9 +27,7 @@ import {
   STAFF_JWT_TEST_AUDIENCE,
   STAFF_JWT_TEST_ISSUER,
   STAFF_JWT_TEST_KEY_ID,
-  STAFF_JWT_TEST_PRIVATE_KEY,
   STAFF_JWT_TEST_PUBLIC_KEY,
-  STAFF_REFRESH_TEST_PRIVATE_KEY,
 } from './staff-jwt.helper';
 
 export interface LogCapture {
@@ -65,7 +63,7 @@ export interface SetupTestAppOptions {
   controllers?: Type[];
   /** Starts LocalStack with the messaging topology and runs the real relay and consumer. */
   withMessaging?: boolean;
-  /** Base URL of the Inventory and Billing stub; the default refuses every connection. */
+  /** Base URL of the Inventory, Billing and Identity stub; the default refuses every connection. */
   internalServicesUrl?: string;
   /** Modules swapped before compile, as `[original, replacement]` pairs. */
   overrideModules?: [Type, Type][];
@@ -159,19 +157,16 @@ export async function setupTestApp(options: SetupTestAppOptions = {}): Promise<T
   process.env.MAIL_PORT = mailhogContainer.getMappedPort(1025).toString();
   process.env.CACHE_URL = valkeyContainer.getConnectionUrl();
   process.env.CACHE_TTL_SECONDS = '43200';
-  process.env.STAFF_JWT_PRIVATE_KEY = STAFF_JWT_TEST_PRIVATE_KEY;
   process.env.STAFF_JWT_PUBLIC_KEY = STAFF_JWT_TEST_PUBLIC_KEY;
   process.env.STAFF_JWT_KEY_ID = STAFF_JWT_TEST_KEY_ID;
   process.env.STAFF_JWT_ISSUER = STAFF_JWT_TEST_ISSUER;
   process.env.STAFF_JWT_AUDIENCE = STAFF_JWT_TEST_AUDIENCE;
-  process.env.STAFF_JWT_EXPIRATION = '10m';
-  process.env.STAFF_JWT_REFRESH_PRIVATE_KEY = STAFF_REFRESH_TEST_PRIVATE_KEY;
-  process.env.STAFF_JWT_REFRESH_EXPIRATION = '7d';
   process.env.CUSTOMER_JWT_PUBLIC_KEY = CUSTOMER_JWT_TEST_PUBLIC_KEY;
   process.env.CUSTOMER_JWT_ISSUER = CUSTOMER_JWT_TEST_ISSUER;
   process.env.CUSTOMER_JWT_AUDIENCE = CUSTOMER_JWT_TEST_AUDIENCE;
   process.env.INVENTORY_SERVICE_URL = options.internalServicesUrl ?? 'http://127.0.0.1:9';
   process.env.BILLING_SERVICE_URL = options.internalServicesUrl ?? 'http://127.0.0.1:9';
+  process.env.IDENTITY_SERVICE_URL = options.internalServicesUrl ?? 'http://127.0.0.1:9';
 
   execSync('npx prisma migrate deploy', {
     env: { ...process.env },

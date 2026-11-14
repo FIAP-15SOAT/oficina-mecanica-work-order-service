@@ -1,4 +1,3 @@
-import { UserRole } from '@domain/enums/user-role.enum';
 import { CustomerType } from '@domain/enums/customer-type.enum';
 import { BillingQuoteStatus } from '@application/ports/output/gateways/billing/billing-quotes-gateway.response';
 import { BillingPaymentStatus } from '@application/ports/output/gateways/billing/billing-payments-gateway.response';
@@ -9,18 +8,6 @@ export interface MyCustomerSummary {
   id: string;
   name: string;
   type: CustomerType;
-}
-
-export interface MeResponse {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole | null;
-  customers: MyCustomerSummary[];
-}
-
-export interface MeDataResponse {
-  data: MeResponse;
 }
 
 export interface MyVehicleSummary {

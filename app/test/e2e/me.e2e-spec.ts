@@ -1,19 +1,28 @@
 import type { Server } from 'http';
 import { randomUUID } from 'node:crypto';
-import * as bcrypt from 'bcrypt';
 import request from 'supertest';
+import { sign } from 'jsonwebtoken';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
-import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
-import { signTestCustomerToken } from '../helpers/customer-jwt.helper';
-import { InternalServicesStub, startInternalServicesStub } from '../helpers/internal-services-stub';
+import { StaffUser, createStaffUser } from '../helpers/auth.helper';
+import {
+  CUSTOMER_JWT_TEST_AUDIENCE,
+  CUSTOMER_JWT_TEST_ISSUER,
+  CUSTOMER_JWT_TEST_PRIVATE_KEY,
+  signTestCustomerToken,
+} from '../helpers/customer-jwt.helper';
+import {
+  InternalServicesStub,
+  startInternalServicesStub,
+  stubIdentityUser,
+} from '../helpers/internal-services-stub';
 import { readInternalQuoteFixture } from '../helpers/billing-quotes-gateway-mock.factory';
 import { readInternalWorkOrderPaymentsFixture } from '../helpers/billing-payments-gateway-mock.factory';
 
 describe('Me (E2E)', () => {
   let ctx: TestContext;
   let httpServer: Server;
-  let adminAuth: AuthTokens;
+  let adminAuth: StaffUser;
 
   let stub: InternalServicesStub;
 
@@ -30,15 +39,7 @@ describe('Me (E2E)', () => {
 
   beforeEach(async () => {
     await cleanDatabase(ctx.prisma);
-    adminAuth = await registerAndLogin(
-      httpServer,
-      {
-        name: 'Admin E2E',
-        email: 'admin-me@e2e.test',
-        role: 'ADMIN',
-      },
-      ctx.prisma,
-    );
+    adminAuth = createStaffUser({ stub }, { name: 'Admin E2E' });
   });
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -78,11 +79,12 @@ describe('Me (E2E)', () => {
     const id = ++customerCounter;
     const res = await request(httpServer)
       .post('/api/customers')
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .send({
         name: `Cliente Teste ${id}`,
         document: generateCPF(id),
         type: 'INDIVIDUAL',
+        createAccess: false,
         email: `cliente-me-${Date.now()}${id}@test.com`,
         phone: '11999999999',
         address: {
@@ -100,7 +102,7 @@ describe('Me (E2E)', () => {
     const id = ++customerCounter;
     const res = await request(httpServer)
       .post('/api/customers')
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .send({
         name: `Empresa Teste ${id} LTDA`,
         document: generateCNPJ(id),
@@ -122,7 +124,7 @@ describe('Me (E2E)', () => {
   async function createVehicle(customerId: string) {
     const res = await request(httpServer)
       .post('/api/vehicles')
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .send({
         customerId,
         plate: `ABC-${Date.now().toString().slice(-4)}`,
@@ -137,36 +139,28 @@ describe('Me (E2E)', () => {
   async function createWorkOrder(customerId: string, vehicleId: string) {
     const res = await request(httpServer)
       .post('/api/work-orders')
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .send({ customerId, vehicleId, problemDescription: 'Barulho no motor' })
       .expect(201);
     return res.body.data as { id: string; number: string; status: string };
   }
 
   /**
-   * Creates through Prisma a purely external user (role null, with a CPF)
-   * already linked to an active customer — equivalent to the result of
-   * `POST /api/customers/:customerId/users`, but without depending on the
-   * initial password e-mail flow, which is irrelevant to this test.
+   * Creates an external user known to the Identity stub (role null, with a CPF) and links it
+   * to an active customer, like `POST /api/customers/:customerId/users` does.
    */
   async function createExternalUserLinkedTo(customerId: string, cpf: string) {
-    const passwordHash = await bcrypt.hash('External@123', 10);
-    const user = await ctx.prisma.user.create({
-      data: {
-        name: `Cliente Externo ${cpf}`,
-        email: `externo-${cpf}@e2e.test`,
-        cpf,
-        passwordHash,
-        role: null,
-        isActive: true,
-      },
+    const user = stubIdentityUser(stub, {
+      name: `Cliente Externo ${cpf}`,
+      email: `externo-${cpf}@e2e.test`,
+      role: null,
     });
 
     await ctx.prisma.userCustomer.create({
       data: { userId: user.id, customerId },
     });
 
-    return user;
+    return { ...user, cpf };
   }
 
   // ─── GET /api/me/work-orders ────────────────────────────────────────────────
@@ -243,6 +237,25 @@ describe('Me (E2E)', () => {
         .set('Authorization', `Bearer ${signTestCustomerToken(randomUUID())}`)
         .expect(401);
     });
+
+    it('should return 401 to a token without sub even when other users have active links', async () => {
+      const customer = await createCustomer();
+      const vehicle = await createVehicle(customer.id);
+      await createWorkOrder(customer.id, vehicle.id);
+      await createExternalUserLinkedTo(customer.id, generateCPF(1003));
+
+      const token = sign({}, CUSTOMER_JWT_TEST_PRIVATE_KEY, {
+        algorithm: 'RS256',
+        issuer: CUSTOMER_JWT_TEST_ISSUER,
+        audience: CUSTOMER_JWT_TEST_AUDIENCE,
+        expiresIn: 3600,
+      });
+
+      await request(httpServer)
+        .get('/api/me/work-orders')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(401);
+    });
   });
 
   // ─── Customer token outside the customer area ───────────────────────────────
@@ -300,91 +313,9 @@ describe('Me (E2E)', () => {
     });
   });
 
-  // ─── PATCH /api/me/password ─────────────────────────────────────────────────
+  // ─── Full external customer flow: linked customers → quote decision ───
 
-  describe('PATCH /api/me/password', () => {
-    it('should let an externally authenticated user change their own password', async () => {
-      const customer = await createCustomer();
-      const user = await createExternalUserLinkedTo(customer.id, generateCPF(4000));
-      const token = signTestCustomerToken(user.id);
-
-      await request(httpServer)
-        .patch('/api/me/password')
-        .set('Authorization', `Bearer ${token}`)
-        .send({ currentPassword: 'External@123', newPassword: 'NovaSenha@456' })
-        .expect(204);
-
-      const updated = await ctx.prisma.user.findUnique({ where: { id: user.id } });
-      expect(await bcrypt.compare('NovaSenha@456', updated!.passwordHash)).toBe(true);
-    });
-
-    it('should reject an external token issued before an authenticated password change', async () => {
-      const customer = await createCustomer();
-      const user = await createExternalUserLinkedTo(customer.id, generateCPF(4001));
-      const tokenIssuedBeforeChange = signTestCustomerToken(user.id);
-
-      // iat has one-second granularity; make the change land in the second
-      // after the signing, so rounding does not make them collide.
-      await new Promise((resolve) => setTimeout(resolve, 1100));
-
-      await request(httpServer)
-        .patch('/api/me/password')
-        .set('Authorization', `Bearer ${tokenIssuedBeforeChange}`)
-        .send({ currentPassword: 'External@123', newPassword: 'NovaSenha@456' })
-        .expect(204);
-
-      await request(httpServer)
-        .get('/api/me/work-orders')
-        .set('Authorization', `Bearer ${tokenIssuedBeforeChange}`)
-        .expect(401);
-    });
-
-    it('should let an internally authenticated user change their own password', async () => {
-      await request(httpServer)
-        .patch('/api/me/password')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ currentPassword: 'Test@2026', newPassword: 'NovaSenha@456' })
-        .expect(204);
-
-      const updated = await ctx.prisma.user.findUnique({ where: { id: adminAuth.user.id } });
-      expect(await bcrypt.compare('NovaSenha@456', updated!.passwordHash)).toBe(true);
-    });
-
-    it('should return 401 when the current password is wrong', async () => {
-      await request(httpServer)
-        .patch('/api/me/password')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ currentPassword: 'SenhaErrada@000', newPassword: 'NovaSenha@456' })
-        .expect(401);
-    });
-
-    it('should return 422 when the new password does not meet the policy', async () => {
-      await request(httpServer)
-        .patch('/api/me/password')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ currentPassword: 'Test@2026', newPassword: 'fracasenha' })
-        .expect(422);
-    });
-
-    it('should return 409 when the new password equals the current one', async () => {
-      await request(httpServer)
-        .patch('/api/me/password')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ currentPassword: 'Test@2026', newPassword: 'Test@2026' })
-        .expect(409);
-    });
-
-    it('should return 401 without any token', async () => {
-      await request(httpServer)
-        .patch('/api/me/password')
-        .send({ currentPassword: 'Test@2026', newPassword: 'NovaSenha@456' })
-        .expect(401);
-    });
-  });
-
-  // ─── Full external customer flow: CPF login → /api/me → quote decision ───
-
-  describe('Full external customer flow — CPF login → /api/me → quote decision', () => {
+  describe('Full external customer flow — linked customers → quote decision', () => {
     it('should let an externally authenticated user with an INDIVIDUAL and a COMPANY customer see both, scope work-order/quote access to their own customers, and decide a quote', async () => {
       const customerA = await createCustomer();
       const customerB = await createCompanyCustomer();
@@ -392,13 +323,22 @@ describe('Me (E2E)', () => {
 
       const externalUser = await createExternalUserLinkedTo(customerA.id, generateCPF(2000));
 
-      // Second link through the real API (not Prisma directly): the same CPF
-      // as externalUser reuses the existing User instead of creating a new one,
-      // proving GrantCustomerAccessUseCase's behavior end to end — not only the
-      // /api/me read over a hand-built state.
+      // Second link through the real API (not Prisma directly): the identity answers with the
+      // user it already has for this CPF, so the grant links externalUser instead of a new user.
+      stubIdentityUser(stub, {
+        id: externalUser.id,
+        name: externalUser.name,
+        email: externalUser.email,
+        role: null,
+      });
+      stub.customerUsers.response = {
+        status: 200,
+        body: { data: { userId: externalUser.id, created: false } },
+      };
+
       await request(httpServer)
         .post(`/api/customers/${customerB.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ name: externalUser.name, email: externalUser.email, cpf: externalUser.cpf })
         .expect(201);
 
@@ -449,18 +389,6 @@ describe('Me (E2E)', () => {
 
       const externalToken = signTestCustomerToken(externalUser.id);
 
-      // GET /api/me — identity of an external (role null) user linked to both customers
-      const meResponse = await request(httpServer)
-        .get('/api/me')
-        .set('Authorization', `Bearer ${externalToken}`);
-
-      expect(meResponse.status).toBe(200);
-      expect(meResponse.body.data.role).toBeNull();
-      expect(meResponse.body.data.customers).toHaveLength(1);
-      expect(meResponse.body.data.customers.map((c: { type: string }) => c.type)).toEqual([
-        'COMPANY',
-      ]);
-
       // GET /api/me/work-orders — only the caller's own linked-customer work orders
       const workOrdersResponse = await request(httpServer)
         .get('/api/me/work-orders')
@@ -506,7 +434,7 @@ describe('Me (E2E)', () => {
       // A staff token is rejected on the external-only route
       const internalTokenOnExternalRoute = await request(httpServer)
         .get('/api/me/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`);
+        .set('Authorization', adminAuth.authorization);
 
       expect(internalTokenOnExternalRoute.status).toBe(401);
 
@@ -772,7 +700,7 @@ describe('Me (E2E)', () => {
 
       await request(httpServer)
         .delete(`/api/customers/${customer.id}/users/${user.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(204);
 
       const afterRevoke = await request(httpServer)
@@ -793,7 +721,7 @@ describe('Me (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/customers/${customer.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ isActive: false })
         .expect(204);
 

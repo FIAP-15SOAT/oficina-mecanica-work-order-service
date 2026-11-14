@@ -6,6 +6,8 @@ Aceito — 2026-10-26
 
 Substitui o [ADR 0013](0013-autenticacao-interna-jwt-stateless.md) no formato e na assinatura do token de funcionário. O que o 0013 decidiu sobre JWT stateless, par access/refresh, revalidação do usuário no banco e invalidação por `passwordChangedAt` continua valendo.
 
+Emendado pelo [ADR 0026](0026-usuarios-lidos-no-identity-sem-replica.md): o emissor do token passou a ser o Identity, o serviço da solução dono dos usuários. Este serviço não emite mais token, não guarda chave privada (o Secret `jwt-private-keys` e os secrets `STAFF_JWT_PRIVATE_KEY` e `STAFF_JWT_REFRESH_PRIVATE_KEY` saíram) e não relê o usuário: a `JwtStrategy` valida só a assinatura e as claims. O perfil do token e a validação descritos abaixo continuam valendo; a emissão e as chaves privadas descritas abaixo são hoje do Identity.
+
 ## Contexto
 
 O token de funcionário era HS256, assinado com `JWT_SECRET` (o refresh com `JWT_REFRESH_SECRET`), sem `iss`, `aud` nem `kid`, e valia 15 minutos. Num algoritmo simétrico, quem valida precisa do mesmo segredo de quem assina. A solução passa a ter vários serviços (Inventory, Identity e Billing além deste), e todos aceitam o token de funcionário: com HS256, cada um teria de receber o segredo e, com ele, poderia emitir tokens válidos para todos os outros.

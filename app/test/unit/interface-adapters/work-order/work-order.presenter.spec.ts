@@ -18,7 +18,7 @@ import { createMockWorkOrderService } from '../../../helpers/work-order-service-
 import { createMockWorkOrderPartSupply } from '../../../helpers/work-order-part-supply-mock.factory';
 import { createMockCustomer } from '../../../helpers/customer-mock.factory';
 import { createMockVehicle } from '../../../helpers/vehicle-mock.factory';
-import { createMockUser } from '../../../helpers/user-mock.factory';
+import { createMockIdentityUserGatewayResponse } from '../../../helpers/identity-users-gateway-mock.factory';
 import { createMockStatusHistory } from '../../../helpers/status-history-mock.factory';
 
 describe('WorkOrderPresenter', () => {
@@ -53,7 +53,7 @@ describe('WorkOrderPresenter', () => {
       workOrder.customer = customer;
       workOrder.vehicle = vehicle;
 
-      const response = WorkOrderPresenter.toResponse(workOrder, emptyCatalog);
+      const response = WorkOrderPresenter.toResponse(workOrder, emptyCatalog, []);
 
       expect(response.id).toBe(workOrder.id);
       expect(response.number).toBe(workOrder.number.toString());
@@ -64,10 +64,40 @@ describe('WorkOrderPresenter', () => {
       expect(response.totalAmount).toBe(workOrder.totalAmount);
     });
 
+    it('should show the assigned user read in the identity', () => {
+      const user = createMockIdentityUserGatewayResponse();
+      const workOrder = createMockWorkOrder({
+        customer: createMockCustomer(),
+        vehicle: createMockVehicle(),
+        assignedUserId: user.id,
+      });
+
+      const response = WorkOrderPresenter.toResponse(workOrder, emptyCatalog, [user]);
+
+      expect(response.assignedUser).toEqual({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      });
+    });
+
+    it('should show null for an assigned user the identity does not find', () => {
+      const workOrder = createMockWorkOrder({
+        customer: createMockCustomer(),
+        vehicle: createMockVehicle(),
+        assignedUserId: randomUUID(),
+      });
+
+      const response = WorkOrderPresenter.toResponse(workOrder, emptyCatalog, []);
+
+      expect(response.assignedUser).toBeNull();
+    });
+
     it('should format a work order with nested relations correctly', () => {
       const customer = createMockCustomer({ name: 'Customer' });
       const vehicle = createMockVehicle({ plate: Plate.create('ABC-1234') });
-      const user = createMockUser({ name: 'User' });
+      const user = createMockIdentityUserGatewayResponse({ name: 'User' });
 
       const workOrder = WorkOrder.reconstitute({
         id: randomUUID(),
@@ -91,9 +121,8 @@ describe('WorkOrderPresenter', () => {
       });
       workOrder.customer = customer;
       workOrder.vehicle = vehicle;
-      workOrder.assignedUser = user;
 
-      const response = WorkOrderPresenter.toResponse(workOrder, emptyCatalog);
+      const response = WorkOrderPresenter.toResponse(workOrder, emptyCatalog, [user]);
 
       expect(response.customer.name).toBe('Customer');
       expect(response.vehicle.plate).toBe('ABC1234');
@@ -127,7 +156,7 @@ describe('WorkOrderPresenter', () => {
       });
       workOrder.customer = customer;
       workOrder.vehicle = vehicle;
-      const result = WorkOrderPresenter.toDataResponse(workOrder, emptyCatalog);
+      const result = WorkOrderPresenter.toDataResponse(workOrder, emptyCatalog, []);
       expect(result.data).toBeDefined();
       expect(result.data.id).toBe(workOrder.id);
     });
@@ -164,7 +193,7 @@ describe('WorkOrderPresenter', () => {
         pagination: { totalRecords: 1, totalPages: 1, page: 1, limit: 10 },
       };
 
-      const response = WorkOrderPresenter.toPaginatedResponse(paginatedResult);
+      const response = WorkOrderPresenter.toPaginatedResponse(paginatedResult, []);
 
       expect(response.data).toHaveLength(1);
       expect(response.pagination).toEqual(paginatedResult.pagination);
@@ -200,7 +229,7 @@ describe('WorkOrderPresenter', () => {
       workOrder.customer = customer;
       workOrder.vehicle = vehicle;
 
-      const response = WorkOrderPresenter.toSummaryResponse(workOrder);
+      const response = WorkOrderPresenter.toSummaryResponse(workOrder, []);
 
       expect(response.id).toBe(workOrder.id);
       expect(response.services).toBeUndefined();
@@ -220,10 +249,11 @@ describe('WorkOrderPresenter', () => {
         partSupplies: [createMockWorkOrderPartSupply({ partSupplyId: partSupply.id })],
       });
 
-      const response = WorkOrderPresenter.toResponse(workOrder, {
-        services: [service],
-        partsSupplies: [partSupply],
-      });
+      const response = WorkOrderPresenter.toResponse(
+        workOrder,
+        { services: [service], partsSupplies: [partSupply] },
+        [],
+      );
 
       expect(response.services![0]).toMatchObject({
         id: service.id,
@@ -262,7 +292,7 @@ describe('WorkOrderPresenter', () => {
         partSupplies: [partSupplyItem],
       });
 
-      const response = WorkOrderPresenter.toResponse(workOrder, emptyCatalog);
+      const response = WorkOrderPresenter.toResponse(workOrder, emptyCatalog, []);
 
       expect(response.services![0]).toMatchObject({
         id: serviceItem.serviceId,
@@ -308,7 +338,7 @@ describe('WorkOrderPresenter', () => {
 
   describe('toStatusHistoryListResponse', () => {
     it('should return empty data array when history is empty', () => {
-      const result = WorkOrderPresenter.toStatusHistoryListResponse([]);
+      const result = WorkOrderPresenter.toStatusHistoryListResponse([], []);
 
       expect(result.data).toEqual([]);
     });
@@ -323,7 +353,7 @@ describe('WorkOrderPresenter', () => {
         createdAt: now,
       });
 
-      const result = WorkOrderPresenter.toStatusHistoryListResponse([entry]);
+      const result = WorkOrderPresenter.toStatusHistoryListResponse([entry], []);
 
       expect(result.data).toHaveLength(1);
 
@@ -337,20 +367,28 @@ describe('WorkOrderPresenter', () => {
       expect(item.changedBy).toBeNull();
     });
 
-    it('should map changedBy user fields when user is set', () => {
-      const user = createMockUser({ name: 'Mecânico' });
-      const entry = createMockStatusHistory({ previousStatus: null });
-      entry.changedBy = user;
+    it('should show the history author read in the identity', () => {
+      const user = createMockIdentityUserGatewayResponse({ name: 'Mecânico' });
+      const entry = createMockStatusHistory({ previousStatus: null, changedById: user.id });
 
-      const result = WorkOrderPresenter.toStatusHistoryListResponse([entry]);
+      const result = WorkOrderPresenter.toStatusHistoryListResponse([entry], [user]);
 
       const changedBy = result.data[0].changedBy!;
 
-      expect(changedBy).not.toBeNull();
-      expect(changedBy.id).toBe(user.id);
-      expect(changedBy.name).toBe('Mecânico');
-      expect(changedBy.email).toBe(user.email.value);
-      expect(changedBy.role).toBe(user.role);
+      expect(changedBy).toEqual({
+        id: user.id,
+        name: 'Mecânico',
+        email: user.email,
+        role: user.role,
+      });
+    });
+
+    it('should show null for a history author the identity does not find', () => {
+      const entry = createMockStatusHistory({ changedById: randomUUID() });
+
+      const result = WorkOrderPresenter.toStatusHistoryListResponse([entry], []);
+
+      expect(result.data[0].changedBy).toBeNull();
     });
 
     it('should map multiple entries preserving order', () => {
@@ -358,7 +396,7 @@ describe('WorkOrderPresenter', () => {
 
       const entry2 = createMockStatusHistory({ newStatus: WorkOrderStatus.APPROVED });
 
-      const result = WorkOrderPresenter.toStatusHistoryListResponse([entry1, entry2]);
+      const result = WorkOrderPresenter.toStatusHistoryListResponse([entry1, entry2], []);
 
       expect(result.data).toHaveLength(2);
       expect(result.data[0].newStatus).toBe(WorkOrderStatus.IN_DIAGNOSIS);

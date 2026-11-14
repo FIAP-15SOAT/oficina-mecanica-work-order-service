@@ -4,8 +4,8 @@ import { WorkOrderService } from '@domain/entities/work-order-service.entity';
 import { WorkOrderPartSupply } from '@domain/entities/work-order-part-supply.entity';
 import { Customer } from '@domain/entities/customer.entity';
 import { Vehicle } from '@domain/entities/vehicle.entity';
-import { User } from '@domain/entities/user.entity';
 import { PaginatedResult } from '@domain/interfaces/common/pagination.interface';
+import { IdentityUserGatewayResponse } from '@application/ports/output/gateways/identity/identity-users-gateway.response';
 import { FindCatalogItemsOutputDto } from '@application/ports/input/catalog/dto/find-catalog-items.dto';
 import {
   InventoryPartSupplyGatewayResponse,
@@ -28,15 +28,16 @@ import {
 } from './responses/status-history.response';
 
 export class WorkOrderPresenter {
-  static toSummaryResponse(workOrder: WorkOrder): WorkOrderResponse {
+  static toSummaryResponse(
+    workOrder: WorkOrder,
+    users: readonly IdentityUserGatewayResponse[],
+  ): WorkOrderResponse {
     return {
       id: workOrder.id,
       number: workOrder.number.toString(),
       customer: WorkOrderPresenter.toCustomer(workOrder.customer!),
       vehicle: WorkOrderPresenter.toVehicle(workOrder.vehicle!),
-      assignedUser: workOrder.assignedUser
-        ? WorkOrderPresenter.toUser(workOrder.assignedUser)
-        : null,
+      assignedUser: WorkOrderPresenter.toUser(users, workOrder.assignedUserId),
       status: workOrder.status,
       problemDescription: workOrder.problemDescription,
       internalNotes: workOrder.internalNotes,
@@ -51,9 +52,13 @@ export class WorkOrderPresenter {
     };
   }
 
-  static toResponse(workOrder: WorkOrder, catalog: FindCatalogItemsOutputDto): WorkOrderResponse {
+  static toResponse(
+    workOrder: WorkOrder,
+    catalog: FindCatalogItemsOutputDto,
+    users: readonly IdentityUserGatewayResponse[],
+  ): WorkOrderResponse {
     return {
-      ...WorkOrderPresenter.toSummaryResponse(workOrder),
+      ...WorkOrderPresenter.toSummaryResponse(workOrder, users),
       services: workOrder.services.map((item) =>
         WorkOrderPresenter.toServiceItem(
           item,
@@ -72,26 +77,31 @@ export class WorkOrderPresenter {
   static toDataResponse(
     workOrder: WorkOrder,
     catalog: FindCatalogItemsOutputDto,
+    users: readonly IdentityUserGatewayResponse[],
   ): WorkOrderDataResponse {
-    return { data: WorkOrderPresenter.toResponse(workOrder, catalog) };
+    return { data: WorkOrderPresenter.toResponse(workOrder, catalog, users) };
   }
 
   static toPaginatedResponse(
     paginatedResult: PaginatedResult<WorkOrder>,
+    users: readonly IdentityUserGatewayResponse[],
   ): WorkOrderPaginatedResponse {
     const { items, pagination } = paginatedResult;
     return {
-      data: items.map((wo) => WorkOrderPresenter.toSummaryResponse(wo)),
+      data: items.map((wo) => WorkOrderPresenter.toSummaryResponse(wo, users)),
       pagination,
     };
   }
 
-  static toStatusHistoryListResponse(history: StatusHistory[]): StatusHistoryListResponse {
+  static toStatusHistoryListResponse(
+    history: StatusHistory[],
+    users: readonly IdentityUserGatewayResponse[],
+  ): StatusHistoryListResponse {
     return {
       data: history.map(
         (entry): StatusHistoryResponse => ({
           id: entry.id,
-          changedBy: entry.changedBy ? WorkOrderPresenter.toUser(entry.changedBy) : null,
+          changedBy: WorkOrderPresenter.toUser(users, entry.changedById),
           previousStatus: entry.previousStatus,
           newStatus: entry.newStatus,
           notes: entry.notes,
@@ -136,13 +146,13 @@ export class WorkOrderPresenter {
     };
   }
 
-  private static toUser(user: User): WorkOrderAssignedUserResponse {
-    return {
-      id: user.id,
-      name: user.name,
-      email: user.email.value,
-      role: user.role,
-    };
+  private static toUser(
+    users: readonly IdentityUserGatewayResponse[],
+    userId: string | null,
+  ): WorkOrderAssignedUserResponse | null {
+    const user = users.find((candidate) => candidate.id === userId);
+
+    return user ? { id: user.id, name: user.name, email: user.email, role: user.role } : null;
   }
 
   private static toServiceItem(

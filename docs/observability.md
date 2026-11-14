@@ -80,7 +80,7 @@ Casos de uso declaram **nomes lógicos** (`quoteId`) no tipo da entrada do catá
 
 O vocabulário lógico (`application/logging/log-field.ts`) e o registro em `infrastructure/logging/field-registry.ts` são a **única** declaração de um campo: dele saem a chave física, a entrada do dicionário e a sensibilidade que decide o mascaramento. O registro é um `Record<LogicalFieldName, …>`, então esquecer uma entrada é erro de compilação — e um teste de tipo em `field-registry.spec.ts` fecha a outra direção, falhando quando um campo declarado não é emitido por nenhum evento.
 
-A sensibilidade declarada é o que mascara: `subjectName`/`subjectEmail` saem mascarados sem que o caso de uso faça nada, e `dependencyName` — nome de dependência técnica, não de pessoa — sai em claro por declaração explícita, não por acidente.
+A sensibilidade declarada é o que mascara: `mailRecipient` (o destinatário de um e-mail) sai mascarado sem que o caso de uso faça nada, e `dependencyName` — nome de dependência técnica, não de pessoa — sai em claro por declaração explícita, não por acidente.
 
 ### Sucesso transacional é registrado depois do commit
 
@@ -109,7 +109,7 @@ Nenhum tipo de retorno público muda, nenhuma regra de negócio é duplicada, e 
 
 ### A régua para dar um logger a um caso de uso
 
-*Este log responde a uma pergunta que o access log não responde?* Método, rota, status, duração e autor já estão lá — `logger.info('entrando em FindAllCustomers')` é ruído puro. O logger é injetado somente nos casos de uso que emitem eventos de segurança ou negócio declarados: autenticação e senha, concessão/revogação de acesso, os passos das Sagas de aprovação e de cobrança (`saga.*`), as mensagens de orçamento ignoradas (`quote_event.skipped`), a compensação da abertura que falhou (`work_order.opening.compensation_failed`), usuário e transições de ordem de serviço. Os demais casos de uso não recebem logger deliberadamente.
+*Este log responde a uma pergunta que o access log não responde?* Método, rota, status, duração e autor já estão lá — `logger.info('entrando em FindAllCustomers')` é ruído puro. O logger é injetado somente nos casos de uso que emitem eventos de segurança ou negócio declarados: concessão, recusa e revogação de acesso de cliente, status do cliente, os passos das Sagas de aprovação e de cobrança (`saga.*`), as mensagens de orçamento ignoradas (`quote_event.skipped`), a compensação da abertura que falhou (`work_order.opening.compensation_failed`) e as transições de ordem de serviço e de seus serviços. Os demais casos de uso não recebem logger deliberadamente.
 
 Os passos da Saga de aprovação são donos das transições da OS e emitem o evento somente depois da confirmação transacional. A decisão do Cliente da Oficina (`DecideMyQuoteUseCase`) não emite evento próprio: ela resolve a autorização por vínculo e repassa a decisão ao Billing, o serviço dono dos orçamentos, que a registra; o access log, com `http.route`, e o `request.id`, propagado ao Billing no `x-request-id`, correlacionam as linhas.
 

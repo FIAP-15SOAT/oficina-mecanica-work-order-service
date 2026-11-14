@@ -31,7 +31,6 @@ const createMockDelegate = (): MockDelegate => ({
 });
 
 export type MockPrismaService = {
-  user: MockDelegate;
   customer: MockDelegate;
   address: MockDelegate;
   vehicle: MockDelegate;
@@ -40,7 +39,6 @@ export type MockPrismaService = {
   workOrderPartSupply: MockDelegate;
   statusHistory: MockDelegate;
   userCustomer: MockDelegate;
-  passwordResetCode: MockDelegate;
   outboxMessage: MockDelegate;
   sagaInstance: MockDelegate;
   $connect: jest.Mock;
@@ -52,7 +50,6 @@ export type MockPrismaService = {
 
 export function createMockPrismaClient(): MockPrismaService {
   return {
-    user: createMockDelegate(),
     customer: createMockDelegate(),
     address: createMockDelegate(),
     vehicle: createMockDelegate(),
@@ -61,7 +58,6 @@ export function createMockPrismaClient(): MockPrismaService {
     workOrderPartSupply: createMockDelegate(),
     statusHistory: createMockDelegate(),
     userCustomer: createMockDelegate(),
-    passwordResetCode: createMockDelegate(),
     outboxMessage: createMockDelegate(),
     sagaInstance: createMockDelegate(),
     $connect: jest.fn(),

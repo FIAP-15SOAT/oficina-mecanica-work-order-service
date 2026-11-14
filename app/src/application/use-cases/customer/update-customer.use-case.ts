@@ -108,9 +108,9 @@ export class UpdateCustomerUseCase implements IUpdateCustomerUseCase {
       return;
     }
 
-    const linkedUsers = await this.userCustomerRepository.findUsersByCustomerId(existing.id);
+    const linkedUserIds = await this.userCustomerRepository.findUserIdsByCustomerId(existing.id);
 
-    if (linkedUsers.length > 0) {
+    if (linkedUserIds.length > 0) {
       throw new BusinessRuleViolationException(
         'Não é possível alterar o tipo do cliente, nem o documento de um cliente pessoa física, enquanto houver vínculos de acesso.',
       );

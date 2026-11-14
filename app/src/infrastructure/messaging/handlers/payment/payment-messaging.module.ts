@@ -4,6 +4,7 @@ import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 
 import { ICache } from '@application/ports/output/services/cache.service.interface';
+import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
 import { IEmailSenderService } from '@application/ports/output/services/email-sender.service.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
@@ -28,6 +29,7 @@ import { PaymentMessageHandlers } from './payment-message-handlers';
         metrics: IMetrics,
         statusHistoryRepository: IStatusHistoryRepository,
         cache: ICache,
+        identityUsersGateway: IIdentityUsersGateway,
       ) =>
         new PaymentMessageHandlers(
           registry,
@@ -38,6 +40,7 @@ import { PaymentMessageHandlers } from './payment-message-handlers';
             metrics,
             statusHistoryRepository,
             cache,
+            identityUsersGateway,
           ),
           new ApplyPaymentResultUseCase(
             unitOfWork,
@@ -55,6 +58,7 @@ import { PaymentMessageHandlers } from './payment-message-handlers';
         'IMetrics',
         'IStatusHistoryRepository',
         'ICache',
+        'IIdentityUsersGateway',
       ],
     },
   ],

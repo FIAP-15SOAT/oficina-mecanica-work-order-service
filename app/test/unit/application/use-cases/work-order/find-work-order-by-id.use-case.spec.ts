@@ -6,12 +6,10 @@ import { FindWorkOrderByIdUseCase } from '@application/use-cases/work-order/find
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { ICache } from '@application/ports/output/services/cache.service.interface';
 import { WorkOrder } from '@domain/entities/work-order.entity';
-import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
 
 import { createMockCache } from '../../../../helpers/cache-mock.factory';
 import { createMockCustomer } from '../../../../helpers/customer-mock.factory';
-import { createMockUser, createMockUserRepository } from '../../../../helpers/user-mock.factory';
 import { createMockVehicle } from '../../../../helpers/vehicle-mock.factory';
 import {
   createMockWorkOrder,
@@ -29,52 +27,31 @@ function createDetailWorkOrder(overrides: Partial<WorkOrder> = {}): WorkOrder {
 describe('FindWorkOrderByIdUseCase', () => {
   let useCase: FindWorkOrderByIdUseCase;
   let workOrderRepository: jest.Mocked<IWorkOrderRepository>;
-  let userRepository: jest.Mocked<IUserRepository>;
   let cache: jest.Mocked<ICache>;
 
   beforeEach(() => {
     workOrderRepository = createMockWorkOrderRepository();
-    userRepository = createMockUserRepository();
     cache = createMockCache();
-    useCase = new FindWorkOrderByIdUseCase(workOrderRepository, userRepository, cache);
+    useCase = new FindWorkOrderByIdUseCase(workOrderRepository, cache);
   });
 
-  it('should return the cached work order without reading the repository', async () => {
-    const user = createMockUser();
+  it('should return the cached work order without reading the repository or the user', async () => {
+    const assignedUserId = randomUUID();
 
-    const workOrder = createDetailWorkOrder({ assignedUserId: user.id });
+    const workOrder = createDetailWorkOrder({ assignedUserId });
 
     cache.get.mockResolvedValueOnce(JSON.stringify(WorkOrderCacheMapper.toCache(workOrder)));
-
-    userRepository.findById.mockResolvedValueOnce(user);
 
     const result = await useCase.execute(workOrder.id);
 
     expect(cache.get).toHaveBeenCalledWith(workOrderCacheKey(workOrder.id));
-
     expect(workOrderRepository.findByIdWithDetails).not.toHaveBeenCalled();
-
-    expect(userRepository.findById).toHaveBeenCalledWith(user.id);
-
-    expect(result.assignedUser).toBe(user);
+    expect(cache.set).not.toHaveBeenCalled();
+    expect(result.assignedUserId).toBe(assignedUserId);
 
     expect(result).toStrictEqual(
-      Object.assign(WorkOrderCacheMapper.toDomain(WorkOrderCacheMapper.toCache(workOrder)), {
-        assignedUser: user,
-      }),
+      WorkOrderCacheMapper.toDomain(WorkOrderCacheMapper.toCache(workOrder)),
     );
-    expect(cache.set).not.toHaveBeenCalled();
-  });
-
-  it('should not look up a user for a cached work order without one', async () => {
-    const workOrder = createDetailWorkOrder();
-
-    cache.get.mockResolvedValueOnce(JSON.stringify(WorkOrderCacheMapper.toCache(workOrder)));
-
-    const result = await useCase.execute(workOrder.id);
-
-    expect(userRepository.findById).not.toHaveBeenCalled();
-    expect(result.assignedUser).toBeNull();
   });
 
   it('should read the repository on a miss and cache the work order', async () => {

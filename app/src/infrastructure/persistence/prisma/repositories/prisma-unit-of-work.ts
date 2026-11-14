@@ -8,9 +8,7 @@ import { PrismaCustomerRepository } from './prisma-customer.repository';
 import { PrismaVehicleRepository } from './prisma-vehicle.repository';
 import { PrismaWorkOrderRepository } from './prisma-work-order.repository';
 import { PrismaStatusHistoryRepository } from './prisma-status-history.repository';
-import { PrismaUserRepository } from './prisma-user.repository';
 import { PrismaUserCustomerRepository } from './prisma-user-customer.repository';
-import { PrismaPasswordResetCodeRepository } from './prisma-password-reset-code.repository';
 import { PrismaOutboxRepository } from './prisma-outbox.repository';
 import { PrismaSagaInstanceRepository } from './prisma-saga-instance.repository';
 
@@ -25,9 +23,7 @@ export class PrismaUnitOfWork implements IUnitOfWork {
         vehicle: new PrismaVehicleRepository(tx as unknown as PrismaService),
         workOrder: new PrismaWorkOrderRepository(tx as unknown as PrismaService),
         statusHistory: new PrismaStatusHistoryRepository(tx as unknown as PrismaService),
-        user: new PrismaUserRepository(tx as unknown as PrismaService),
         userCustomer: new PrismaUserCustomerRepository(tx as unknown as PrismaService),
-        passwordResetCode: new PrismaPasswordResetCodeRepository(tx as unknown as PrismaService),
         outbox: new PrismaOutboxRepository(tx as unknown as PrismaService),
         sagaInstance: new PrismaSagaInstanceRepository(tx as unknown as PrismaService),
       };

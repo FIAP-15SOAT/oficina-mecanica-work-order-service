@@ -59,27 +59,6 @@ export const LOGICAL_FIELDS: Readonly<Record<LogicalFieldName, LogicalFieldDefin
     owner: 'use-case',
     sensitivity: 'identifier',
   },
-  subjectName: {
-    key: 'oficina.auth.subject.name',
-    type: 'string',
-    cardinality: 'high',
-    owner: 'use-case',
-    sensitivity: 'pii',
-  },
-  subjectEmail: {
-    key: 'oficina.auth.subject.email',
-    type: 'string',
-    cardinality: 'high',
-    owner: 'use-case',
-    sensitivity: 'pii',
-  },
-  failureReason: {
-    key: 'oficina.auth.failure.reason',
-    type: 'string',
-    cardinality: 'fixed',
-    owner: 'use-case',
-    sensitivity: 'clear',
-  },
   quoteId: {
     key: 'oficina.quote.id',
     type: 'string',
@@ -184,13 +163,6 @@ export const LOGICAL_FIELDS: Readonly<Record<LogicalFieldName, LogicalFieldDefin
     cardinality: 'high',
     owner: 'use-case',
     sensitivity: 'identifier',
-  },
-  targetUserActive: {
-    key: 'oficina.target.user.active',
-    type: 'boolean',
-    cardinality: 'fixed',
-    owner: 'use-case',
-    sensitivity: 'clear',
   },
   port: {
     key: 'oficina.app.port',
@@ -299,13 +271,6 @@ export const LOGICAL_FIELDS: Readonly<Record<LogicalFieldName, LogicalFieldDefin
   },
   externalAccessFailureReason: {
     key: 'oficina.customer.access.failure.reason',
-    type: 'string',
-    cardinality: 'fixed',
-    owner: 'use-case',
-    sensitivity: 'clear',
-  },
-  resetOutcome: {
-    key: 'oficina.user.password_reset.outcome',
     type: 'string',
     cardinality: 'fixed',
     owner: 'use-case',

@@ -22,7 +22,7 @@ import { DECLARED_FIELD_NAMES } from '@infrastructure/logging/field-registry';
 import { MessageHandlerRegistry } from '@infrastructure/messaging/message-handler.registry';
 import { METRIC_VIEWS } from '@infrastructure/telemetry/metric-registry';
 
-import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
+import { StaffUser, createStaffUser } from '../helpers/auth.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import {
   InternalServicesStub,
@@ -74,7 +74,7 @@ describe('Telemetry (E2E)', () => {
   let ctx: TestContext;
   let httpServer: Server;
   let capture: LogCapture;
-  let adminAuth: AuthTokens;
+  let adminAuth: StaffUser;
   let spanExporter: InMemorySpanExporter;
   let tracerProvider: NodeTracerProvider;
   let meterProvider: MeterProvider;
@@ -125,11 +125,7 @@ describe('Telemetry (E2E)', () => {
 
   beforeEach(async () => {
     await cleanDatabase(ctx.prisma);
-    adminAuth = await registerAndLogin(
-      httpServer,
-      { name: 'Admin Telemetria', email: 'admin.telemetria@e2e.test', role: 'ADMIN' },
-      ctx.prisma,
-    );
+    adminAuth = createStaffUser({ stub }, { name: 'Admin Telemetria' });
     capture.clear();
     spanExporter.reset();
     // Drain the delta window so each test starts from zero.
@@ -144,7 +140,7 @@ describe('Telemetry (E2E)', () => {
     it('should carry trace_id, span_id and request.id on the same access log line', async () => {
       await request(httpServer)
         .get('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       const [line] = accessLines();
@@ -163,7 +159,7 @@ describe('Telemetry (E2E)', () => {
     it('should keep the identifiers stable within the same request', async () => {
       await request(httpServer)
         .get('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       const traceIds = new Set(capture.lines().map((line) => line['trace_id']));
@@ -195,7 +191,7 @@ describe('Telemetry (E2E)', () => {
     it('should keep the dictionary closed with the three new fields', async () => {
       await request(httpServer)
         .get('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       const lines = capture.lines();
@@ -212,7 +208,7 @@ describe('Telemetry (E2E)', () => {
     it('should declare the three fields as strings, as the dictionary promises', async () => {
       await request(httpServer)
         .get('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       const [line] = accessLines();
@@ -242,9 +238,7 @@ describe('Telemetry (E2E)', () => {
     }
 
     function authorized(method: 'post' | 'patch' | 'get', path: string) {
-      return request(httpServer)
-        [method](path)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`);
+      return request(httpServer)[method](path).set('Authorization', adminAuth.authorization);
     }
 
     async function createWorkOrder(): Promise<string> {
@@ -255,6 +249,7 @@ describe('Telemetry (E2E)', () => {
           name: `Cliente Telemetria ${id}`,
           document: generateCPF(id),
           type: 'INDIVIDUAL',
+          createAccess: false,
           email: `cliente.telemetria${Date.now()}${id}@test.com`,
           phone: '11999999999',
           address: {

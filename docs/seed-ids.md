@@ -4,7 +4,7 @@ UUIDs fixos das entidades que um serviço referencia em outro (usuário, cliente
 
 A fonte no código é [`app/prisma/seeds/seed-ids.ts`](../app/prisma/seeds/seed-ids.ts): o seed usa o id na criação (`create` do `upsert`), e a linha que já existe mantém o id que tem. Mudar um id aqui quebra as referências nos outros serviços; um registro novo do seed ganha um UUID v4 novo nesta lista e no arquivo.
 
-A coluna **Dono** é o serviço dono da entidade na arquitetura de microsserviços. O seed deste repositório cria todas as linhas da tabela.
+A coluna **Dono** é o serviço dono da entidade, e o seed do dono cria a linha: o seed deste repositório cria os clientes e os veículos, o do Identity (o serviço dono dos usuários e das credenciais), os usuários, e o do Inventory, os serviços e as peças. Este repositório usa os ids dos usuários nos vínculos de acesso do seed e os dos serviços e das peças nos itens das OS do seed.
 
 | Dono | Entidade | Chave natural | Id | Uso |
 | --- | --- | --- | --- | --- |
@@ -12,8 +12,8 @@ A coluna **Dono** é o serviço dono da entidade na arquitetura de microsserviç
 | identity | Usuário | `lucas.almeida-silva@hotmail.com` | `9e5ba067-a8a2-4c7c-b597-72db4d7a3d8e` | Login do ADMIN |
 | identity | Usuário | `ramooncamacho@hotmail.com` | `2e9e5d67-b47f-48d9-ae4f-8ec95ec2be9f` | Login do ADMIN |
 | identity | Usuário | `camacho.renan@gmail.com` | `f0903c59-e803-4b4d-a9a4-850e5bec1eb9` | Login do ADMIN |
-| identity | Usuário | `joao.silva@email.com` | `212ca9d7-fa8f-4111-9746-d431da68b063` | Login do cliente por CPF (vinculado ao próprio cadastro 12345678909) |
-| identity | Usuário | `maria.souza@email.com` | `6aa85b42-72dd-4ca2-bc94-a1080cfc5a3b` | Login do cliente por CPF (representa a empresa 12345678000195) |
+| identity | Usuário | `joao.silva@email.com` | `212ca9d7-fa8f-4111-9746-d431da68b063` | Usuário de cliente, vinculado pelo seed deste repositório ao próprio cadastro 12345678909 |
+| identity | Usuário | `maria.souza@email.com` | `6aa85b42-72dd-4ca2-bc94-a1080cfc5a3b` | Usuário de cliente, vinculado pelo seed deste repositório à empresa 12345678000195 |
 | work-order | Cliente | `12345678909` | `70bb2668-aa3a-4412-afca-198286ca98db` | Dono das OS e dos veículos do seed |
 | work-order | Cliente | `98765432100` | `826fd6ab-e5da-4c18-be2b-13fd64843321` | Dono das OS e dos veículos do seed |
 | work-order | Cliente | `12345678000195` | `c37a755d-9257-43ad-ae38-890efe884d63` | Dono das OS e dos veículos do seed |

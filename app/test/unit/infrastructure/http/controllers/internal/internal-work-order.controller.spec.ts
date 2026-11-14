@@ -23,6 +23,7 @@ describe('InternalWorkOrderController', () => {
       { execute: jest.fn() },
       { execute: jest.fn() },
       { execute: jest.fn() },
+      { execute: jest.fn() },
     );
     httpController = new InternalWorkOrderController(cleanController);
   });
@@ -34,7 +35,7 @@ describe('InternalWorkOrderController', () => {
         vehicle: createMockVehicle(),
       });
 
-      const response = WorkOrderPresenter.toDataResponse(workOrder, emptyCatalog);
+      const response = WorkOrderPresenter.toDataResponse(workOrder, emptyCatalog, []);
 
       jest.spyOn(cleanController, 'findOne').mockResolvedValue(response);
 

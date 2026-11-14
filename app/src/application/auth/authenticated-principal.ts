@@ -8,4 +8,4 @@ import { AuthFlow } from '@domain/enums/auth-flow.enum';
  */
 export type AuthenticatedPrincipal =
   | { sub: string; authFlow: AuthFlow.INTERNAL; email: string; role: UserRole }
-  | { sub: string; authFlow: AuthFlow.CUSTOMER; email: string };
+  | { sub: string; authFlow: AuthFlow.CUSTOMER };

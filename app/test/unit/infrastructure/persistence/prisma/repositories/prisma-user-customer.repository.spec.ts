@@ -8,7 +8,6 @@ import {
   createMockPrismaClient,
   MockPrismaService,
 } from '../../../../../helpers/prisma-mock.factory';
-import { createMockPrismaUser } from '../../../../../helpers/user-mock.factory';
 import { createMockPrismaCustomer } from '../../../../../helpers/customer-mock.factory';
 
 describe('PrismaUserCustomerRepository', () => {
@@ -125,19 +124,19 @@ describe('PrismaUserCustomerRepository', () => {
     });
   });
 
-  describe('findUsersByCustomerId', () => {
-    it('should return the linked users', async () => {
+  describe('findUserIdsByCustomerId', () => {
+    it('should return only the ids of the linked users', async () => {
       const customerId = randomUUID();
-      prisma.userCustomer.findMany.mockResolvedValue([
-        { user: createMockPrismaUser({}), userId: randomUUID(), customerId, createdAt: new Date() },
-      ]);
+      const userId = randomUUID();
 
-      const result = await repository.findUsersByCustomerId(customerId);
+      prisma.userCustomer.findMany.mockResolvedValue([{ userId }]);
 
-      expect(result).toHaveLength(1);
+      const result = await repository.findUserIdsByCustomerId(customerId);
+
+      expect(result).toEqual([userId]);
       expect(prisma.userCustomer.findMany).toHaveBeenCalledWith({
         where: { customerId },
-        include: { user: true },
+        select: { userId: true },
       });
     });
   });
@@ -159,6 +158,24 @@ describe('PrismaUserCustomerRepository', () => {
       expect(result).toHaveLength(1);
       expect(prisma.userCustomer.findMany).toHaveBeenCalledWith({
         where: { userId },
+        include: { customer: { include: { address: true } } },
+      });
+    });
+  });
+
+  describe('findActiveCustomersByUserId', () => {
+    it('should return only the customers of active links', async () => {
+      const userId = randomUUID();
+      const customer = createMockPrismaCustomer({});
+      prisma.userCustomer.findMany.mockResolvedValue([
+        { customer, userId, customerId: customer.id, createdAt: new Date() },
+      ]);
+
+      const result = await repository.findActiveCustomersByUserId(userId);
+
+      expect(result.map((item) => item.id)).toEqual([customer.id]);
+      expect(prisma.userCustomer.findMany).toHaveBeenCalledWith({
+        where: { userId, customer: { isActive: true } },
         include: { customer: { include: { address: true } } },
       });
     });

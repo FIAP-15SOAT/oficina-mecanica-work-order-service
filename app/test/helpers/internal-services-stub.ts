@@ -2,11 +2,17 @@ import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
+import type { IdentityUserGatewayResponse } from '@application/ports/output/gateways/identity/identity-users-gateway.response';
+
 import {
   readInternalWorkOrderBalanceFixture,
   readInternalWorkOrderPaymentsFixture,
 } from './billing-payments-gateway-mock.factory';
 import { readInternalQuoteSummaryFixture } from './billing-quotes-gateway-mock.factory';
+import {
+  readInternalCustomerUserFixture,
+  readInternalUserFixture,
+} from './identity-users-gateway-mock.factory';
 import {
   readInternalPartSupplyFixture,
   readInternalServiceFixture,
@@ -23,6 +29,10 @@ export interface InternalServicesStub {
   partsSupplies: Map<string, object>;
   /** Billing quotes by id, in the shape with items. */
   quotes: Map<string, object>;
+  /** Identity users by id. */
+  users: Map<string, object>;
+  /** Bodies received on `POST /internal/customer-users` and the answer it gives. */
+  customerUsers: { calls: object[]; response: InternalServicesStubResponse };
   /** Ids whose route answers 500, as a failure of the owner. */
   failingIds: Set<string>;
   /** One-shot answers keyed by "<METHOD> <path>", checked before any route. */
@@ -143,17 +153,37 @@ function listWorkOrderQuotes(
   return { status: 200, body: { data: summaries } };
 }
 
-/** Serves the Inventory catalog and the Billing quote and payment internal routes. */
+function identityRoutes(
+  users: Map<string, object>,
+  customerUsers: InternalServicesStub['customerUsers'],
+): Record<string, RouteHandler> {
+  return {
+    'GET /internal/users/:id': ({ id }) => found(users.get(id), 'Usuário', id),
+    'POST /internal/customer-users': (_params, body) => {
+      customerUsers.calls.push(body as object);
+
+      return customerUsers.response;
+    },
+  };
+}
+
+/** Serves the Inventory catalog, the Billing quote and payment and the Identity user internal routes. */
 export async function startInternalServicesStub(): Promise<InternalServicesStub> {
   const services = new Map<string, object>();
   const partsSupplies = new Map<string, object>();
   const quotes = new Map<string, object>();
+  const users = new Map<string, object>();
+  const customerUsers: InternalServicesStub['customerUsers'] = {
+    calls: [],
+    response: { status: 200, body: { data: readInternalCustomerUserFixture().data } },
+  };
   const failingIds = new Set<string>();
   const nextResponses = new Map<string, InternalServicesStubResponse>();
 
   const routes = Object.entries({
     ...inventoryRoutes(services, partsSupplies),
     ...billingRoutes(quotes),
+    ...identityRoutes(users, customerUsers),
   }).map(([route, handle]) => {
     const [method, pathname] = route.split(' ');
 
@@ -198,6 +228,8 @@ export async function startInternalServicesStub(): Promise<InternalServicesStub>
     services,
     partsSupplies,
     quotes,
+    users,
+    customerUsers,
     failingIds,
     nextResponses,
     close: () => new Promise((resolve) => server.close(() => resolve())),
@@ -224,4 +256,26 @@ export function stubPartSupply(
   stub.partsSupplies.set(partSupply.id, partSupply);
 
   return partSupply;
+}
+
+export function stubIdentityUser(
+  stub: InternalServicesStub,
+  overrides: Partial<IdentityUserGatewayResponse> = {},
+): IdentityUserGatewayResponse {
+  const user = { ...readInternalUserFixture().data, id: randomUUID(), ...overrides };
+
+  stub.users.set(user.id, user);
+
+  return user;
+}
+
+/**
+ * Makes the identity answer `POST /internal/customer-users` with a new customer user.
+ */
+export function stubCustomerUser(stub: InternalServicesStub): IdentityUserGatewayResponse {
+  const user = stubIdentityUser(stub, { role: null, email: `${randomUUID()}@e2e.test` });
+
+  stub.customerUsers.response = { status: 200, body: { data: { userId: user.id, created: true } } };
+
+  return user;
 }

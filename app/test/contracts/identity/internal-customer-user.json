@@ -1,0 +1,7 @@
+{
+  "$source": "oficina-mecanica-identity-service app/test/contracts/internal-customer-user.json",
+  "data": {
+    "userId": "8c2f4a6e-1b3d-4e5f-9a7b-0c1d2e3f4a5b",
+    "created": true
+  }
+}

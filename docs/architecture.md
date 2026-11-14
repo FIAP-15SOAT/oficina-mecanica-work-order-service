@@ -43,12 +43,9 @@ app/src/
 │   │                                # SagaFailureReason, AuthFlow, SortDirection
 │   ├── exceptions/                  # DomainException, DomainValidationException,
 │   │                                # EntityNotFoundException, BusinessRuleViolationException
-│   ├── constants/                   # Regex compartilhadas (placa, telefone, e-mail, senha)
+│   ├── constants/                   # Regex compartilhadas (placa, telefone, e-mail, número da OS)
 │   │                                # + limites de validação por agregado
 │   ├── validators/                  # DocumentValidator (CPF/CNPJ com dígito verificador)
-│   ├── services/                    # CustomerEmailRecipients — destinatários dos e-mails
-│   │                                # ao cliente (usuários vinculados ativos ou, sem
-│   │                                # nenhum, o e-mail do cliente)
 │   ├── messaging/                   # Catálogo de mensagens por escopo (inventory, billing,
 │   │                                # notification) + message-catalog (OutboxMessage: união
 │   │                                # discriminada por `type`)
@@ -61,14 +58,16 @@ app/src/
 │   ├── ports/
 │   │   ├── input/<domínio>/         # I<Nome>UseCase (input ports) + DTOs de entrada
 │   │   └── output/
-│   │       ├── services/            # IEmailSenderService, IHashService, ITokenService,
-│   │       │                        # ILogger, IMetrics, ICache (output ports)
+│   │       ├── services/            # IEmailSenderService, ILogger, IMetrics, ICache
+│   │       │                        # (output ports)
 │   │       └── gateways/<dono>/     # I<Dono><Coisa>Gateway + *GatewayResponse
 │   │                                # (inventory/: IInventoryCatalogGateway, catálogo
 │   │                                # de serviços e peças lido no Inventory;
 │   │                                # billing/: IBillingQuotesGateway, orçamentos
 │   │                                # lidos, criados e decididos no Billing, e
-│   │                                # IBillingPaymentsGateway, saldo e cobranças da OS)
+│   │                                # IBillingPaymentsGateway, saldo e cobranças da OS;
+│   │                                # identity/: IIdentityUsersGateway, usuários
+│   │                                # lidos e criados no Identity)
 │   ├── auth/                        # Principal autenticado que os controllers passam aos casos de uso
 │   ├── messaging/                   # MessageEnvelope + MessageHandler (contrato dos handlers)
 │   ├── keys/                        # Chaves de cache (work-order:work-order:<id>)
@@ -82,20 +81,22 @@ app/src/
 │   │                                # de eventos de NEGÓCIO (nomes lógicos, sem chave física)
 │   ├── policies/                    # CustomerAccessPolicy — autorização por vínculo,
 │   │                                # reutilizável por qualquer caso de uso de /api/me/*
+│   ├── services/                    # MechanicAssignmentPolicy — confere no Identity que
+│   │                                # o usuário atribuído é um mecânico ativo;
+│   │                                # CustomerEmailRecipients — destinatários dos
+│   │                                # e-mails ao cliente (usuários vinculados ativos
+│   │                                # ou o e-mail do cadastro)
 │   ├── use-cases/
-│   │   ├── auth/                    # Authenticate, RefreshToken, IssuePasswordResetCode,
-│   │   │                            # ConfirmPasswordReset
-│   │   ├── user/                    # CRUD + atualização de status
+│   │   ├── identity/                # FindUsersByIds — nome, e-mail e papel dos usuários
+│   │   │                            # lidos no Identity pelos Clean Controllers
 │   │   ├── customer/                # CRUD completo de clientes (createAccess opcional)
 │   │   ├── customer-access/         # GrantCustomerAccess, ListCustomerAccessUsers,
-│   │   │                            # ListUserCustomers, RevokeCustomerAccess,
-│   │   │                            # UpdateCustomerStatus
-│   │   ├── me/                      # ChangeOwnPassword, FindAllMyWorkOrders,
-│   │   │                            # FindMyWorkOrderById, FindMyWorkOrdersQuotes,
-│   │   │                            # FindMyQuoteById, DecideMyQuote,
-│   │   │                            # FindMyWorkOrderPayments — usuário externo
-│   │   │                            # autenticado (identidade via FindUserByIdUseCase,
-│   │   │                            # reaproveitado de user/)
+│   │   │                            # ListUserCustomers, ListActiveUserCustomers,
+│   │   │                            # RevokeCustomerAccess, UpdateCustomerStatus
+│   │   ├── me/                      # FindAllMyWorkOrders, FindMyWorkOrderById,
+│   │   │                            # FindMyWorkOrdersQuotes, FindMyQuoteById,
+│   │   │                            # DecideMyQuote, FindMyWorkOrderPayments —
+│   │   │                            # usuário externo autenticado
 │   │   ├── vehicle/                 # CRUD + busca por cliente
 │   │   ├── catalog/                 # FindCatalogItems — dados de exibição dos itens,
 │   │   │                            # lidos no Inventory pelos Clean Controllers
@@ -115,8 +116,8 @@ app/src/
 │   └── utils/                       # PaginationUtil (sanitização e cálculo de páginas)
 │
 ├── interface-adapters/<domínio>/    # Adapters livres de framework (POJOs, zero @nestjs/*)
-│                                    # domínios: auth, customer, customer-access, me,
-│                                    # service, user, vehicle, work-order
+│                                    # domínios: customer, customer-access, me,
+│                                    # service, vehicle, work-order
 │   ├── <domínio>.controller.ts      # Clean Controller: orquestra o(s) use-case(s) + Presenter
 │   ├── <domínio>.presenter.ts       # Entidade → tipo de resposta PURO (sem @ApiProperty)
 │   ├── requests/                    # Tipos de request do controller (defaults de paginação aqui)
@@ -126,7 +127,7 @@ app/src/
 │   ├── config/                      # app-bootstrap (composição da borda HTTP, compartilhada
 │   │                                #   entre main.ts e o helper de E2E) + swagger.config
 │   ├── utils/                       # read-pem-key (chave PEM da configuração, usada pelas
-│   │                                #   duas strategies JWT e pelo JwtTokenService)
+│   │                                #   duas strategies JWT)
 │   ├── health/                      # Saúde operacional, agnóstica de transporte:
 │   │   │                            # health.constants (módulo folha: segmentos de rota e o
 │   │   │                            #   conjunto fechado de caminhos),
@@ -135,9 +136,10 @@ app/src/
 │   │   │                            # readiness-state (ready|draining, single-flight, transição)
 │   ├── gateways/                    # Adaptadores das portas de gateway, sobre o
 │   │                                # InternalHttpClient: inventory/
-│   │                                # HttpInventoryCatalogGateway e billing/
+│   │                                # HttpInventoryCatalogGateway, billing/
 │   │                                # HttpBillingQuotesGateway e
-│   │                                # HttpBillingPaymentsGateway
+│   │                                # HttpBillingPaymentsGateway e identity/
+│   │                                # HttpIdentityUsersGateway
 │   ├── messaging/                   # MessagingModule (@Global: SNSClient, SQSClient),
 │   │                                # messaging-clients (clientes SNS/SQS com prazo por pedido),
 │   │                                # OutboxRelayService (relay do outbox → SNS FIFO),
@@ -157,17 +159,17 @@ app/src/
 │   │   │                            #   health/health.constants
 │   │   ├── controllers/<domínio>/   # @Controller + module + dto/requests + dto/responses
 │   │   │                            # (@ApiProperty; *ResponseDto implements o tipo puro)
-│   │   │                            # domínios no singular; auth em controllers/auth/;
+│   │   │                            # domínios no singular;
 │   │   │                            # customer-access/ tem dois controllers
 │   │   │                            # (CustomerAccessController, UserCustomersController);
 │   │   │                            # me/ expõe as rotas do usuário externo; internal/ as
-│   │   │                            # rotas /internal entre serviços; service/ só as
+│   │   │                            # rotas /internal entre serviços (inclusive os
+│   │   │                            # clientes vinculados a um usuário); service/ só as
 │   │   │                            # métricas; e as rotas de saúde em controllers/health/
 │   │   ├── guards/                  # AuthenticationGuard (global, nega por padrão) +
-│   │   │                            # JwtAuthGuard, CustomerJwtAuthGuard, AnyAuthGuard
-│   │   │                            # (aceita interno OU externo), RolesGuard
+│   │   │                            # JwtAuthGuard, CustomerJwtAuthGuard, RolesGuard
 │   │   ├── decorators/              # @CurrentUser, @Roles, @Public, @CustomerArea
-│   │   ├── strategies/              # JwtStrategy (RS256, interno),
+│   │   ├── strategies/              # JwtStrategy (RS256, interno, só pelas claims),
 │   │   │                            # CustomerJwtStrategy (RS256, externo) — Passport,
 │   │   │                            # nunca um verificador compartilhado
 │   │   ├── filters/                 # Exception Filters: Domain, Application,
@@ -178,9 +180,9 @@ app/src/
 │   │   ├── validators/              # IsValidCpfCnpj (adapter class-validator)
 │   │   └── common/dto/              # PaginationDto, PaginatedResponseDto compartilhados
 │   ├── persistence/prisma/          # PrismaService + PrismaModule (singleton de conexão)
-│   │   ├── repositories/            # Implementações Prisma (9 repositórios, outbox e Saga incluídos) + PrismaUnitOfWork +
+│   │   ├── repositories/            # Implementações Prisma (7 repositórios, outbox e Saga incluídos) + PrismaUnitOfWork +
 │   │   │                            # RepositoriesModule (@Global) — única pasta a importar @generated/client
-│   │   ├── mappers/                 # Conversão Prisma model → Entidade de domínio (10 mappers)
+│   │   ├── mappers/                 # Conversão Prisma model → Entidade de domínio (8 mappers)
 │   │   └── helpers/                 # Helpers de paginação, existência e ordenação (Prisma)
 │   ├── logging/                     # LoggingModule (@Global) + PinoLoggerAdapter,
 │   │   │                            # logger.config (config + trust proxy),
@@ -203,8 +205,9 @@ app/src/
 │   │                                # incoming-request-filter (exclusão das probes),
 │   │                                # telemetry-lifecycle.service (flush no encerramento),
 │   │                                # telemetry-resource, telemetry-diagnostics
-│   ├── services/                    # BcryptHashService, JwtTokenService,
-│   │                                # MailerEmailSenderService + InfrastructureServicesModule
+│   ├── services/                    # MailerEmailSenderService, staff-token.constants
+│   │                                # (algoritmo do token de funcionário) +
+│   │                                # InfrastructureServicesModule
 │   └── exceptions/                  # InfrastructureException, AuthenticationFailedException,
 │                                    # DatabaseOperationException, ServiceIntegrationException,
 │                                    # ConcurrencyException
@@ -219,35 +222,34 @@ app/test/
 ├── helpers/                         # Mock factories reutilizáveis (incluindo
 │                                    # UnitOfWorkMockFactory) e helpers de E2E
 │                                    # (auth, db cleanup, test app bootstrap)
-├── unit/                            # 195 suites de testes unitários (espelham src/)
-│   ├── domain/                      # entities/, services/, value-objects/, validators/
-│   ├── application/use-cases/       # auth, catalog, customer, customer-access, me,
-│   │                                # payment, quote-approval, service, user, vehicle,
+├── unit/                            # 174 suites de testes unitários (espelham src/)
+│   ├── domain/                      # entities/, value-objects/, validators/
+│   ├── application/use-cases/       # catalog, customer, customer-access, identity, me,
+│   │                                # payment, quote-approval, service, vehicle,
 │   │                                # work-order
 │   ├── interface-adapters/          # Clean Controllers + Presenters por domínio
 │   └── infrastructure/              # http/ (controllers, filters, interceptors, pipes,
 │                                    # validators, auth), persistence/prisma, services
-├── contracts/                       # Fixture do contrato da rota /internal deste
-│                                    # serviço (internal-work-order.json) e cópias
-│                                    # das do Inventory (inventory/) e do Billing
-│                                    # (billing/)
+├── contracts/                       # Fixtures do contrato das rotas /internal deste
+│                                    # serviço (internal-work-order.json e
+│                                    # internal-user-customers.json) e cópias das do
+│                                    # Inventory (inventory/), do Billing (billing/)
+│                                    # e do Identity (identity/)
 ├── bdd/                             # Testes de aceitação em Gherkin pt-BR (Cucumber):
 │                                    # features/ (fluxo completo e compensações),
 │                                    # steps/ (passos por participante) e support/
 │                                    # (World por cenário e serviço real subindo uma
 │                                    # vez por execução)
-└── e2e/                             # 16 suites de testes E2E (Testcontainers: PostgreSQL,
+└── e2e/                             # 14 suites de testes E2E (Testcontainers: PostgreSQL,
     │                                #   Valkey e LocalStack reais)
     ├── all-exceptions.filter.e2e-spec.ts
-    ├── auth.e2e-spec.ts
     ├── customer.e2e-spec.ts
     ├── customer-access.e2e-spec.ts
     ├── health.e2e-spec.ts
     ├── internal.e2e-spec.ts           # rotas /internal contra as fixtures
     ├── logging.e2e-spec.ts
-    ├── me.e2e-spec.ts                 # /api/me/*: identidade externa, senha, OS,
-    │                                  # orçamentos e cobranças vinculados, decisão
-    │                                  # de orçamento
+    ├── me.e2e-spec.ts                 # /api/me/*: OS, orçamentos e cobranças
+    │                                  # vinculados, decisão de orçamento
     ├── messaging.e2e-spec.ts          # outbox → SNS → SQS → handler, lock do relay
     ├── payment-saga.e2e-spec.ts       # Saga de cobrança pelo LocalStack: pagamento
     │                                  # aprovado, cobrança expirada e cobrança com a
@@ -256,7 +258,6 @@ app/test/
     │                                  # orçamento pelo LocalStack, com stub do Billing
     ├── service.e2e-spec.ts            # métricas por serviço
     ├── telemetry.e2e-spec.ts
-    ├── user.e2e-spec.ts
     ├── vehicle.e2e-spec.ts
     └── work-order.e2e-spec.ts
 
@@ -267,11 +268,12 @@ app/prisma/
 ├── migrations/                      # Migrations geradas pelo Prisma — inclui a sequence
 │                                    # `work_order_number_seq` (números de OS),
 │                                    # endurecimento de cascade deletes,
-│                                    # versionamento (colunas `version`) e índices
+│                                    # versionamento (colunas `version`), índices e
+│                                    # a remoção das FKs para `users`
 ├── generated/                       # Prisma Client gerado (output local)
 ├── seed.ts                          # Entry point do seed
 └── seeds/                           # Scripts de seed por entidade (work-order-status-info,
-                                     # user, customer, user-customer, vehicle, work-order)
+                                     # customer, user-customer, vehicle, work-order)
                                      # + seed-ids (UUIDs canônicos, ver seed-ids.md)
 ```
 
@@ -284,12 +286,12 @@ app/prisma/
 O domínio é modelado seguindo princípios de DDD:
 
 - **Aggregate Root** — `WorkOrder` é a raiz de agregado. Toda mutação de itens (serviços, peças/insumos), transições de status e cálculos de totais ocorrem **através** da raiz, que protege os invariantes do agregado.
-  - `WorkOrder` encapsula seus `WorkOrderService[]` e `WorkOrderPartSupply[]`, controla as transições de status (state machine), recalcula `totalAmount`, valida o mecânico atribuído (apenas usuários ativos com role `MECHANIC`) e aplica os itens do orçamento aprovado no Billing (`applyApprovedItems`). Os serviços iniciam/finalizam pela raiz (`startServiceItem` / `completeServiceItem`), que promove a OS para `IN_PROGRESS` no primeiro `start` e para `COMPLETED` quando todos os serviços estão concluídos. O bloqueio pela cobrança também passa por ela: `holdForPayment()` leva a OS a `AWAITING_PAYMENT` e `releasePaymentHold(origem)` a devolve ao status de antes, sem mexer nas datas de aprovação, início, conclusão e entrega (ver [Saga de cobrança](#saga-de-cobrança)).
-- **Entidades** — `Customer`, `Vehicle`, `User`, `UserCustomer`, `PasswordResetCode`, `StatusHistory`, `SagaInstance`, `WorkOrderService`, `WorkOrderPartSupply`. Possuem identidade própria, estado mutável e validações de invariantes nos próprios métodos (`changeRole`, `changePassword`, `complete`, `compensate`, etc.). Serviços e peças não são entidades deste serviço: os itens guardam só o id, a quantidade e o preço, e o catálogo é do Inventory. Orçamentos também não: são do Billing (ver [Orçamentos no Billing](#orçamentos-no-billing)).
+  - `WorkOrder` encapsula seus `WorkOrderService[]` e `WorkOrderPartSupply[]`, controla as transições de status (state machine), recalcula `totalAmount`, guarda só o id do mecânico atribuído (quem confere que ele é um `MECHANIC` ativo é a `MechanicAssignmentPolicy`, no Identity, antes da escrita) e aplica os itens do orçamento aprovado no Billing (`applyApprovedItems`). Os serviços iniciam/finalizam pela raiz (`startServiceItem` / `completeServiceItem`), que promove a OS para `IN_PROGRESS` no primeiro `start` e para `COMPLETED` quando todos os serviços estão concluídos. O bloqueio pela cobrança também passa por ela: `holdForPayment()` leva a OS a `AWAITING_PAYMENT` e `releasePaymentHold(origem)` a devolve ao status de antes, sem mexer nas datas de aprovação, início, conclusão e entrega (ver [Saga de cobrança](#saga-de-cobrança)).
+- **Entidades** — `Customer`, `Vehicle`, `UserCustomer`, `StatusHistory`, `SagaInstance`, `WorkOrderService`, `WorkOrderPartSupply`. Possuem identidade própria, estado mutável e validações de invariantes nos próprios métodos (`complete`, `compensate`, etc.). Serviços, peças e usuários não são entidades deste serviço: os itens guardam só o id, a quantidade e o preço, e o catálogo é do Inventory; a OS, o histórico e os vínculos guardam só o id do usuário, e o usuário é do Identity, o serviço da solução dono dos usuários e das credenciais. Orçamentos também não: são do Billing (ver [Orçamentos no Billing](#orçamentos-no-billing)).
 - **Value Objects** — imutáveis, sem identidade, validados na criação:
   - `Document` (CPF ou CNPJ com dígito verificador), `Email`, `Phone`, `Plate` (placa antiga `ABC-1234` ou Mercosul `ABC1D23` — sanitizada para maiúsculas e sem hífen), `ZipCode`, `Address`, `LineItemPrice` (quantidade × preço unitário com cálculo de total), `WorkOrderNumber` (número da OS validado e normalizado com zero-padding para o comprimento mínimo).
 - **Reconstituição** — todas as entidades expõem `static create(...)` (com validações completas) e `static reconstitute(...)` (rehidratação a partir do banco, sem revalidar dados já persistidos). Os mappers da infraestrutura sempre usam `reconstitute`, evitando o custo de revalidar dados já consistentes e permitindo carregar agregados em estados intermediários (ex.: `APPROVED` ou `IN_PROGRESS`) que `create` não autorizaria.
-- **Enriquecimento de entidades** — relações expostas em consultas usam **referências completas** (`wo.customer`, `wo.vehicle`, `wo.assignedUser`) carregadas via Prisma `include`. Os dados de exibição dos itens não são relação: o Clean Controller os lê no Inventory (`FindCatalogItemsUseCase`) e os entrega ao presenter junto com o agregado. Os presenters projetam os campos necessários para o cliente HTTP.
+- **Enriquecimento de entidades** — relações expostas em consultas usam **referências completas** (`wo.customer`, `wo.vehicle`) carregadas via Prisma `include`. Os dados de exibição dos itens e os usuários não são relação: o Clean Controller lê os itens no Inventory (`FindCatalogItemsUseCase`) e o mecânico atribuído e os autores do histórico no Identity (`FindUsersByIdsUseCase`), e os entrega ao presenter junto com o agregado. Os presenters projetam os campos necessários para o cliente HTTP.
 
 ## Concorrência otimista
 
@@ -299,17 +301,17 @@ Esse mecanismo protege a atualização de status da OS e os passos das Sagas, qu
 
 ## Perfis de usuário (RBAC)
 
-A **autenticação** é negada por padrão: o `AuthenticationGuard` (`infrastructure/http/guards/authentication.guard.ts`) é registrado como `APP_GUARD` e roda em toda rota. Sem marcação, a rota exige o token de funcionário (`JwtAuthGuard`); `@Public()` dispensa o token; `@CustomerArea()` exige o token do Cliente da Oficina (`CustomerJwtAuthGuard`) e `@CustomerArea('any')` aceita qualquer um dos dois (`AnyAuthGuard`). Uma rota nova sem marcação nasce protegida, e esquecer o guard deixa de abrir a rota. Os usos de `@Public()` são, por método, `POST /auth/login`, `POST /auth/refresh` e `POST /auth/password-reset-confirmations` (não há JWT nesses pontos do fluxo) e, por classe, as rotas de saúde e as rotas `/internal` (ver [Chamadas internas](#chamadas-internas)).
+A **autenticação** é negada por padrão: o `AuthenticationGuard` (`infrastructure/http/guards/authentication.guard.ts`) é registrado como `APP_GUARD` e roda em toda rota. Sem marcação, a rota exige o token de funcionário (`JwtAuthGuard`); `@Public()` dispensa o token; `@CustomerArea()` exige o token do Cliente da Oficina (`CustomerJwtAuthGuard`). Uma rota nova sem marcação nasce protegida, e esquecer o guard deixa de abrir a rota. `@Public()` marca, por classe, só as rotas de saúde e as rotas `/internal` (ver [Chamadas internas](#chamadas-internas)): o login, o refresh e a redefinição de senha, as rotas públicas de autenticação, ficam no Identity.
 
 A **autorização interna** é por papel, via `RolesGuard` + decorator `@Roles(...)`, aplicada **por controller** (`@UseGuards(RolesGuard)` na classe). O `RolesGuard` roda depois do guard global, com o `req.user` já preenchido.
 
 | Perfil | Permissões |
 |---|---|
-| `ADMIN` | Acesso completo (usuários, clientes, veículos, OS, métricas por serviço, concessão/revogação de acesso externo) |
+| `ADMIN` | Acesso completo (clientes, veículos, OS, métricas por serviço, concessão/revogação de acesso externo) |
 | `MECHANIC` | Operação de OS, atualização de status de serviço |
 | `ATTENDANT` | Cadastro de clientes/veículos, criação e gestão de OS, concessão/revogação de acesso externo |
 
-As permissões sobre o catálogo de serviços e peças e sobre o estoque são do Inventory, e as sobre orçamentos, do Billing, donos dessas rotas.
+As permissões sobre o catálogo de serviços e peças e sobre o estoque são do Inventory, as sobre orçamentos, do Billing, e as de cadastro de usuários, do Identity, donos dessas rotas.
 
 O **Cliente da Oficina** (usuário externo) não tem `role` no sentido RBAC — `UserRole` continua com apenas `ADMIN`/`MECHANIC`/`ATTENDANT`, papéis de dentro da oficina. Suas rotas (`/api/me/*`) usam um guard e uma política de autorização completamente separados — ver a seção seguinte.
 
@@ -317,28 +319,33 @@ O **Cliente da Oficina** (usuário externo) não tem `role` no sentido RBAC — 
 
 Três conceitos que o modelo mantém deliberadamente separados:
 
-- **`User`** — identidade com credenciais (e-mail + senha com hash). Um `User` pode ter uma `role` interna (RBAC), vínculos externos com um ou mais `Customer` (`UserCustomer`), os dois ao mesmo tempo, ou nenhum dos dois ainda.
+- **Usuário** — identidade com credenciais (e-mail, CPF e senha), guardada no Identity, o serviço da solução dono dos usuários. Um usuário pode ter um papel interno (`ADMIN`, `MECHANIC` ou `ATTENDANT`), vínculos externos com um ou mais `Customer`, os dois ao mesmo tempo, ou nenhum dos dois ainda. Este serviço guarda só o id dele e lê nome, e-mail, papel e status no Identity por `GET /internal/users/:id` (ver [Chamadas internas](#chamadas-internas)).
 - **`Customer`** — a parte comercial (pessoa física ou jurídica dona do veículo/OS). Nunca tem credencial própria; uma empresa (`CustomerType.COMPANY`) nunca loga diretamente.
-- **`UserCustomer`** — o vínculo (many-to-many) que autoriza um `User` a agir em nome de um `Customer`. Não existe um campo `accessType`: a semântica (acesso à própria pessoa física vs. representação de uma empresa) deriva de `Customer.type`.
+- **`UserCustomer`** — o vínculo (many-to-many) que autoriza um usuário a agir em nome de um `Customer`, guardado aqui com o id do usuário. Não existe um campo `accessType`: a semântica (acesso à própria pessoa física vs. representação de uma empresa) deriva de `Customer.type`.
 
-Dois fluxos de autenticação totalmente isolados, cada um com sua própria estratégia Passport, chave pública, emissor e audiência, nunca um verificador compartilhado. Um serviço que valide o token de funcionário precisa só de `STAFF_JWT_PUBLIC_KEY` e `STAFF_JWT_KEY_ID`, sem segredo compartilhado; aqui, a `JwtStrategy` ainda relê o usuário no banco a cada requisição:
+Dois fluxos de autenticação totalmente isolados, cada um com sua própria estratégia Passport, chave pública, emissor e audiência, nunca um verificador compartilhado. Este serviço não emite token nenhum: só valida, com as chaves públicas.
 
-| | Interno | Externo (Cliente da Oficina) |
+| | Interno (funcionários) | Externo (Cliente da Oficina) |
 |---|---|---|
 | Estratégia Passport | `jwt` (`JwtStrategy`) | `customer-jwt` (`CustomerJwtStrategy`) |
 | Algoritmo | RS256 (`algorithms: ['RS256']`) | RS256 (`algorithms: ['RS256']`) |
-| Chave | `STAFF_JWT_PUBLIC_KEY` para validar, `kid` conferido contra `STAFF_JWT_KEY_ID`; esta API também é a emissora e guarda as privadas (`STAFF_JWT_PRIVATE_KEY`, `STAFF_JWT_REFRESH_PRIVATE_KEY`) | `CUSTOMER_JWT_PUBLIC_KEY` (só a pública — a privada vive na função serverless externa) |
-| Emissor do token | `POST /api/auth/login` (interno), com `iss = oficina-identity` e `aud = oficina-services` | Função serverless externa, autenticando por CPF + senha |
-| Guard HTTP (escolhido pelo `AuthenticationGuard`) | `JwtAuthGuard` (rota sem marcação) | `CustomerJwtAuthGuard` (`@CustomerArea()`); `AnyAuthGuard` aceita os dois em `GET /api/me` e `PATCH /api/me/password` (`@CustomerArea('any')`) |
-| Carrega `role`/`customerId` no payload? | `role`, sim (com `sub`, `email`, `name` e `typ = access`) | **Não** — só `sub` (o `userId`) |
+| Chave | `STAFF_JWT_PUBLIC_KEY`, com o `kid` conferido contra `STAFF_JWT_KEY_ID`; as privadas ficam no Identity | `CUSTOMER_JWT_PUBLIC_KEY`; a privada fica na customer-auth, a função Lambda de login do cliente |
+| Emissor do token | `POST /api/auth/login` do Identity, com `iss = oficina-identity` e `aud = oficina-services` | customer-auth, autenticando por CPF + senha |
+| Guard HTTP (escolhido pelo `AuthenticationGuard`) | `JwtAuthGuard` (rota sem marcação) | `CustomerJwtAuthGuard` (`@CustomerArea()`) |
+| O que é conferido | Assinatura, `iss`, `aud`, `exp`, `kid`, `typ = access` e as claims `sub` (um UUID), `email` e `role` (papel conhecido); o usuário não é lido em lugar nenhum | Assinatura, `iss`, `aud`, `exp`, o `sub` como UUID e, no banco deste serviço, se o `sub` tem ao menos um vínculo com cliente ativo |
+| Carrega `role`/`customerId` no payload? | `role`, sim (com `sub`, `email`, `name` e `typ = access`) | **Não** — só `sub` (o id do usuário) |
 
-Diagrama de sequência completo desse fluxo (função serverless externa + `AnyAuthGuard` + `CustomerJwtStrategy`): ver [`docs/sequence-diagrams.md`](sequence-diagrams.md#autenticação-externa-do-cliente-da-oficina-cpf).
+O principal de funcionário sai inteiro das claims: o token é confiável pela assinatura do Identity, e reler o usuário custaria uma chamada ao Identity por requisição. A consequência aceita é a janela de revogação: um funcionário desativado ou que trocou a senha continua com o access que já tem até ele expirar, em até 10 minutos; o Identity recusa o refresh na hora. O token de cliente também não é relido no Identity: um usuário de cliente desativado ou com a senha trocada continua com o token que já tem até ele expirar, em até 60 minutos. As janelas estão em [Segurança](security.md#janelas-de-revogação-aceitas).
 
-**A autorização externa é resolvida a cada requisição, nunca embutida no JWT.** O token externo carrega apenas o `userId` (`sub`); nenhuma rota `/api/me/*` confia em um `customerId` do payload. `CustomerJwtStrategy.validate()` já rejeita o principal se o usuário estiver inativo ou não tiver nenhum vínculo ativo (`findActiveCustomerIdsByUserId`), e a `CustomerAccessPolicy` (`application/policies/customer-access.policy.ts`) repete essa resolução em cada caso de uso de `/api/me/*` que precisa autorizar contra um recurso específico (`FindMyWorkOrderById`, `FindAllMyWorkOrders`, `FindMyWorkOrdersQuotes`, `FindMyQuoteById`, `DecideMyQuote`). Isso faz uma remoção de vínculo (`DELETE /customers/:id/users/:userId`) ou uma desativação de cliente (`PATCH /customers/:id`) valer **imediatamente**, sem precisar de lista de revogação de token. Pelo mesmo caminho — o `User` já recarregado do banco a cada requisição —, `JwtStrategy`, `CustomerJwtStrategy` e `RefreshTokenUseCase` também comparam o `iat` do token com `User.passwordChangedAt`: qualquer token emitido antes da última troca de senha (autenticada ou por reset) é recusado, sem lista de revogação de JWT.
+Diagrama de sequência da autenticação do cliente e da primeira chamada autenticada: ver [`docs/sequence-diagrams.md`](sequence-diagrams.md#autenticação-externa-do-cliente-da-oficina-cpf).
+
+**A autorização externa é resolvida a cada requisição, nunca embutida no JWT.** O token externo carrega apenas o id do usuário (`sub`); nenhuma rota `/api/me/*` confia em um `customerId` do payload. `CustomerJwtStrategy.validate()` rejeita o principal sem nenhum vínculo com cliente ativo (`findActiveCustomerIdsByUserId`), e a `CustomerAccessPolicy` (`application/policies/customer-access.policy.ts`) repete essa resolução em cada caso de uso de `/api/me/*` que precisa autorizar contra um recurso específico (`FindMyWorkOrderById`, `FindAllMyWorkOrders`, `FindMyWorkOrdersQuotes`, `FindMyQuoteById`, `DecideMyQuote`). Isso faz uma remoção de vínculo (`DELETE /customers/:id/users/:userId`) ou uma desativação de cliente (`PATCH /customers/:id`) valer **imediatamente**, sem precisar de lista de revogação de token.
 
 **A política nunca lança 403.** `CustomerAccessPolicy.assertCustomerAuthorized` traduz recurso inexistente e recurso não autorizado para o **mesmo** `ResourceNotFoundException` (HTTP 404) — a rota nunca vira um oráculo de enumeração que revela se uma OS ou orçamento de outro cliente existe.
 
-Ver [ADR 0004](./adr/0004-autenticacao-de-clientes.md) para o raciocínio completo por trás dessas decisões.
+**Concessão de acesso.** `POST /customers/:customerId/users` confere o cliente ativo, pede ao Identity o usuário de acesso por `POST /internal/customer-users` (que o encontra pelo CPF ou o cria e envia a senha inicial por e-mail) e só então grava o vínculo com o id devolvido. Se a gravação do vínculo falhar depois de o Identity criar o usuário, repetir a concessão reaproveita o mesmo usuário pelo CPF.
+
+Ver [ADR 0004](./adr/0004-autenticacao-de-clientes.md) e [ADR 0026](./adr/0026-usuarios-lidos-no-identity-sem-replica.md) para o raciocínio completo por trás dessas decisões.
 
 ## Unit of Work
 
@@ -346,15 +353,15 @@ Operações que tocam múltiplos repositórios são executadas dentro de uma tra
 
 Casos de uso transacionais incluem:
 
-- **Criação de OS** — cria a OS + registra `StatusHistory` inicial. Com itens, o orçamento inicial é criado no Billing **antes** da transação (ver [Saga de abertura](#saga-de-abertura)): nenhuma chamada HTTP fica dentro dela.
+- **Criação de OS** — cria a OS + registra `StatusHistory` inicial. O mecânico atribuído é conferido no Identity e, com itens, o orçamento inicial é criado no Billing, os dois **antes** da transação (ver [Saga de abertura](#saga-de-abertura)): nenhuma chamada HTTP fica dentro dela.
 - **Atualização de status de OS** (`PATCH /work-orders/:id`) — atualiza OS + registra histórico. Na entrega, o saldo é lido no Billing **antes** da transação (ver [Entrega com saldo zero](#entrega-com-saldo-zero)).
 - **Atualização de status de serviço da OS** — atualiza item, eventualmente promove OS para `IN_PROGRESS` / `COMPLETED` e registra histórico. Na passagem a `IN_PROGRESS` de uma OS com peças, grava no outbox o comando `inventory.stock.consume`, que pede ao Inventory a baixa do estoque reservado.
 - **Passos das Sagas de aprovação e de cobrança** — cada mensagem de uma Saga (ver [Aprovação de orçamento com reserva de estoque](#aprovação-de-orçamento-com-reserva-de-estoque) e [Saga de cobrança](#saga-de-cobrança)) é tratada numa transação que grava a Saga e, conforme o passo, a OS, o histórico e o comando no outbox.
-- **Envio e rejeição de orçamento** — as mensagens `billing.quote.sent` e `billing.quote.rejected` movem a OS e registram o histórico numa transação; o e-mail do envio sai depois do commit (ver [Fluxo do orçamento, do envio à aprovação](#fluxo-do-orçamento-do-envio-à-aprovação)).
+- **Envio e rejeição de orçamento** — as mensagens `billing.quote.sent` e `billing.quote.rejected` movem a OS e registram o histórico numa transação, que no envio também lê no Identity os usuários vinculados que recebem o e-mail; o e-mail do envio sai depois do commit (ver [Fluxo do orçamento, do envio à aprovação](#fluxo-do-orçamento-do-envio-à-aprovação)).
 
 ## Ciclo de vida da Ordem de Serviço
 
-Diagramas de sequência do login interno e da abertura de OS: ver [`docs/sequence-diagrams.md`](sequence-diagrams.md).
+Diagrama de sequência da abertura de OS: ver [`docs/sequence-diagrams.md`](sequence-diagrams.md#abertura-de-ordem-de-serviço).
 
 Transições permitidas (state machine validada no agregado `WorkOrder`):
 
@@ -379,7 +386,7 @@ Regras adicionais:
 - **`AWAITING_PAYMENT` só entra e sai pela Saga de cobrança** (`holdForPayment()` e `releasePaymentHold(origem)`). Nesse status, iniciar serviço, entregar e cancelar respondem **409** `Ordem de serviço aguardando pagamento: execução, entrega e cancelamento voltam a valer quando a cobrança for paga, expirar ou for cancelada`; concluir serviço responde o 409 da regra do item, porque nenhum item está em execução (a OS chega de `APPROVED`, com os itens pendentes, ou de `COMPLETED`, com os itens concluídos).
 - A entrega (`COMPLETED` → `DELIVERED`) exige saldo zero no Billing (ver [Entrega com saldo zero](#entrega-com-saldo-zero)).
 - Timestamps `approvedAt`, `rejectedAt`, `startedAt`, `finishedAt` e `deliveredAt` são preenchidos automaticamente pelo agregado quando o status correspondente é atingido. O bloqueio e a volta da cobrança não os mexem: a OS que volta a `APPROVED` mantém a data da aprovação do orçamento, e a que volta a `COMPLETED`, a da conclusão.
-- Apenas mecânicos **ativos** podem ser atribuídos como `assignedUser` (validado tanto na criação quanto na atualização).
+- Apenas mecânicos **ativos** podem ser atribuídos como `assignedUser`: a `MechanicAssignmentPolicy` lê o usuário no Identity antes da escrita, na criação e na atualização. Usuário que o Identity não conhece responde **404**, usuário que não é `MECHANIC` ou está inativo responde **409** e Identity fora do ar responde **503**, sem nada gravado.
 - O número da OS é gerado por uma sequence PostgreSQL (`work_order_number_seq`) e formatado com 6 dígitos zero-padded (`000001`, `000002`, …).
 - A listagem (`GET /work-orders`) aceita ordenação (`sort`) por `status` e/ou `createdAt`. Ao ordenar por `status`, a ordem segue a `priority` definida na tabela de referência `WorkOrderStatusInfo`, não a ordem alfabética: `RECEIVED` 1, `IN_DIAGNOSIS` 2, `AWAITING_APPROVAL` 3, `REJECTED` 4, `APPROVED` 5, `AWAITING_PAYMENT` 6, `IN_PROGRESS` 7, `COMPLETED` 8, `DELIVERED` 9 e `CANCELLED` 10. Padrão: `status:desc,createdAt:asc`, sem as OS em `COMPLETED`, `DELIVERED` e `CANCELLED`; uma OS aguardando o pagamento aparece entre as em execução e as aprovadas, venha ela de `APPROVED` ou de `COMPLETED`.
 
@@ -402,7 +409,7 @@ Os três fluxos que gravam neste serviço e no Billing são **Sagas**: uma sequ�
 
 `POST /api/work-orders` com algum item (serviço ou peça) grava o orçamento inicial no Billing e a OS aqui. O `CreateWorkOrderUseCase` segue quatro passos:
 
-1. valida cliente, veículo e mecânico no próprio banco e gera o id da OS (UUID), fora de transação;
+1. valida cliente e veículo no próprio banco, confere no Identity que o mecânico atribuído é um `MECHANIC` ativo (pela `MechanicAssignmentPolicy`; Identity fora do ar responde 503) e gera o id da OS (UUID), fora de transação;
 2. cria o orçamento no Billing por `IBillingQuotesGateway.createInitialQuote` (`POST /internal/quotes`, com o id da OS e os itens), com prazo de 5 s, porque o Billing lê o catálogo no Inventory antes de responder. O Billing valida e precifica os itens e devolve o orçamento `PENDING`; uma recusa dele (peças sem serviço, item repetido ou desconhecido) volta ao chamador com o mesmo status, e nada foi gravado aqui;
 3. abre a transação que aloca o número da OS e grava a OS `RECEIVED` com o histórico inicial;
 4. se essa transação falhar, apaga o orçamento (`deleteQuote`, `DELETE /internal/quotes/:id`, em que um `404` conta como já apagado) e relança o erro da gravação. Se a exclusão também falhar, o orçamento sem OS fica registrado no evento de log `work_order.opening.compensation_failed` (`warn`), com os ids do orçamento e da OS.
@@ -456,7 +463,7 @@ Três serviços guardam parte do estado de um orçamento: o **Billing** guarda o
 | 3. Funcionário ou cliente rejeita o orçamento | `REJECTED` | `AWAITING_APPROVAL` | `billing.quote.rejected` (com `remainingSentCount`, os orçamentos da OS ainda `SENT`) |
 | 4. O handler aplica a rejeição (`ApplyRejectedQuoteUseCase`) | `REJECTED` | `REJECTED` se `remainingSentCount = 0`; senão `AWAITING_APPROVAL` | — |
 
-O e-mail do envio vai aos usuários ativos vinculados ao cliente ou, sem nenhum, ao e-mail do cliente, com uma linha por item e o total da mensagem. Se a OS não está num status que aceita o passo (uma OS cancelada no intervalo, por exemplo), nada muda, nenhum e-mail sai, e o handler registra `quote_event.skipped` e confirma a mensagem.
+O e-mail do envio vai aos usuários ativos vinculados ao cliente, lidos no Identity, ou, sem nenhum, ao e-mail do cliente, com uma linha por item e o total da mensagem. Se a OS não está num status que aceita o passo (uma OS cancelada no intervalo, por exemplo), nada muda, nenhum e-mail sai, e o handler registra `quote_event.skipped` e confirma a mensagem.
 
 **Aprovação com peças e estoque suficiente.**
 
@@ -541,7 +548,7 @@ Cada mensagem é tratada por um caso de uso de `application/use-cases/payment/` 
 - **Idempotência:** a unicidade de `(PAYMENT, paymentId)` torna `billing.payment.requested` idempotente. Uma reentrega encontra a Saga, em qualquer status, e é ignorada: não bloqueia de novo nem manda outro e-mail, mesmo que a OS já tenha voltado à origem. Um resultado repetido encontra a Saga encerrada e também é ignorado.
 - **Envelope:** `billing.payment.requested` sem o id da OS no envelope é recusado (`Mensagem sem a ordem de serviço no envelope`) e vai para a DLQ. `billing.payment.approved` e `billing.payment.failed` não precisam dele: a Saga é encontrada pelo `paymentId`.
 - **Histórico:** a mensagem não diz quem criou a cobrança, então as entradas do bloqueio e da volta ficam sem autor, com uma nota que identifica a cobrança e o desfecho: `Aguardando o pagamento da cobrança <paymentId>` no bloqueio, e `Cobrança <paymentId> paga`, `expirada`, `recusada` ou `cancelada` na volta.
-- **E-mail do link:** vai aos mesmos destinatários do e-mail do orçamento (`CustomerEmailRecipients`, em `domain/services/`): os usuários ativos vinculados ao cliente ou, sem nenhum, o e-mail do cliente. O assunto é `Pagamento da Ordem de Serviço <número>`, e o texto traz o valor, o link e a validade no fuso de São Paulo. Uma falha no envio só vai para o log do mailer e não desfaz o bloqueio.
+- **E-mail do link:** vai aos mesmos destinatários do e-mail do orçamento (`CustomerEmailRecipients`, em `application/services/`): os usuários ativos vinculados ao cliente, lidos no Identity, ou, sem nenhum, o e-mail do cliente. O assunto é `Pagamento da Ordem de Serviço <número>`, e o texto traz o valor, o link e a validade no fuso de São Paulo. Uma falha no envio só vai para o log do mailer e não desfaz o bloqueio.
 - **Ordem das mensagens:** a compensação grava a OS com a `version` mesmo sem mudá-la, antes de gravar `billing.payment.cancel` no outbox, pelo mesmo motivo da Saga de aprovação (ver [Por que a compensação grava a OS sem mudá-la](#por-que-a-compensação-grava-a-os-sem-mudá-la)).
 - **Cache:** o bloqueio e a volta apagam a chave da OS no cache depois do commit; o pedido e o fim da compensação não mudam a OS e não apagam nada.
 
@@ -622,7 +629,7 @@ No encerramento, o consumidor para no `beforeApplicationShutdown` com `stop({ ab
 O detalhe da OS (`GET /api/work-orders/:id` e `GET /internal/work-orders/:id`) usa **cache-aside** no Valkey (ElastiCache no cluster), pela porta `ICache` (`application/ports/output/`) e o `ValkeyCacheAdapter` sobre `ioredis`.
 
 - **Chave e validade:** `work-order:work-order:<id>` (`workOrderCacheKey`), com TTL de `CACHE_TTL_SECONDS` (padrão 43.200 s, 12 h). Um valor que não seja inteiro maior que zero impede o boot: com ele, toda gravação no cache falharia.
-- **Valor:** um snapshot JSON da OS montado pelo `WorkOrderCacheMapper`, com `cacheVersion`. O snapshot não leva o usuário atribuído: na leitura do cache, o caso de uso busca o usuário por id, então o hash de senha não vai ao cache e o nome do mecânico não fica velho. Valor que não se lê (JSON inválido, campo que o domínio rejeita ou `cacheVersion` diferente do atual) conta como falta e é relido do banco e regravado. Assim, um valor gravado por outra versão do código não responde 500 depois de um deploy.
+- **Valor:** um snapshot JSON da OS montado pelo `WorkOrderCacheMapper`, com `cacheVersion`. O snapshot guarda só o id do mecânico atribuído: o Clean Controller lê o usuário no Identity a cada leitura, com ou sem acerto no cache, então o nome do mecânico não fica velho. Valor que não se lê (JSON inválido, campo que o domínio rejeita ou `cacheVersion` diferente do atual) conta como falta e é relido do banco e regravado. Assim, um valor gravado por outra versão do código não responde 500 depois de um deploy.
 - **Invalidação depois da escrita:** os casos de uso que escrevem na OS (`UpdateWorkOrder`, `UpdateWorkOrderStatus`, `UpdateWorkOrderServiceStatus`, `ApplySentQuote`, `ApplyRejectedQuote`, `StartQuoteApproval`, `CompleteQuoteApproval`, `StartPayment` e `ApplyPaymentResult`), no cliente (`UpdateCustomer` e `UpdateCustomerStatus`) e no veículo (`UpdateVehicle`) apagam as chaves afetadas **depois** da escrita: os que usam transação (`UpdateWorkOrderStatus`, `UpdateWorkOrderServiceStatus` e os de orçamento e das Sagas, só quando o status da OS mudou) depois do commit, com o resultado devolvido do callback, como os eventos de negócio; os demais (`UpdateWorkOrder`, cliente e veículo) logo depois do `update` no repositório. Cliente e veículo buscam as próprias OS para saber quais chaves apagar, e fazem essa leitura **antes** da escrita: se ela falhar, a requisição falha sem ter gravado nada, em vez de responder erro depois de uma escrita confirmada. A exclusão de cliente e de veículo não invalida nada: ela só acontece quando nenhuma OS os referencia.
 - **Itens de catálogo:** o snapshot guarda os itens só com id, quantidade, preço e status. Os dados de exibição (nome, descrição, SKU, unidade, categoria) não vão ao cache: o Clean Controller os lê no Inventory a cada leitura, com ou sem acerto no cache, então uma mudança no catálogo aparece na leitura seguinte. A compensação das Sagas que não muda a OS não apaga a chave, porque não muda campo nem item dela (só incrementa a `version`, que nenhuma resposta mostra).
 - **Cache fora do ar vira leitura no banco**, nunca erro nem fila de espera: o cliente roda com `enableOfflineQueue: false`, `maxRetriesPerRequest: 1` e `commandTimeout` de 500 ms, para que um Valkey que aceita TCP e não responde também caia para o banco. Falha de leitura ou gravação registra `cache.unavailable` (`warn`) e a leitura conta como falta; falha de exclusão registra `cache.invalidation_failed` (`error`), e a chave expira pelo TTL.
@@ -636,6 +643,7 @@ As rotas `/internal/...` atendem só outros serviços, pela rede do cluster. Ela
 | Rota | Resposta |
 |---|---|
 | `GET /internal/work-orders/:id` | `200` com o mesmo corpo de `GET /api/work-orders/:id` (`{ data: { ... } }`), `400` para id que não é UUID, `404` para OS inexistente |
+| `GET /internal/users/:userId/customers` | `200 { data: [{ id, name, type, document, isActive }] }`: os clientes ativos com vínculo com o usuário, lidos pelo Identity para montar o perfil de `GET /api/me`. Usuário sem vínculo responde lista vazia, nunca 404. `400` para id que não é UUID |
 
 O dono de cada rota versiona a fixture da resposta em `app/test/contracts/`, conferida pelo próprio e2e (ver [Testes](testing.md#contrato-das-rotas-internal)).
 
@@ -645,7 +653,7 @@ Para chamar outro serviço, o caso de uso usa o gateway do dono (`application/po
 - usa prazo de 2 s por padrão (`timeoutMs` muda o prazo de uma chamada), sem retentativa e sem seguir redirecionamento;
 - converte o 4xx do serviço chamado em `ServiceRequestRejectedException`, que o filtro responde com o mesmo status e a mensagem do dono; timeout, falha de conexão e 5xx viram `ServiceIntegrationException` (503).
 
-São três gateways. O do catálogo do Inventory é o `IInventoryCatalogGateway` (`application/ports/output/gateways/inventory/`), implementado pelo `HttpInventoryCatalogGateway` (`infrastructure/gateways/inventory/`) com o endereço de `INVENTORY_SERVICE_URL`. Ele busca cada serviço ou peça por `GET /internal/services/:id` e `GET /internal/parts-supplies/:id` do Inventory, em paralelo, trata o `404` como item ausente e qualquer outra falha como `503`. Quem o usa: as métricas por serviço e o `FindCatalogItemsUseCase`, que os Clean Controllers chamam para os dados de exibição dos itens da OS (ver [Dados de exibição dos itens](api.md#dados-de-exibição-dos-itens)). As fixtures das duas rotas do Inventory ficam copiadas em `app/test/contracts/inventory/`.
+São quatro gateways. O do catálogo do Inventory é o `IInventoryCatalogGateway` (`application/ports/output/gateways/inventory/`), implementado pelo `HttpInventoryCatalogGateway` (`infrastructure/gateways/inventory/`) com o endereço de `INVENTORY_SERVICE_URL`. Ele busca cada serviço ou peça por `GET /internal/services/:id` e `GET /internal/parts-supplies/:id` do Inventory, em paralelo, trata o `404` como item ausente e qualquer outra falha como `503`. Quem o usa: as métricas por serviço e o `FindCatalogItemsUseCase`, que os Clean Controllers chamam para os dados de exibição dos itens da OS (ver [Dados de exibição dos itens](api.md#dados-de-exibição-dos-itens)). As fixtures das duas rotas do Inventory ficam copiadas em `app/test/contracts/inventory/`.
 
 O dos orçamentos do Billing é o `IBillingQuotesGateway` (`application/ports/output/gateways/billing/`), implementado pelo `HttpBillingQuotesGateway` (`infrastructure/gateways/billing/`) com o endereço de `BILLING_SERVICE_URL`:
 
@@ -667,6 +675,14 @@ O do saldo e das cobranças do Billing é o `IBillingPaymentsGateway` (mesma pas
 | `listWorkOrderPayments` | `GET /internal/work-orders/:workOrderId/payments` | 2 s | Cobranças na área do cliente |
 
 As fixtures das respostas do Billing ficam copiadas em `app/test/contracts/billing/`.
+
+O dos usuários é o `IIdentityUsersGateway` (`application/ports/output/gateways/identity/`), implementado pelo `HttpIdentityUsersGateway` (`infrastructure/gateways/identity/`) com o endereço de `IDENTITY_SERVICE_URL`:
+
+- `findById` e `findByIds` chamam `GET /internal/users/:id` do Identity, que devolve `{ id, name, email, role, isActive }`; `findByIds` chama os ids distintos em paralelo e omite os que o Identity responde `404`;
+- `ensureCustomerUser` chama `POST /internal/customer-users`, que encontra o usuário de acesso de um cliente pelo CPF ou o cria, e devolve `{ userId, created }`; o `409` e o `422` do Identity chegam ao chamador com o status e a mensagem dele;
+- qualquer outro 4xx é quebra de contrato entre os dois serviços, e vira `503` com `Serviço de destino indisponível`, como timeout, falha de conexão e 5xx.
+
+Quem o usa: a `MechanicAssignmentPolicy` (mecânico da OS, antes da transação), a concessão de acesso a um cliente, as listagens de vínculos, o `FindUsersByIdsUseCase`, que os Clean Controllers chamam para mostrar o mecânico, os autores do histórico e os usuários com acesso a um cliente, e os passos `ApplySentQuote` e `StartPayment`, que leem dentro da própria transação os usuários vinculados que recebem o e-mail (`CustomerEmailRecipients`). As fixtures das duas rotas do Identity ficam copiadas em `app/test/contracts/identity/`.
 
 ## Exceções por Camada
 
@@ -699,8 +715,8 @@ A arquitetura detalhada de logging, redação, correlação, traces, métricas d
 Em produção, `prepare-deploy` do CD é a ponte entre o Secret gerenciado pelo RDS e o contrato
 `DATABASE_URL` do Prisma. Ele descobre o ARN/endpoint, lê `AWSCURRENT` e materializa
 `database-credentials` com Node.js inline e stdin. O job `db-migrate` seguinte
-executa somente migration/seed; `app-deploy` aplica a imagem e aguarda o rollout; `jwt-private-keys` permanece separado,
-somente com as chaves privadas do token de funcionário. Nenhum Pod lê segredo da AWS e não há ESO ou Secrets Store CSI.
+executa somente migration/seed; `app-deploy` aplica a imagem e aguarda o rollout; as chaves dos tokens ficam
+no Secret `jwt-public-keys`, só com material público. Nenhum Pod lê segredo da AWS e não há ESO ou Secrets Store CSI.
 
 Veja o [ADR 0017](adr/0017-materializacao-da-credencial-do-banco-no-cd.md) e o
 [fluxo detalhado do CD](infra/ci-cd.md#2-workflow-de-cd-cdyml).
@@ -712,7 +728,7 @@ Decisões arquiteturais relevantes são registradas em [`docs/adr/`](./adr) no f
 - [ADR 0001 — Uso do PostgreSQL como Banco de Dados Relacional](./adr/0001-uso-do-postgresql-como-banco-de-dados.md)
 - [ADR 0002 — Logging Estruturado em JSON com Nomenclatura OpenTelemetry](./adr/0002-logging-estruturado.md) *(parcialmente superado pelos ADRs 0003 e 0005)*
 - [ADR 0003 — Health Checks: Liveness e Readiness como Endpoints Dedicados](./adr/0003-health-checks.md) *(política de volume das probes contrariada pelo 0005)*
-- [ADR 0004 — Autenticação externa de clientes por CPF via função serverless](./adr/0004-autenticacao-de-clientes.md)
+- [ADR 0004 — Autenticação externa de clientes por CPF via função serverless](./adr/0004-autenticacao-de-clientes.md) *(emendado pelo 0026)*
 - [ADR 0005 — Instrumentação OpenTelemetry: traces, correlação e métricas de negócio](./adr/0005-opentelemetry.md) *(emendado pelo 0021)*
 - [ADR 0006 — Escolha de nuvem: AWS (EKS + RDS) no ambiente `prod-simulated`](./adr/0006-escolha-de-nuvem-aws.md)
 - [ADR 0007 — Padrão de comunicação: REST síncrono num monólito modular](./adr/0007-padrao-de-comunicacao-rest-monolito.md) *(superado em parte pelos ADRs 0018 e 0020)*
@@ -730,10 +746,11 @@ Decisões arquiteturais relevantes são registradas em [`docs/adr/`](./adr) no f
 - [ADR 0019 — Cache do dono no ElastiCache](./adr/0019-cache-do-dono-no-elasticache.md)
 - [ADR 0020 — Chamadas internas pela rede do cluster e rotas públicas negadas por padrão](./adr/0020-chamadas-internas-e-rotas-negadas-por-padrao.md)
 - [ADR 0021 — Span de consumo de mensagens](./adr/0021-span-de-consumo-de-mensagens.md)
-- [ADR 0022 — Token de funcionário em RS256 com chave pública por configuração](./adr/0022-token-de-funcionario-em-rs256.md)
+- [ADR 0022 — Token de funcionário em RS256 com chave pública por configuração](./adr/0022-token-de-funcionario-em-rs256.md) *(emendado pelo 0026)*
 - [ADR 0023 — Catálogo e estoque no Inventory, com reserva pela Saga de aprovação](./adr/0023-catalogo-e-estoque-no-inventory-com-reserva-pela-saga.md) *(a aprovação e a compensação passaram ao Billing, ver o 0024)*
 - [ADR 0024 — Saga de abertura com orçamento inicial no Billing](./adr/0024-saga-de-abertura-com-orcamento-inicial-no-billing.md)
 - [ADR 0025 — Sagas orquestradas no work-order](./adr/0025-sagas-orquestradas-no-work-order.md)
+- [ADR 0026 — Usuários lidos no Identity, sem réplica](./adr/0026-usuarios-lidos-no-identity-sem-replica.md)
 
 ## Modelo C4
 

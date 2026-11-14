@@ -4,6 +4,8 @@
 
 Aceita
 
+Emendada pelo [ADR 0026](0026-usuarios-lidos-no-identity-sem-replica.md): o `User` (a identidade, com a senha) passou a ser do Identity, o serviço da solução dono dos usuários, que também cria o usuário de acesso de um cliente pelo CPF; este serviço guarda só o id do usuário no vínculo `UserCustomer`. `GET /api/me`, `PATCH /api/me/password` e o `AnyAuthGuard` saíram deste serviço, e a `CustomerJwtStrategy` deixou de reler o usuário: ela confere só o vínculo com cliente ativo, e a troca de senha e a desativação do usuário valem quando o token de cliente expira. A separação entre identidade e parte comercial, a senha além do CPF, a função serverless e a autorização por vínculo a cada requisição continuam valendo.
+
 ## Contexto
 
 O sistema precisa permitir que o Cliente da Oficina (pessoa física, dona do

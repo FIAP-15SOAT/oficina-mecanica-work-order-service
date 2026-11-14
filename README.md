@@ -2,7 +2,7 @@
 
 # 🔧 Work Order Service
 
-**Sistema Integrado de Atendimento e Execução de Serviços para oficinas mecânicas** — ordens de serviço, clientes e veículos, com os orçamentos no serviço Billing e o catálogo de serviços e peças e o estoque no serviço Inventory.
+**Sistema Integrado de Atendimento e Execução de Serviços para oficinas mecânicas** — ordens de serviço, clientes e veículos, com os orçamentos no serviço Billing, o catálogo de serviços e peças e o estoque no serviço Inventory e os usuários lidos no serviço Identity.
 
 ![Node](https://img.shields.io/badge/Node.js-22-339933?logo=node.js&logoColor=white)
 ![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?logo=nestjs&logoColor=white)
@@ -26,7 +26,8 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 - **Reserva de estoque pela Saga de aprovação**: um orçamento aprovado no Billing com peças pede a reserva ao Inventory, o serviço dono do catálogo e do estoque; a OS vai a `APPROVED` quando a reserva é confirmada, e, quando falta estoque, a aprovação é desfeita no Billing e o cliente recebe um e-mail. A baixa é pedida ao Inventory no início do primeiro serviço
 - **Cobrança pela Saga de cobrança**: quando o funcionário cria uma cobrança no Billing (um sinal com a OS aprovada, ou o restante com a OS concluída), a OS fica em `AWAITING_PAYMENT`, com a execução, a entrega e o cancelamento bloqueados, e o cliente recebe por e-mail o link de pagamento do Mercado Pago; paga, expirada, recusada ou cancelada, a cobrança devolve a OS ao status de antes. A entrega exige saldo zero no Billing, e o cliente vê as cobranças das OS dele na área própria
 - **Autorização por papéis (RBAC)**: `ADMIN`, `MECHANIC`, `ATTENDANT`
-- **Dois fluxos de autenticação JWT isolados**: interno (RS256, access + refresh com chaves separadas, bcrypt) e externo por CPF + senha (RS256, emitido por uma função serverless dedicada)
+- **Dois fluxos de autenticação JWT isolados**, os dois validados aqui só pela chave pública: interno (RS256, emitido pelo Identity, o serviço da solução dono dos usuários e das credenciais) e externo por CPF + senha (RS256, emitido por uma função serverless dedicada)
+- **Usuários no Identity**: a OS, o histórico e os vínculos de acesso guardam só o id do usuário; o mecânico é conferido no Identity antes de ser atribuído, e nome, e-mail e papel são lidos nele a cada resposta
 - **Concorrência otimista** (lock por `version`) em agregados sensíveis
 
 <details>
@@ -121,7 +122,7 @@ O enunciado da fase (o PDF do desafio) pede o padrão **Saga** para "criação d
 - **Mensageria**: Amazon SNS FIFO + SQS FIFO (`@aws-sdk/client-sns`, `@aws-sdk/client-sqs`, `sqs-consumer`), com outbox transacional no PostgreSQL; LocalStack 4.14 em desenvolvimento
 - **Cache**: Valkey 9.1 (Amazon ElastiCache no cluster) via `ioredis`, cache-aside no detalhe da OS
 - **Chamadas internas**: REST entre serviços pela rede do cluster, com `@nestjs/axios`
-- **Autenticação**: dois fluxos JWT isolados via `passport-jwt` — interno (RS256, access + refresh token com chaves separadas, bcrypt) e externo por CPF + senha (RS256, emitido por uma função serverless dedicada) — ver [Autenticação](#-autenticação)
+- **Autenticação**: dois fluxos JWT isolados via `passport-jwt`, só com as chaves públicas — interno (RS256, emitido pelo Identity) e externo por CPF + senha (RS256, emitido por uma função serverless dedicada) — ver [Autenticação](#-autenticação)
 - **E-mail**: Nodemailer + `@nestjs-modules/mailer` (SMTP via MailHog em desenvolvimento)
 - **Segurança HTTP**: Helmet, CORS configurável via `ALLOWED_ORIGINS`, `SanitizeStringsPipe` global, `ValidationPipe` global (`whitelist`, `forbidNonWhitelisted`, `transform`)
 - **Observabilidade**: logs estruturados em JSON no stdout com `pino` + `nestjs-pino` (nomenclatura OpenTelemetry, correlação por `request.id`, redação de dados sensíveis) — ver [ADR 0002](docs/adr/0002-logging-estruturado.md)
@@ -149,13 +150,10 @@ Esse modo sobe todos os serviços — PostgreSQL, MailHog, Valkey, LocalStack (S
 git clone https://github.com/FIAP-15SOAT/oficina-mecanica-work-order-service.git
 cd oficina-mecanica-work-order-service/app
 
-# Criar o .env e gerar as chaves RS256 de teste do token de funcionário (nenhuma é versionada)
+# Criar o .env e copiar a chave pública do token de funcionário do .env do Identity local
+# (o Identity assina o token; este serviço só o valida). Ajuste o caminho do clone do Identity.
 cp .env.example .env
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out staff.pem
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out staff-refresh.pem
-openssl pkey -in staff.pem -pubout -out staff.pub.pem
-node -e "const pem = (f) => JSON.stringify(require('node:fs').readFileSync(f, 'utf8')); console.log(['STAFF_JWT_PRIVATE_KEY=' + pem('staff.pem'), 'STAFF_JWT_REFRESH_PRIVATE_KEY=' + pem('staff-refresh.pem'), 'STAFF_JWT_PUBLIC_KEY=' + pem('staff.pub.pem')].join('\n'))" >> .env
-rm staff.pem staff-refresh.pem staff.pub.pem
+grep '^STAFF_JWT_PUBLIC_KEY=' ../../oficina-mecanica-identity-service/app/.env >> .env
 
 # Subir todos os serviços em background e esperar que fiquem saudáveis
 docker compose up -d --build --wait
@@ -169,6 +167,8 @@ Após a inicialização:
 - **LocalStack (SNS/SQS):** `http://localhost:4566`
 
 > As rotas que mostram ou gravam itens da OS leem o catálogo no Inventory, o serviço dono de serviços, peças e estoque, e a abertura de OS com itens e os orçamentos da área do cliente chamam o Billing, o serviço dono dos orçamentos. Suba também as stacks locais do [`oficina-mecanica-inventory-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service) (API em `http://localhost:3003`) e do [`oficina-mecanica-billing-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service) (API em `http://localhost:3002`); sem elas, essas rotas respondem 503. Ver [Como executar localmente › Inventory local](docs/local-setup.md#inventory-local) e [Billing local](docs/local-setup.md#billing-local).
+
+> O login, os usuários e o mecânico das OS ficam no Identity, o serviço dono dos usuários e das credenciais. Suba também a stack local do [`oficina-mecanica-identity-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service) (API em `http://localhost:3001`) antes desta: é nela que se faz o login, e sem ela as rotas que mostram ou conferem usuários (OS, histórico e acesso de clientes) respondem 503. Ver [Como executar localmente › Identity local](docs/local-setup.md#identity-local).
 
 ```bash
 # Acompanhar os logs da API em tempo real
@@ -186,9 +186,9 @@ docker compose down
 
 > O `Dockerfile` é multi-stage (`node:24-alpine` builder + runtime), executa `prisma generate` no build e tem `CMD ["node", "--require", "./dist/src/otel.js", "dist/src/main"]` — **só a aplicação**. O `--require` carrega o preload do OpenTelemetry **antes** de `express` e `pg` serem importados, que é a única ordem em que a instrumentação consegue aplicar o patch; sem `OTEL_EXPORTER_OTLP_ENDPOINT` ele retorna cedo e não carrega nada (ver [ADR 0005](docs/adr/0005-opentelemetry.md)). Em produção, o CD obtém esse valor de `vars.OTEL_EXPORTER_OTLP_ENDPOINT`, renderiza e aplica o ConfigMap; o `app-deploy` aplica o Deployment com a imagem do commit e aguarda o rollout corrente, sem executar `rollout restart`. Valor vazio mantém o SDK desligado. A migração e o seed rodam num passo próprio: o serviço `migrate` do Compose localmente, e o Job `k8s/00-db-migrate-job.yaml` no CD.
 
-> Em produção, a credencial do PostgreSQL não vem do GitHub. O job `prepare-deploy` do CD usa `vars.RDS_INSTANCE_IDENTIFIER` para descobrir o Secret gerenciado pelo RDS, lê `AWSCURRENT` e materializa `DATABASE_URL` com encoding/TLS em `database-credentials`, usando Node.js inline e stdin. Também descobre o ElastiCache por `vars.CACHE_REPLICATION_GROUP_ID` e materializa `CACHE_URL` (`rediss://`) em `cache-credentials`. Depois, `db-migrate` executa migration/seed e `app-deploy` aplica a imagem no namespace `work-order`, aguarda o rollout e faz o smoke `GET /health/work-order` pelo API Gateway, com `kubectl rollout undo` na falha. Job e Deployment consomem o mesmo Secret do banco; `jwt-private-keys` contém somente as chaves privadas do token de funcionário e `jwt-public-keys` as chaves públicas e o `kid`. O escopo é deploy greenfield, com rotação desabilitada e sem annotation/output de versão da credencial. Veja o [ADR 0017](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md).
+> Em produção, a credencial do PostgreSQL não vem do GitHub. O job `prepare-deploy` do CD usa `vars.RDS_INSTANCE_IDENTIFIER` para descobrir o Secret gerenciado pelo RDS, lê `AWSCURRENT` e materializa `DATABASE_URL` com encoding/TLS em `database-credentials`, usando Node.js inline e stdin. Também descobre o ElastiCache por `vars.CACHE_REPLICATION_GROUP_ID` e materializa `CACHE_URL` (`rediss://`) em `cache-credentials`. Depois, `db-migrate` executa migration/seed e `app-deploy` aplica a imagem no namespace `work-order`, aguarda o rollout e faz o smoke `GET /health/work-order` pelo API Gateway, com `kubectl rollout undo` na falha. Job e Deployment consomem o mesmo Secret do banco; `jwt-public-keys` guarda as chaves públicas dos tokens e o `kid`, e o serviço não tem chave privada. O escopo é deploy greenfield, com rotação desabilitada e sem annotation/output de versão da credencial. Veja o [ADR 0017](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md).
 
-> **Para testar:** faça login em `POST /api/auth/login` com um admin do seed (veja todos os usuários em [Como executar localmente › Seed](docs/local-setup.md#seed)). Para explorar os endpoints, use o **Swagger** em `/api/docs` ou importe a **collection do Postman** (`collections/oficina-collection.json` + `collections/oficina-environment.json`) — passo a passo em [Testes › Postman / Newman](docs/testing.md#postman--newman).
+> **Para testar:** faça login no Identity local, em `POST http://localhost:3001/api/auth/login`, com um admin do seed dele (veja os usuários em [Como executar localmente › Seed](docs/local-setup.md#seed)), e use o `accessToken` aqui. Para explorar os endpoints, use o **Swagger** em `/api/docs` ou importe a **collection do Postman** (`collections/oficina-collection.json` + `collections/oficina-environment.json`) — passo a passo em [Testes › Postman / Newman](docs/testing.md#postman--newman).
 
 ## ⚙️ Comandos
 
@@ -229,11 +229,11 @@ Dois fluxos de autenticação **totalmente isolados**: os dois são RS256, mas c
 | | Interno (funcionários) | Externo (Cliente da Oficina) |
 |---|---|---|
 | Quem | `ADMIN`, `MECHANIC`, `ATTENDANT` | Pessoa física dona do veículo, ou representante autorizado de uma empresa cliente |
-| Como autentica | `POST /api/auth/login` (e-mail + senha) nesta própria API | CPF + senha, verificados por uma **função serverless dedicada** que consulta o banco diretamente — nunca um proxy do login interno |
-| Algoritmo / chave | JWT **RS256** — esta API assina com `STAFF_JWT_PRIVATE_KEY` e valida com `STAFF_JWT_PUBLIC_KEY`; o refresh usa a chave própria `STAFF_JWT_REFRESH_PRIVATE_KEY` | JWT **RS256** assimétrico — esta API só guarda a chave **pública** (`CUSTOMER_JWT_PUBLIC_KEY`); a privada vive na função serverless |
+| Como autentica | `POST /api/auth/login` (e-mail + senha) no **Identity**, o serviço da solução dono dos usuários | CPF + senha, verificados por uma **função serverless dedicada** que consulta o banco diretamente — nunca um proxy do login interno |
+| Algoritmo / chave | JWT **RS256** — esta API só guarda a chave **pública** (`STAFF_JWT_PUBLIC_KEY`); as privadas do access e do refresh vivem no Identity | JWT **RS256** assimétrico — esta API só guarda a chave **pública** (`CUSTOMER_JWT_PUBLIC_KEY`); a privada vive na função serverless |
 | Estratégia Passport | `jwt` (`JwtStrategy`) | `customer-jwt` (`CustomerJwtStrategy`) |
-| Guard HTTP | `JwtAuthGuard`, o padrão do guard global (+ `RolesGuard` por papel) | `CustomerJwtAuthGuard` por `@CustomerArea()` (`AnyAuthGuard`, por `@CustomerArea('any')`, aceita os dois em `GET /api/me` e `PATCH /api/me/password`) |
-| O que o token carrega | Access: cabeçalho com `kid` (`STAFF_JWT_KEY_ID`) e claims `sub` (userId), `email`, `name`, `role`, `typ = access`, `iss = oficina-identity`, `aud = oficina-services`, válido por 10 min. Refresh: `typ = refresh`, `aud = oficina-identity`, 7 dias, nunca aceito como access. A cada requisição o usuário é relido no banco (ativo, com papel, sem troca de senha depois do `iat`) | Só `sub` (userId) — **nunca** `customerId`. Autorização é resolvida por vínculo (`UserCustomer`) a cada requisição, então revogar acesso ou desativar o cliente vale imediatamente, sem lista de revogação de token |
+| Guard HTTP | `JwtAuthGuard`, o padrão do guard global (+ `RolesGuard` por papel) | `CustomerJwtAuthGuard` por `@CustomerArea()` |
+| O que o token carrega | Access: cabeçalho com `kid` (`STAFF_JWT_KEY_ID`) e claims `sub` (userId), `email`, `name`, `role`, `typ = access`, `iss = oficina-identity`, `aud = oficina-services`, válido por 10 min; um refresh nunca é aceito como access. O principal sai das claims, sem ler o usuário: desativar o funcionário ou trocar a senha vale para esta API quando o access expira, em até 10 min | Só `sub` (userId) — **nunca** `customerId`. Autorização é resolvida por vínculo (`UserCustomer`) a cada requisição, então revogar acesso ou desativar o cliente vale imediatamente, sem lista de revogação de token; o usuário não é relido, e desativá-lo vale quando o token expira, em até 60 min |
 | Superfície de rotas | Todas as rotas internas por perfil (ver matriz abaixo) | `/api/me/*` |
 
 A função serverless de autenticação externa **não está neste repositório** — vive em [`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth). Ver [ADR 0004](docs/adr/0004-autenticacao-de-clientes.md) para o raciocínio completo por trás dessas decisões, e [docs/local-setup.md](docs/local-setup.md#variáveis-de-ambiente) para rodar os dois repositórios juntos localmente.
@@ -243,24 +243,12 @@ A função serverless de autenticação externa **não está neste repositório*
 
 | Rota | Marcação / guard | Acesso |
 |---|---|---|
-| `POST /api/auth/login` | `@Public()` | Público |
-| `POST /api/auth/refresh` | `@Public()` | Público |
-| `POST /api/auth/password-reset-confirmations` | `@Public()` | Público (exige e-mail + código numérico válidos) |
-| `GET /api/me` | `@CustomerArea('any')` (`AnyAuthGuard`) | JWT interno OU `customer-jwt` |
-| `PATCH /api/me/password` | `@CustomerArea('any')` (`AnyAuthGuard`) | JWT interno OU `customer-jwt` |
 | `GET /api/me/work-orders` | `@CustomerArea()` (`CustomerJwtAuthGuard`) | `customer-jwt` |
 | `GET /api/me/work-orders/:workOrderId` | `@CustomerArea()` (`CustomerJwtAuthGuard`) | `customer-jwt` |
 | `GET /api/me/work-orders/:workOrderId/quotes` | `@CustomerArea()` (`CustomerJwtAuthGuard`) | `customer-jwt` |
 | `GET /api/me/work-orders/:workOrderId/payments` | `@CustomerArea()` (`CustomerJwtAuthGuard`) | `customer-jwt` |
 | `GET /api/me/quotes/:quoteId` | `@CustomerArea()` (`CustomerJwtAuthGuard`) | `customer-jwt` |
 | `POST /api/me/quotes/:quoteId/decisions` | `@CustomerArea()` (`CustomerJwtAuthGuard`) | `customer-jwt` |
-| `POST /api/users` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
-| `GET /api/users` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
-| `GET /api/users/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
-| `PUT /api/users/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
-| `PATCH /api/users/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
-| `DELETE /api/users/:id` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
-| `POST /api/users/:userId/password-resets` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN` |
 | `GET /api/users/:userId/customers` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
 | `POST /api/customers` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
 | `GET /api/customers` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `ATTENDANT` |
@@ -288,12 +276,15 @@ A função serverless de autenticação externa **não está neste repositório*
 | `GET /api/work-orders/:id/status-history` | padrão (`JwtAuthGuard`), `RolesGuard` | `ADMIN`, `MECHANIC`, `ATTENDANT` |
 | `GET /api/health/live`, `GET /api/health/ready` | `@Public()` | Público |
 | `GET /internal/work-orders/:id` | `@Public()` | Rede do cluster (fora do prefixo `/api`, não passa pelo API Gateway) |
+| `GET /internal/users/:userId/customers` | `@Public()` | Rede do cluster (chamada pelo Identity) |
 
 > A autenticação é negada por padrão: um guard global (`AuthenticationGuard`) exige o token de funcionário em toda rota sem marcação, `@Public()` dispensa o token e `@CustomerArea()` troca o token exigido. O `RolesGuard` restringe por papel depois dele.
 
 > A decisão do cliente usa `POST /api/me/quotes/:quoteId/decisions`, com autenticação `customer-jwt` RS256; este serviço confere o vínculo e repassa a decisão ao Billing.
 
 > As rotas de catálogo e estoque (`/api/services`, `/api/parts-supplies`, `/api/stock-movements`, `/api/stock-reservations`) e as permissões delas são do Inventory; deste serviço ficam só as métricas por serviço. As rotas de orçamento (`/api/quotes` e `GET /api/work-orders/:id/quotes`) e de cobrança (`/api/payments`) e as permissões delas são do Billing.
+
+> As rotas de login, refresh e redefinição de senha (`/api/auth/*`), de cadastro de usuários (`/api/users`, `/api/users/:id`, `/api/users/:userId/password-resets`), o perfil (`GET /api/me`) e a troca da própria senha (`PATCH /api/me/password`) são do Identity; deste serviço fica só `GET /api/users/:userId/customers`, porque os vínculos são daqui.
 
 </details>
 
@@ -356,18 +347,18 @@ A solução é composta por **quinze repositórios especializados**, com respons
 |---|---|
 | 🏛️ [Arquitetura](docs/architecture.md) | Clean Architecture, DDD, ciclos de vida, UoW, orçamentos no Billing, Sagas de abertura, de aprovação e de cobrança, entrega com saldo zero, fluxo do orçamento, mensageria com outbox, cache, chamadas internas, exceções |
 | 🗃️ [Banco de Dados](docs/database.md) | Diagrama ER, tabelas e relacionamentos, enums, convenções de modelagem |
-| 🔀 [Diagramas de Sequência](docs/sequence-diagrams.md) | Login interno, abertura de OS, autenticação externa por CPF, aprovação de orçamento com reserva de estoque e Saga de cobrança |
-| 🔌 [Referência da API](docs/api.md) | Endpoints por domínio, perfis (RBAC), rotas /internal, formato de resposta |
-| 💻 [Como executar localmente](docs/local-setup.md) | Setup local, MailHog, Valkey, LocalStack, variáveis de ambiente, seed |
+| 🔀 [Diagramas de Sequência](docs/sequence-diagrams.md) | Abertura de OS, autenticação externa por CPF, aprovação de orçamento com reserva de estoque e Saga de cobrança |
+| 🔌 [Referência da API](docs/api.md) | Endpoints por domínio, perfis (RBAC), rotas que ficam no Identity, rotas /internal, formato de resposta |
+| 💻 [Como executar localmente](docs/local-setup.md) | Setup local, MailHog, Valkey, LocalStack, Inventory, Billing e Identity locais, variáveis de ambiente, seed |
 | 🆔 [Ids canônicos do seed](docs/seed-ids.md) | UUIDs fixos de usuários, clientes, veículos, serviços e peças, compartilhados entre os serviços |
-| 🧪 [Testes](docs/testing.md) | Unitários, E2E (PostgreSQL, Valkey, LocalStack e stub do Inventory e do Billing), BDD (Cucumber em pt-BR), cenários de falha F1 a F14, contrato das rotas /internal, Postman/Newman |
+| 🧪 [Testes](docs/testing.md) | Unitários, E2E (PostgreSQL, Valkey, LocalStack e stub do Inventory, do Billing e do Identity), BDD (Cucumber em pt-BR), cenários de falha F1 a F14, contrato das rotas /internal, Postman/Newman |
 | 🔒 [Segurança](docs/security.md) | Mitigações no código, proteção de dados nos logs e relatórios (ZAP, SonarQube) |
 | 🔭 [Observabilidade](docs/observability.md) | Logs estruturados, correlação, traces, métricas e degradação segura |
 | 🏗️ [Infra · Visão Geral](docs/infra/overview.md) | Arquitetura da infra como sistema: componentes, ownership e fluxos |
 | 🌍 [Infra · Terraform](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base) | Infraestrutura AWS e Kubernetes (IaC nos repositórios dedicados) |
 | ☸️ [Infra · Kubernetes](docs/infra/kubernetes.md) | Manifests de aplicação (`k8s/`), probes, HPA e deploy |
 | 🔄 [Infra · CI/CD](docs/infra/ci-cd.md) | Workflows de CI, CD, SAST e DAST |
-| 📐 [ADRs](docs/adr) | Decisões arquiteturais — [0001 PostgreSQL](docs/adr/0001-uso-do-postgresql-como-banco-de-dados.md), [0002 Logging estruturado](docs/adr/0002-logging-estruturado.md), [0003 Health checks](docs/adr/0003-health-checks.md), [0004 Autenticação de clientes](docs/adr/0004-autenticacao-de-clientes.md), [0005 OpenTelemetry](docs/adr/0005-opentelemetry.md), [0006 Escolha de nuvem](docs/adr/0006-escolha-de-nuvem-aws.md), [0007 Padrão de comunicação](docs/adr/0007-padrao-de-comunicacao-rest-monolito.md), [0008 Autoscaling (HPA)](docs/adr/0008-autoscaling-via-hpa.md), [0009 Clean Architecture/DDD](docs/adr/0009-clean-architecture-ddd-em-camadas.md), [0010 Concorrência otimista](docs/adr/0010-concorrencia-otimista-via-version.md), [0011 Unit of Work](docs/adr/0011-unit-of-work-transacoes-multi-repositorio.md) *(emendada pela 0025)*, [0012 Exceções por camada](docs/adr/0012-hierarquia-de-excecoes-por-camada.md), [0013 Autenticação interna JWT](docs/adr/0013-autenticacao-interna-jwt-stateless.md) *(substituída pela 0022)*, [0014 Pipelines CI/CD/SAST/DAST](docs/adr/0014-pipelines-ci-cd-sast-dast-separados.md), [0015 Testcontainers no E2E](docs/adr/0015-testcontainers-e2e-postgresql-real.md), [0016 Sanitização e validação em duas camadas](docs/adr/0016-sanitizacao-e-validacao-em-duas-camadas.md), [0017 Credencial do banco no CD](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md), [0018 Mensageria com outbox](docs/adr/0018-mensageria-sns-sqs-fifo-com-outbox.md), [0019 Cache do dono](docs/adr/0019-cache-do-dono-no-elasticache.md), [0020 Chamadas internas e rotas negadas por padrão](docs/adr/0020-chamadas-internas-e-rotas-negadas-por-padrao.md), [0021 Span de consumo de mensagens](docs/adr/0021-span-de-consumo-de-mensagens.md), [0022 Token de funcionário em RS256](docs/adr/0022-token-de-funcionario-em-rs256.md), [0023 Catálogo e estoque no Inventory, com reserva pela Saga](docs/adr/0023-catalogo-e-estoque-no-inventory-com-reserva-pela-saga.md), [0024 Saga de abertura com orçamento inicial no Billing](docs/adr/0024-saga-de-abertura-com-orcamento-inicial-no-billing.md), [0025 Sagas orquestradas no work-order](docs/adr/0025-sagas-orquestradas-no-work-order.md) |
+| 📐 [ADRs](docs/adr) | Decisões arquiteturais — [0001 PostgreSQL](docs/adr/0001-uso-do-postgresql-como-banco-de-dados.md), [0002 Logging estruturado](docs/adr/0002-logging-estruturado.md), [0003 Health checks](docs/adr/0003-health-checks.md), [0004 Autenticação de clientes](docs/adr/0004-autenticacao-de-clientes.md) *(emendada pela 0026)*, [0005 OpenTelemetry](docs/adr/0005-opentelemetry.md), [0006 Escolha de nuvem](docs/adr/0006-escolha-de-nuvem-aws.md), [0007 Padrão de comunicação](docs/adr/0007-padrao-de-comunicacao-rest-monolito.md), [0008 Autoscaling (HPA)](docs/adr/0008-autoscaling-via-hpa.md), [0009 Clean Architecture/DDD](docs/adr/0009-clean-architecture-ddd-em-camadas.md), [0010 Concorrência otimista](docs/adr/0010-concorrencia-otimista-via-version.md), [0011 Unit of Work](docs/adr/0011-unit-of-work-transacoes-multi-repositorio.md) *(emendada pela 0025)*, [0012 Exceções por camada](docs/adr/0012-hierarquia-de-excecoes-por-camada.md), [0013 Autenticação interna JWT](docs/adr/0013-autenticacao-interna-jwt-stateless.md) *(substituída pela 0022)*, [0014 Pipelines CI/CD/SAST/DAST](docs/adr/0014-pipelines-ci-cd-sast-dast-separados.md), [0015 Testcontainers no E2E](docs/adr/0015-testcontainers-e2e-postgresql-real.md), [0016 Sanitização e validação em duas camadas](docs/adr/0016-sanitizacao-e-validacao-em-duas-camadas.md), [0017 Credencial do banco no CD](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md), [0018 Mensageria com outbox](docs/adr/0018-mensageria-sns-sqs-fifo-com-outbox.md), [0019 Cache do dono](docs/adr/0019-cache-do-dono-no-elasticache.md), [0020 Chamadas internas e rotas negadas por padrão](docs/adr/0020-chamadas-internas-e-rotas-negadas-por-padrao.md), [0021 Span de consumo de mensagens](docs/adr/0021-span-de-consumo-de-mensagens.md), [0022 Token de funcionário em RS256](docs/adr/0022-token-de-funcionario-em-rs256.md) *(emendada pela 0026)*, [0023 Catálogo e estoque no Inventory, com reserva pela Saga](docs/adr/0023-catalogo-e-estoque-no-inventory-com-reserva-pela-saga.md), [0024 Saga de abertura com orçamento inicial no Billing](docs/adr/0024-saga-de-abertura-com-orcamento-inicial-no-billing.md), [0025 Sagas orquestradas no work-order](docs/adr/0025-sagas-orquestradas-no-work-order.md), [0026 Usuários lidos no Identity, sem réplica](docs/adr/0026-usuarios-lidos-no-identity-sem-replica.md) |
 | 🧩 [Modelo C4](docs/c4) | Diagramas de Contexto, Container e Componente |
 | 🎨 [Modelagem de Domínio (Miro)](https://miro.com/app/board/uXjVGvVPEOw=/?share_link_id=9196435429) | Domain Storytelling, Event Storming e Dicionário de Linguagem Ubíqua |
 

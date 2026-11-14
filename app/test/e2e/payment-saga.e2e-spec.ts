@@ -5,7 +5,7 @@ import { GetQueueUrlCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { InternalServicesStub, startInternalServicesStub } from '../helpers/internal-services-stub';
-import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
+import { StaffUser, createStaffUser } from '../helpers/auth.helper';
 import { findEmails } from '../helpers/mailhog.helper';
 import { receiveCommands } from '../helpers/sqs-commands.helper';
 import { waitFor } from '../helpers/wait-for.helper';
@@ -24,7 +24,7 @@ describe('Payment saga (E2E)', () => {
   let stub: InternalServicesStub;
   let ctx: TestContext;
   let httpServer: Server;
-  let adminAuth: AuthTokens;
+  let adminAuth: StaffUser;
   let unitOfWork: IUnitOfWork;
   let sqs: SQSClient;
   let billingQueueUrl: string;
@@ -42,11 +42,7 @@ describe('Payment saga (E2E)', () => {
 
     billingQueueUrl = billingQueue.QueueUrl as string;
 
-    adminAuth = await registerAndLogin(
-      httpServer,
-      { name: 'Admin Pagamento', email: 'admin-payment-saga@e2e.test', role: 'ADMIN' },
-      ctx.prisma,
-    );
+    adminAuth = createStaffUser({ stub }, { name: 'Admin Pagamento' });
 
     const customer = await ctx.prisma.customer.create({
       data: {
@@ -77,7 +73,7 @@ describe('Payment saga (E2E)', () => {
   ): Promise<{ id: string; number: string }> {
     const res = await request(httpServer)
       .post('/api/work-orders')
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .send({ customerId, vehicleId, problemDescription: 'Revisão geral' })
       .expect(201);
 
@@ -180,7 +176,7 @@ describe('Payment saga (E2E)', () => {
 
     const woRes = await request(httpServer)
       .get(`/api/work-orders/${workOrder.id}`)
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .expect(200);
 
     const releasedWorkOrder = await ctx.prisma.workOrder.findUniqueOrThrow({
@@ -233,7 +229,7 @@ describe('Payment saga (E2E)', () => {
 
     const deliveryRes = await request(httpServer)
       .patch(`/api/work-orders/${workOrder.id}`)
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .send({ status: 'DELIVERED' })
       .expect(200);
 

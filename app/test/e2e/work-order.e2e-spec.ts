@@ -5,11 +5,12 @@ import request from 'supertest';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { MessagePayloads, MessageType } from '@domain/messaging/message-catalog';
 import { MessageHandlerRegistry } from '@infrastructure/messaging/message-handler.registry';
+import { UserRole } from '@domain/enums/user-role.enum';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { readInternalQuoteFixture } from '../helpers/billing-quotes-gateway-mock.factory';
 import { readInternalWorkOrderBalanceFixture } from '../helpers/billing-payments-gateway-mock.factory';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
-import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
+import { StaffUser, createStaffUser } from '../helpers/auth.helper';
 import {
   InternalServicesStub,
   startInternalServicesStub,
@@ -24,7 +25,7 @@ import {
 describe('WorkOrder (E2E)', () => {
   let ctx: TestContext;
   let httpServer: Server;
-  let adminAuth: AuthTokens;
+  let adminAuth: StaffUser;
   let redis: Redis;
   let stub: InternalServicesStub;
   // The consumer is off in this suite, so the test hands the messages to the registered handlers itself.
@@ -46,15 +47,8 @@ describe('WorkOrder (E2E)', () => {
 
   beforeEach(async () => {
     await cleanDatabase(ctx.prisma);
-    adminAuth = await registerAndLogin(
-      httpServer,
-      {
-        name: 'Admin E2E',
-        email: 'admin@e2e.test',
-        role: 'ADMIN',
-      },
-      ctx.prisma,
-    );
+    stub.users.clear();
+    adminAuth = createStaffUser({ stub }, { name: 'Admin E2E' });
   });
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -77,11 +71,12 @@ describe('WorkOrder (E2E)', () => {
     const id = ++customerCounter;
     const res = await request(httpServer)
       .post('/api/customers')
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .send({
         name: `Cliente Teste ${id}`,
         document: generateCPF(id),
         type: 'INDIVIDUAL',
+        createAccess: false,
         email: `cliente${Date.now()}${id}@test.com`,
         phone: '11999999999',
         address: {
@@ -98,7 +93,7 @@ describe('WorkOrder (E2E)', () => {
   async function createVehicle(customerId: string) {
     const res = await request(httpServer)
       .post('/api/vehicles')
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .send({
         customerId,
         plate: `ABC-${Date.now().toString().slice(-4)}`,
@@ -113,7 +108,7 @@ describe('WorkOrder (E2E)', () => {
   async function createWorkOrder(customerId: string, vehicleId: string) {
     const res = await request(httpServer)
       .post('/api/work-orders')
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .send({ customerId, vehicleId, problemDescription: 'Barulho no motor' })
       .expect(201);
     return res.body.data as { id: string; number: string; status: string };
@@ -195,7 +190,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ customerId: customer.id, vehicleId: vehicle.id })
         .expect(201);
 
@@ -217,7 +212,7 @@ describe('WorkOrder (E2E)', () => {
     it('should return 404 when customer not found', async () => {
       await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({
           customerId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
           vehicleId: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22',
@@ -229,7 +224,7 @@ describe('WorkOrder (E2E)', () => {
       const customer = await createCustomer();
       await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ customerId: customer.id, vehicleId: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22' })
         .expect(404);
     });
@@ -240,7 +235,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({
           customerId: customer.id,
           vehicleId: vehicle.id,
@@ -255,7 +250,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ customerId: customer.id, vehicleId: vehicle.id, internalNotes: 'a'.repeat(2001) })
         .expect(400);
     });
@@ -266,7 +261,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ customerId: customer.id, vehicleId: vehicle.id, mileageAtService: 75000 })
         .expect(201);
 
@@ -278,19 +273,14 @@ describe('WorkOrder (E2E)', () => {
       const vehicle = await createVehicle(customer.id);
 
       // Create a mechanic
-      const mechanic = await registerAndLogin(
-        httpServer,
-        {
-          name: 'Mechanic Assignment',
-          email: `mechanic.assign${Date.now()}@test.com`,
-          role: 'MECHANIC',
-        },
-        ctx.prisma,
+      const mechanic = createStaffUser(
+        { stub },
+        { name: 'Mechanic Assignment', role: UserRole.MECHANIC },
       );
 
       const res = await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({
           customerId: customer.id,
           vehicleId: vehicle.id,
@@ -301,13 +291,34 @@ describe('WorkOrder (E2E)', () => {
       expect(res.body.data.assignedUser.id).toBe(mechanic.user.id);
     });
 
+    it('should accept a mechanic that exists only in the Identity', async () => {
+      const customer = await createCustomer();
+      const vehicle = await createVehicle(customer.id);
+      const mechanic = createStaffUser({ stub }, { role: UserRole.MECHANIC });
+
+      const res = await request(httpServer)
+        .post('/api/work-orders')
+        .set('Authorization', adminAuth.authorization)
+        .send({ customerId: customer.id, vehicleId: vehicle.id, assignedUserId: mechanic.user.id })
+        .expect(201);
+
+      const localUsers = await ctx.prisma.$queryRaw<{ count: bigint }[]>`
+        SELECT count(*) FROM users WHERE id = ${mechanic.user.id}::uuid`;
+      const saved = await ctx.prisma.workOrder.findUniqueOrThrow({
+        where: { id: res.body.data.id },
+      });
+
+      expect(Number(localUsers[0].count)).toBe(0);
+      expect(saved.assignedUserId).toBe(mechanic.user.id);
+    });
+
     it('should return 404 when assigned user not found', async () => {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
 
       await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({
           customerId: customer.id,
           vehicleId: vehicle.id,
@@ -321,50 +332,54 @@ describe('WorkOrder (E2E)', () => {
       const vehicle = await createVehicle(customer.id);
 
       // Admin user is not a mechanic
-      const usersRes = await request(httpServer)
-        .get('/api/users')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-      const adminUserId = usersRes.body.data.find(
-        (u: { role: string; id: string }) => u.role === 'ADMIN',
-      ).id;
-
-      await request(httpServer)
+      const res = await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({
           customerId: customer.id,
           vehicleId: vehicle.id,
-          assignedUserId: adminUserId,
+          assignedUserId: adminAuth.user.id,
         })
         .expect(409);
+
+      expect(res.body.message).toBe(
+        'Apenas mecânicos ativos podem ser atribuídos a uma ordem de serviço',
+      );
+    });
+
+    it('should reject an attendant and open no work order', async () => {
+      const customer = await createCustomer();
+      const vehicle = await createVehicle(customer.id);
+      const attendant = createStaffUser(
+        { stub },
+        { name: 'Attendant Assignment', role: UserRole.ATTENDANT },
+      );
+
+      await request(httpServer)
+        .post('/api/work-orders')
+        .set('Authorization', adminAuth.authorization)
+        .send({
+          customerId: customer.id,
+          vehicleId: vehicle.id,
+          assignedUserId: attendant.user.id,
+        })
+        .expect(409);
+
+      expect(await ctx.prisma.workOrder.count({ where: { customerId: customer.id } })).toBe(0);
     });
 
     it('should return 409 when assigned user is an inactive mechanic', async () => {
       const customer = await createCustomer();
       const vehicle = await createVehicle(customer.id);
 
-      // Create an inactive mechanic
-      const inactiveMechanic = await registerAndLogin(
-        httpServer,
-        {
-          name: 'Inactive Mechanic',
-          email: `inactive${Date.now()}@test.com`,
-          role: 'MECHANIC',
-        },
-        ctx.prisma,
+      const inactiveMechanic = createStaffUser(
+        { stub },
+        { name: 'Inactive Mechanic', role: UserRole.MECHANIC, isActive: false },
       );
-
-      // Deactivate the user manually in DB or via API if possible
-      // Let's use Prisma directly since it's easier in E2E helpers
-      await ctx.prisma.user.update({
-        where: { email: inactiveMechanic.user.email },
-        data: { isActive: false },
-      });
 
       await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({
           customerId: customer.id,
           vehicleId: vehicle.id,
@@ -373,10 +388,31 @@ describe('WorkOrder (E2E)', () => {
         .expect(409);
     });
 
+    it('should answer 503 and write no work order when the Identity is unavailable on create', async () => {
+      const customer = await createCustomer();
+      const vehicle = await createVehicle(customer.id);
+      const mechanic = createStaffUser(
+        { stub },
+        { name: 'Mechanic Down Create', role: UserRole.MECHANIC },
+      );
+
+      stub.failingIds.add(mechanic.user.id);
+
+      await request(httpServer)
+        .post('/api/work-orders')
+        .set('Authorization', adminAuth.authorization)
+        .send({ customerId: customer.id, vehicleId: vehicle.id, assignedUserId: mechanic.user.id })
+        .expect(503);
+
+      stub.failingIds.delete(mechanic.user.id);
+
+      expect(await ctx.prisma.workOrder.count({ where: { customerId: customer.id } })).toBe(0);
+    });
+
     it('should return 400 when customerId is not a valid UUID', async () => {
       await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ customerId: 'not-a-uuid', vehicleId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22' })
         .expect(400);
     });
@@ -385,7 +421,7 @@ describe('WorkOrder (E2E)', () => {
       const customer = await createCustomer();
       await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ customerId: customer.id, vehicleId: 'not-a-uuid' })
         .expect(400);
     });
@@ -395,7 +431,7 @@ describe('WorkOrder (E2E)', () => {
       const vehicle = await createVehicle(customer.id);
       await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ customerId: customer.id, vehicleId: vehicle.id, assignedUserId: 'not-a-uuid' })
         .expect(400);
     });
@@ -405,7 +441,7 @@ describe('WorkOrder (E2E)', () => {
       const vehicle = await createVehicle(customer.id);
       await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ customerId: customer.id, vehicleId: vehicle.id, mileageAtService: -1 })
         .expect(400);
     });
@@ -417,7 +453,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ customerId: customer1.id, vehicleId: vehicleOfCustomer2.id })
         .expect(409);
     });
@@ -428,7 +464,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ customerId: customer.id, vehicleId: vehicle.id })
         .expect(201);
 
@@ -448,7 +484,7 @@ describe('WorkOrder (E2E)', () => {
 
       return request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ customerId: customer.id, vehicleId: vehicle.id, services, partsSupplies });
     }
 
@@ -529,7 +565,7 @@ describe('WorkOrder (E2E)', () => {
 
         const res = await request(httpServer)
           .post('/api/work-orders')
-          .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+          .set('Authorization', adminAuth.authorization)
           .send({
             customerId: customer.id,
             vehicleId: vehicle.id,
@@ -555,7 +591,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .get('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       expect(res.body.data).toBeInstanceOf(Array);
@@ -568,7 +604,7 @@ describe('WorkOrder (E2E)', () => {
     it('should use default pagination (page=1, limit=10) when not provided', async () => {
       const res = await request(httpServer)
         .get('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       expect(res.body.pagination.page).toBe(1);
@@ -582,7 +618,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .get('/api/work-orders?sort=status:desc')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       expect(res.body.data).toBeInstanceOf(Array);
@@ -611,7 +647,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .get('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       expect(res.body.data.map((workOrder: { id: string }) => workOrder.id)).toEqual([
@@ -628,7 +664,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .get('/api/work-orders?sort=createdAt:asc')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       expect(res.body.data).toBeInstanceOf(Array);
@@ -642,7 +678,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .get('/api/work-orders?sort=status:desc,createdAt:asc')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       expect(res.body.data).toBeInstanceOf(Array);
@@ -657,7 +693,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .get('/api/work-orders?sort=createdAt')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       const timestamps = (res.body.data as { createdAt: string }[]).map((item) =>
@@ -670,21 +706,21 @@ describe('WorkOrder (E2E)', () => {
     it('should return 400 for disallowed sort field', async () => {
       await request(httpServer)
         .get('/api/work-orders?sort=number:asc')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(400);
     });
 
     it('should return 400 for invalid sort direction', async () => {
       await request(httpServer)
         .get('/api/work-orders?sort=status:invalid')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(400);
     });
 
     it('should return 400 for empty sort field', async () => {
       await request(httpServer)
         .get('/api/work-orders?sort=:asc')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(400);
     });
   });
@@ -699,7 +735,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .get(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       expect(res.body.data.id).toBe(wo.id);
@@ -715,7 +751,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
@@ -743,7 +779,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .get(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       expect(res.body.data.services).toEqual([
@@ -784,7 +820,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .get(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       expect(res.body.data.partSupplies).toEqual([
@@ -806,7 +842,7 @@ describe('WorkOrder (E2E)', () => {
     it('should return 404 for non-existent id', async () => {
       await request(httpServer)
         .get('/api/work-orders/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(404);
     });
   });
@@ -821,7 +857,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
@@ -835,13 +871,13 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(409);
     });
@@ -853,7 +889,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'CANCELLED', notes: 'Cancelado pelo cliente' })
         .expect(200);
 
@@ -867,7 +903,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'CANCELLED' })
         .expect(409);
     });
@@ -879,7 +915,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'CANCELLED', notes: 'a'.repeat(2001) })
         .expect(400);
     });
@@ -891,7 +927,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'APPROVED' })
         .expect(400);
     });
@@ -905,7 +941,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'AWAITING_PAYMENT' })
         .expect(400);
     });
@@ -924,7 +960,7 @@ describe('WorkOrder (E2E)', () => {
 
         const res = await request(httpServer)
           .patch(`/api/work-orders/${wo.id}`)
-          .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+          .set('Authorization', adminAuth.authorization)
           .send({ status, notes: 'Pedido pelo cliente' })
           .expect(409);
 
@@ -954,7 +990,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .patch(`/api/work-orders/${workOrder.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'CANCELLED', notes: 'Cancelado pelo cliente' })
         .expect(409);
 
@@ -989,7 +1025,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'CANCELLED', notes: 'Cancelado pelo cliente' })
         .expect(200);
 
@@ -999,7 +1035,7 @@ describe('WorkOrder (E2E)', () => {
     it('should return 404 for non-existent work order during status update', async () => {
       await request(httpServer)
         .patch('/api/work-orders/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(404);
     });
@@ -1015,7 +1051,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .delete(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(404);
     });
   });
@@ -1030,7 +1066,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .get(`/api/work-orders/${wo.id}/status-history`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       expect(res.body.data).toBeInstanceOf(Array);
@@ -1054,7 +1090,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .put(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({
           problemDescription: 'Problema atualizado',
           internalNotes: 'Notas internas',
@@ -1070,7 +1106,7 @@ describe('WorkOrder (E2E)', () => {
     it('should return 404 when work order does not exist during update', async () => {
       await request(httpServer)
         .put('/api/work-orders/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ problemDescription: 'Test' })
         .expect(404);
     });
@@ -1082,7 +1118,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .put(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ problemDescription: 'a'.repeat(2001) })
         .expect(400);
     });
@@ -1094,7 +1130,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .put(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ internalNotes: 'a'.repeat(2001) })
         .expect(400);
     });
@@ -1106,7 +1142,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .put(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ assignedUserId: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11' })
         .expect(404);
     });
@@ -1116,24 +1152,43 @@ describe('WorkOrder (E2E)', () => {
       const vehicle = await createVehicle(customer.id);
       const wo = await createWorkOrder(customer.id, vehicle.id);
 
-      const mechanic = await registerAndLogin(
-        httpServer,
-        {
-          name: 'Mechanic Update',
-          email: `mechanic.update${Date.now()}@test.com`,
-          role: 'MECHANIC',
-        },
-        ctx.prisma,
+      const mechanic = createStaffUser(
+        { stub },
+        { name: 'Mechanic Update', role: UserRole.MECHANIC },
       );
 
       // A valid existing user covers the "assignedUser found" branch.
       const res = await request(httpServer)
         .put(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ assignedUserId: mechanic.user.id })
         .expect(200);
 
       expect(res.body.data.assignedUser.id).toBe(mechanic.user.id);
+    });
+
+    it('should answer 503 and keep the work order when the Identity is unavailable on update', async () => {
+      const customer = await createCustomer();
+      const vehicle = await createVehicle(customer.id);
+      const wo = await createWorkOrder(customer.id, vehicle.id);
+      const mechanic = createStaffUser(
+        { stub },
+        { name: 'Mechanic Unavailable', role: UserRole.MECHANIC },
+      );
+
+      stub.failingIds.add(mechanic.user.id);
+
+      await request(httpServer)
+        .put(`/api/work-orders/${wo.id}`)
+        .set('Authorization', adminAuth.authorization)
+        .send({ assignedUserId: mechanic.user.id })
+        .expect(503);
+
+      stub.failingIds.delete(mechanic.user.id);
+
+      const saved = await ctx.prisma.workOrder.findUniqueOrThrow({ where: { id: wo.id } });
+
+      expect(saved.assignedUserId).toBeNull();
     });
   });
 
@@ -1141,7 +1196,7 @@ describe('WorkOrder (E2E)', () => {
     it('should return 404 when work order does not exist', async () => {
       await request(httpServer)
         .get('/api/work-orders/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/status-history')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(404);
     });
   });
@@ -1161,7 +1216,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
@@ -1174,13 +1229,13 @@ describe('WorkOrder (E2E)', () => {
       // Move to IN_PROGRESS first (to move WO to IN_PROGRESS)
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_PROGRESS' })
         .expect(200);
 
       const res = await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'COMPLETED' })
         .expect(200);
 
@@ -1194,7 +1249,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'PENDING' })
         .expect(400);
     });
@@ -1204,7 +1259,7 @@ describe('WorkOrder (E2E)', () => {
         .patch(
           '/api/work-orders/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11/services/b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22',
         )
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'COMPLETED' })
         .expect(404);
     });
@@ -1216,7 +1271,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'COMPLETED' })
         .expect(404);
     });
@@ -1228,7 +1283,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
@@ -1246,7 +1301,7 @@ describe('WorkOrder (E2E)', () => {
       // Transition to IN_PROGRESS
       const res = await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_PROGRESS' })
         .expect(200);
 
@@ -1255,7 +1310,7 @@ describe('WorkOrder (E2E)', () => {
       // Check the work order status also changed to IN_PROGRESS
       const woRes = await request(httpServer)
         .get(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
       expect(woRes.body.data.status).toBe('IN_PROGRESS');
     });
@@ -1267,7 +1322,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
@@ -1283,7 +1338,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${service.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_PROGRESS' })
         .expect(409);
 
@@ -1308,7 +1363,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
@@ -1320,7 +1375,7 @@ describe('WorkOrder (E2E)', () => {
       // Service is now PENDING — trying to complete it without starting it first
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'COMPLETED' })
         .expect(409);
     });
@@ -1332,7 +1387,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
@@ -1344,14 +1399,14 @@ describe('WorkOrder (E2E)', () => {
       // Transition to IN_PROGRESS
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_PROGRESS' })
         .expect(200);
 
       // Attempt same transition again — should conflict
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_PROGRESS' })
         .expect(409);
     });
@@ -1363,7 +1418,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
@@ -1374,20 +1429,20 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_PROGRESS' })
         .expect(200);
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'COMPLETED' })
         .expect(200);
 
       // Service is now COMPLETED — trying to complete it again
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'COMPLETED' })
         .expect(409);
     });
@@ -1399,7 +1454,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
@@ -1411,20 +1466,20 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_PROGRESS' })
         .expect(200);
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'COMPLETED' })
         .expect(200);
 
       // Service is now COMPLETED — trying to start it again
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_PROGRESS' })
         .expect(409);
     });
@@ -1441,46 +1496,41 @@ describe('WorkOrder (E2E)', () => {
       // Filter by number
       let res = await request(httpServer)
         .get(`/api/work-orders?number=${wo.number}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
       expect(res.body.data.length).toBe(1);
 
       // Filter by status
       res = await request(httpServer)
         .get('/api/work-orders?status=RECEIVED')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
       expect(res.body.data.length).toBeGreaterThanOrEqual(1);
 
       // Filter by customerId
       res = await request(httpServer)
         .get(`/api/work-orders?customerId=${customer.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
       expect(res.body.data.length).toBe(1);
 
       // Filter by vehicleId
       res = await request(httpServer)
         .get(`/api/work-orders?vehicleId=${vehicle.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
       expect(res.body.data.length).toBe(1);
 
       // Filter by assignedUserId
       // Create another WO with assigned user (must be a mechanic)
-      const mechanic = await registerAndLogin(
-        httpServer,
-        {
-          name: 'Mechanic Filter',
-          email: `mechanic.filter${Date.now()}@test.com`,
-          role: 'MECHANIC',
-        },
-        ctx.prisma,
+      const mechanic = createStaffUser(
+        { stub },
+        { name: 'Mechanic Filter', role: UserRole.MECHANIC },
       );
 
       await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({
           customerId: customer.id,
           vehicleId: vehicle.id,
@@ -1491,7 +1541,7 @@ describe('WorkOrder (E2E)', () => {
 
       res = await request(httpServer)
         .get(`/api/work-orders?assignedUserId=${mechanic.user.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
       expect(res.body.data.length).toBeGreaterThanOrEqual(1);
       expect(
@@ -1512,7 +1562,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
@@ -1528,40 +1578,40 @@ describe('WorkOrder (E2E)', () => {
       // Start and complete service 1
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${service1.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_PROGRESS' })
         .expect(200);
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${service1.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'COMPLETED' })
         .expect(200);
 
       // Work order should still be IN_PROGRESS (service 2 not done yet)
       const woMid = await request(httpServer)
         .get(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
       expect(woMid.body.data.status).toBe('IN_PROGRESS');
 
       // Start and complete service 2
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${service2.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_PROGRESS' })
         .expect(200);
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${service2.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'COMPLETED' })
         .expect(200);
 
       // All services done — work order must be COMPLETED now
       const woFinal = await request(httpServer)
         .get(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
       expect(woFinal.body.data.status).toBe('COMPLETED');
     });
@@ -1573,7 +1623,7 @@ describe('WorkOrder (E2E)', () => {
     it('should return 400 for malformed JSON body', async () => {
       const res = await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .set('Content-Type', 'application/json')
         .send('{invalid json:}');
 
@@ -1591,7 +1641,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_PROGRESS' })
         .expect(404);
     });
@@ -1607,7 +1657,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
@@ -1620,7 +1670,7 @@ describe('WorkOrder (E2E)', () => {
       // WO is now APPROVED — update must be rejected
       await request(httpServer)
         .put(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ problemDescription: 'Tentativa de atualização bloqueada' })
         .expect(409);
     });
@@ -1636,7 +1686,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'DELIVERED' })
         .expect(409);
     });
@@ -1652,7 +1702,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
@@ -1663,20 +1713,20 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_PROGRESS' })
         .expect(200);
 
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}/services/${serviceId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'COMPLETED' })
         .expect(200);
 
       // WO is COMPLETED — now transition to DELIVERED
       const res = await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'DELIVERED' })
         .expect(200);
 
@@ -1706,7 +1756,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'DELIVERED' })
         .expect(409);
 
@@ -1729,7 +1779,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'DELIVERED' })
         .expect(503);
 
@@ -1791,7 +1841,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .get('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       const statuses: string[] = res.body.data.map((wo: { status: string }) => wo.status);
@@ -1823,7 +1873,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .get('/api/work-orders?status=DELIVERED')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       expect(res.body.data.length).toBeGreaterThanOrEqual(1);
@@ -1849,7 +1899,7 @@ describe('WorkOrder (E2E)', () => {
 
       const res = await request(httpServer)
         .get(`/api/work-orders/${closedId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       expect(res.body.data.id).toBe(closedId);
@@ -1868,11 +1918,11 @@ describe('WorkOrder (E2E)', () => {
       const [r1, r2] = await Promise.all([
         request(httpServer)
           .patch(`/api/work-orders/${wo.id}`)
-          .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+          .set('Authorization', adminAuth.authorization)
           .send({ status: 'IN_DIAGNOSIS' }),
         request(httpServer)
           .patch(`/api/work-orders/${wo.id}`)
-          .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+          .set('Authorization', adminAuth.authorization)
           .send({ status: 'IN_DIAGNOSIS' }),
       ]);
 
@@ -1896,7 +1946,7 @@ describe('WorkOrder (E2E)', () => {
       // Advance version via HTTP (version 0 → 1)
       await request(httpServer)
         .patch(`/api/work-orders/${wo.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
@@ -1907,6 +1957,111 @@ describe('WorkOrder (E2E)', () => {
           data: { status: 'IN_DIAGNOSIS', version: { increment: 1 } },
         }),
       ).rejects.toMatchObject({ code: 'P2025' });
+    });
+  });
+
+  // ─── Users read from the Identity ──────────────────────────────────────────
+
+  describe('users read from the Identity', () => {
+    const asAdmin = (req: request.Test) => req.set('Authorization', adminAuth.authorization);
+
+    async function createWorkOrderOfMechanic() {
+      const mechanic = createStaffUser(
+        { stub },
+        { name: 'Mecânico Identity', role: UserRole.MECHANIC },
+      );
+
+      const identityMechanic = mechanic.user;
+      const customer = await createCustomer();
+      const vehicle = await createVehicle(customer.id);
+
+      const created = await asAdmin(request(httpServer).post('/api/work-orders'))
+        .send({ customerId: customer.id, vehicleId: vehicle.id, assignedUserId: mechanic.user.id })
+        .expect(201);
+
+      const id = created.body.data.id as string;
+
+      await asAdmin(request(httpServer).patch(`/api/work-orders/${id}`))
+        .send({ status: 'IN_DIAGNOSIS' })
+        .expect(200);
+
+      await asAdmin(request(httpServer).patch(`/api/work-orders/${id}`))
+        .send({ status: 'CANCELLED', notes: 'Cancelado pelo cliente' })
+        .expect(200);
+
+      return { id, mechanic: identityMechanic };
+    }
+
+    function publicUser(user: { id: string; name: string; email: string; role: unknown }) {
+      return { id: user.id, name: user.name, email: user.email, role: user.role };
+    }
+
+    it('should present the mechanic and the history authors as the Identity returns them', async () => {
+      const { id, mechanic } = await createWorkOrderOfMechanic();
+
+      const detail = await asAdmin(request(httpServer).get(`/api/work-orders/${id}`)).expect(200);
+      const list = await asAdmin(
+        request(httpServer).get('/api/work-orders?status=CANCELLED'),
+      ).expect(200);
+      const history = await asAdmin(
+        request(httpServer).get(`/api/work-orders/${id}/status-history`),
+      ).expect(200);
+
+      expect(detail.body.data.assignedUser).toEqual(publicUser(mechanic));
+
+      expect(list.body.data.find((item: { id: string }) => item.id === id).assignedUser).toEqual(
+        publicUser(mechanic),
+      );
+
+      expect(history.body.data).toHaveLength(3);
+
+      for (const entry of history.body.data) {
+        expect(entry.changedBy).toEqual(publicUser(adminAuth.user));
+      }
+    });
+
+    it('should show the new name after the Identity renames the mechanic with the detail cached', async () => {
+      const { id, mechanic } = await createWorkOrderOfMechanic();
+
+      await asAdmin(request(httpServer).get(`/api/work-orders/${id}`)).expect(200);
+      stub.users.set(mechanic.id, { ...mechanic, name: 'Mecânico Renomeado' });
+
+      const detail = await asAdmin(request(httpServer).get(`/api/work-orders/${id}`)).expect(200);
+
+      expect(detail.body.data.assignedUser.name).toBe('Mecânico Renomeado');
+    });
+
+    it('should present null for the history author the Identity no longer has', async () => {
+      const { id } = await createWorkOrderOfMechanic();
+
+      stub.users.delete(adminAuth.user.id);
+
+      const history = await asAdmin(
+        request(httpServer).get(`/api/work-orders/${id}/status-history`),
+      ).expect(200);
+
+      expect(history.body.data.map((entry: { changedBy: unknown }) => entry.changedBy)).toEqual([
+        null,
+        null,
+        null,
+      ]);
+    });
+
+    it('should answer 503 on detail, list and history when the Identity fails', async () => {
+      const { id, mechanic } = await createWorkOrderOfMechanic();
+
+      stub.failingIds.add(mechanic.id);
+      stub.failingIds.add(adminAuth.user.id);
+
+      for (const path of [
+        `/api/work-orders/${id}`,
+        '/api/work-orders?status=CANCELLED',
+        `/api/work-orders/${id}/status-history`,
+      ]) {
+        const res = await asAdmin(request(httpServer).get(path)).expect(503);
+
+        expect(res.body.message).toBe('Serviço de destino indisponível');
+      }
     });
   });
 
@@ -1923,7 +2078,7 @@ describe('WorkOrder (E2E)', () => {
     function getDetail(id: string) {
       return request(httpServer)
         .get(`/api/work-orders/${id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
     }
 
@@ -1945,7 +2100,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
@@ -1959,7 +2114,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .put(`/api/vehicles/${vehicleId}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ customerId, plate: 'XYZ-9876', brand: 'Toyota', model: 'Corolla', year: 2020 })
         .expect(200);
 
@@ -1971,7 +2126,7 @@ describe('WorkOrder (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/work-orders/${id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ status: 'IN_DIAGNOSIS' })
         .expect(200);
 
@@ -2006,15 +2161,11 @@ describe('WorkOrder (E2E)', () => {
 
 describe('WorkOrder (E2E) — Billing unavailable', () => {
   let ctx: TestContext;
-  let adminAuth: AuthTokens;
+  let adminAuth: StaffUser;
 
   beforeAll(async () => {
     ctx = await setupTestApp();
-    adminAuth = await registerAndLogin(
-      ctx.httpServer,
-      { name: 'Admin E2E', email: 'admin@e2e.test', role: 'ADMIN' },
-      ctx.prisma,
-    );
+    adminAuth = createStaffUser({}, { name: 'Admin E2E' });
   });
 
   afterAll(async () => {
@@ -2038,7 +2189,7 @@ describe('WorkOrder (E2E) — Billing unavailable', () => {
     const openWorkOrder = (items: object) =>
       request(ctx.httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ customerId: customer.id, vehicleId: vehicle.id, ...items });
 
     const previous = await openWorkOrder({}).expect(201);

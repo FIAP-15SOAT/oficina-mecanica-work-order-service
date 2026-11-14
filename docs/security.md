@@ -6,7 +6,9 @@ Mitigações aplicadas no código e índice de relatórios de segurança.
 
 - [Relatórios](#relatórios)
 - [Mitigações aplicadas no código](#mitigações-aplicadas-no-código)
-- [Chaves do token de funcionário](#chaves-do-token-de-funcionário)
+- [Credencial do banco em produção](#credencial-do-banco-em-produção)
+- [Chaves dos tokens](#chaves-dos-tokens)
+- [Janelas de revogação aceitas](#janelas-de-revogação-aceitas)
 - [Endpoints de saúde públicos e não autenticados](#endpoints-de-saúde-públicos-e-não-autenticados)
 - [Riscos residuais aceitos](#riscos-residuais-aceitos)
 - [Proteção de dados nos logs](#proteção-de-dados-nos-logs)
@@ -25,66 +27,61 @@ Relatórios de segurança da aplicação ficam versionados em [`reports/`](../re
 - CORS com lista branca via `ALLOWED_ORIGINS`
 - `SanitizeStringsPipe` global (sanitização de inputs em DTOs antes do `ValidationPipe`)
 - `ValidationPipe` global com `whitelist: true`, `forbidNonWhitelisted: true` e `transform: true`
-- Senhas com bcrypt (`BCRYPT_SALT_ROUNDS`) e regra de força aplicada tanto no DTO quanto no domínio (`User.validatePasswordStrength`)
-- Token de funcionário em **RS256**, com access e refresh assinados por chaves privadas **separadas** (`STAFF_JWT_PRIVATE_KEY` / `STAFF_JWT_REFRESH_PRIVATE_KEY`). O access tem `kid` no cabeçalho e as claims `sub`, `email`, `name`, `role`, `typ = access`, `iss = oficina-identity` e `aud = oficina-services`, e vale 10 minutos (`STAFF_JWT_EXPIRATION`). O refresh tem `typ = refresh` e `aud = oficina-identity`, vale 7 dias e não tem `kid`. Nenhum segredo de assinatura é compartilhado: quem só valida recebe a chave pública (`STAFF_JWT_PUBLIC_KEY`) e o `kid` (`STAFF_JWT_KEY_ID`).
-- **Dois verificadores JWT totalmente isolados.** A estratégia interna (`jwt`) autentica funcionários (`ADMIN`/`MECHANIC`/`ATTENDANT`) com `STAFF_JWT_PUBLIC_KEY`, emissor `oficina-identity` (`STAFF_JWT_ISSUER`) e audiência `oficina-services` (`STAFF_JWT_AUDIENCE`); a externa (`customer-jwt`) autentica o Cliente da Oficina com `CUSTOMER_JWT_PUBLIC_KEY`, emissor e audiência próprios, com token emitido por uma função serverless fora desta aplicação. As duas fixam `algorithms: ['RS256']`, então um token HS256 (inclusive um forjado com a chave pública como segredo) ou sem assinatura é recusado antes de qualquer outra checagem. A interna ainda recusa `kid` diferente do configurado e `typ` diferente de `access`: um refresh enviado como access falha na audiência e no `typ`, e um access enviado a `POST /api/auth/refresh` falha na chave, na audiência e no `typ`. O token externo não carrega `customerId` nem `role` — apenas `sub` (o `userId`) — e cada rota `/api/me/*` resolve a autorização por vínculo (`UserCustomer`) a cada requisição, o que faz uma revogação de acesso valer imediatamente sem lista de revogação de token. Ver [ADR 0004](./adr/0004-autenticacao-de-clientes.md) e [ADR 0022](./adr/0022-token-de-funcionario-em-rs256.md).
+- Nenhuma chave privada neste serviço, e o código não lê nem grava senha: os usuários, as senhas (com bcrypt) e as chaves que assinam o token de funcionário ficam no Identity, o serviço da solução dono dos usuários e das credenciais. Este serviço guarda só o id do usuário e as chaves **públicas** que validam os tokens. A tabela legada `users` ainda guarda os hashes bcrypt de quando os usuários eram daqui, até uma migration removê-la (ver [Banco de Dados](database.md#tabelas-legadas)).
+- Token de funcionário em **RS256**, emitido pelo Identity. O access tem `kid` no cabeçalho e as claims `sub`, `email`, `name`, `role`, `typ = access`, `iss = oficina-identity` e `aud = oficina-services`, e vale 10 minutos. Este serviço o valida só com a chave pública (`STAFF_JWT_PUBLIC_KEY`) e o `kid` (`STAFF_JWT_KEY_ID`), sem segredo compartilhado.
+- **Validação do token de funcionário só pelas claims.** A `JwtStrategy` confere a assinatura, o emissor, a audiência, a expiração, o `kid`, o `typ = access` e as claims `sub` (um UUID), `email` e `role` (um dos papéis conhecidos), e monta o principal com elas, sem ler o usuário no banco nem no Identity. A consequência está em [Janelas de revogação aceitas](#janelas-de-revogação-aceitas).
+- **Dois verificadores JWT totalmente isolados.** A estratégia interna (`jwt`) autentica funcionários (`ADMIN`/`MECHANIC`/`ATTENDANT`) com `STAFF_JWT_PUBLIC_KEY`, emissor `oficina-identity` (`STAFF_JWT_ISSUER`) e audiência `oficina-services` (`STAFF_JWT_AUDIENCE`); a externa (`customer-jwt`) autentica o Cliente da Oficina com `CUSTOMER_JWT_PUBLIC_KEY`, emissor e audiência próprios, com token emitido por uma função serverless fora desta aplicação. As duas fixam `algorithms: ['RS256']`, então um token HS256 (inclusive um forjado com a chave pública como segredo) ou sem assinatura é recusado antes de qualquer outra checagem. A interna ainda recusa `kid` diferente do configurado e `typ` diferente de `access`: um refresh enviado como access falha na audiência e no `typ`. O token externo não carrega `customerId` nem `role` — apenas `sub` (o id do usuário), recusado com 401 quando falta ou não é um UUID, antes de qualquer consulta aos vínculos — e cada rota `/api/me/*` resolve a autorização por vínculo (`UserCustomer`) a cada requisição, o que faz uma revogação de acesso valer imediatamente sem lista de revogação de token. Ver [ADR 0004](./adr/0004-autenticacao-de-clientes.md) e [ADR 0022](./adr/0022-token-de-funcionario-em-rs256.md).
 - Concorrência otimista no agregado `WorkOrder` para evitar lost updates
 - Filtros de exceção que nunca expõem stack traces ou detalhes do banco para o cliente
 - Registro de exceção decidido pelo **status resolvido**, não pelo tipo: um `401` não gera linha de erro nem stack trace, e portanto um scanner não vira tempestade de alertas
-- Mensagem de falha unificada em `POST /api/auth/refresh` (`'Refresh token inválido ou expirado'` para token inválido, usuário inexistente e usuário desativado) e em `POST /api/auth/password-reset-confirmations` (`'Código de redefinição inválido ou expirado'` para as cinco causas de falha), eliminando o oráculo de enumeração de usuários
 - Falha de envio de e-mail responde sem o endereço do destinatário
-- Código de redefinição de senha numérico (6 dígitos), com escopo curto: expira em **10 minutos** e é bloqueado após **5 tentativas** incorretas, emitido apenas por um Admin (`POST /users/:userId/password-resets`) — nunca autoatendido
-- **Trocar ou resetar a senha invalida imediatamente todos os access e refresh tokens emitidos antes da troca, sem lista de revogação.** `User.passwordChangedAt` é atualizado no único ponto por onde a senha muda (`User.changePassword()` — usado tanto por `PATCH /api/me/password` quanto pelo reset por código); as três verificações (`JwtStrategy`, `CustomerJwtStrategy`, `RefreshTokenUseCase`) comparam o `iat` do token com esse campo, recarregado do banco a cada requisição, e recusam qualquer token anterior. Nenhuma consulta extra: o `User` já é carregado nos três pontos por outro motivo (checar `isActive`/vínculos).
 
 ## Credencial do banco em produção
 
 - A master password pertence ao RDS/Secrets Manager e não é armazenada em GitHub Secret, Variable ou Terraform State corrente.
 - `prepare-deploy` do CD lê `AWSCURRENT`, mascara senha, senha percent-encoded, URL e URL em base64 e aplica por stdin um manifesto do Secret `database-credentials`; nenhuma representação sensível segue para argumento de processo, output, artifact ou arquivo renderizado. Máscaras protegem logs, não command lines; base64 não é criptografia.
 - `cache-credentials` recebe `CACHE_URL` (`rediss://` com o auth token do ElastiCache) pelo mesmo transporte: token lido do Secrets Manager, URL mascarada e aplicada por stdin.
-- `jwt-private-keys` contém somente as chaves privadas `STAFF_JWT_PRIVATE_KEY` e `STAFF_JWT_REFRESH_PRIVATE_KEY`, e `jwt-public-keys` só material público (`CUSTOMER_JWT_PUBLIC_KEY`, `STAFF_JWT_PUBLIC_KEY` e `STAFF_JWT_KEY_ID`), evitando misturar lifecycles. As privadas vêm de secrets do environment `production`; a pública de funcionário e o `kid`, de secrets da organização, que os outros serviços também leem. O `prepare-deploy` codifica os valores em base64, mascara o base64 das privadas e aplica por stdin.
+- `jwt-public-keys` contém só material público (`CUSTOMER_JWT_PUBLIC_KEY`, `STAFF_JWT_PUBLIC_KEY` e `STAFF_JWT_KEY_ID`): o serviço não tem chave privada nenhuma. A pública de funcionário e o `kid` vêm de secrets da organização, que os outros serviços também leem, e a pública de cliente, de um secret do repositório. O `prepare-deploy` codifica os valores em base64 e aplica por stdin.
 
 - O Deployment recebe `DATABASE_URL` e `CACHE_URL` pelos Secrets e o Job só `DATABASE_URL`. SNS e SQS são chamados com o papel do nó. Não há credencial AWS, IRSA, Pod Identity, ESO, CSI/ASCP ou chamada ao Secrets Manager nesses workloads.
 
 O desenho e as alternativas estão no [ADR 0017](./adr/0017-materializacao-da-credencial-do-banco-no-cd.md).
 
-## Chaves do token de funcionário
+## Chaves dos tokens
 
-| Chave | Onde fica | Quem usa |
+Este serviço só valida tokens; as chaves privadas ficam com quem os emite.
+
+| Chave | Onde fica | Para quê |
 |---|---|---|
-| `STAFF_JWT_PRIVATE_KEY` (PKCS#8) | Secret do environment `production` → Secret k8s `jwt-private-keys` | Emissor (assina o access) |
-| `STAFF_JWT_REFRESH_PRIVATE_KEY` (PKCS#8) | Secret do environment `production` → Secret k8s `jwt-private-keys` | Emissor (assina e verifica o refresh; a pública é derivada da privada) |
-| `STAFF_JWT_PUBLIC_KEY` (SPKI) | Secret da organização `FIAP-15SOAT` → Secret k8s `jwt-public-keys` | Todo serviço que valida o token de funcionário |
-| `STAFF_JWT_KEY_ID` | Secret da organização → Secret k8s `jwt-public-keys` | Emissor (cabeçalho `kid`) e validadores (conferem o `kid`) |
+| `STAFF_JWT_PUBLIC_KEY` (SPKI, `BEGIN PUBLIC KEY`) | Secret da organização `FIAP-15SOAT` → Secret Kubernetes `jwt-public-keys` | Validar o access token de funcionário, que o Identity assina com a privada dele |
+| `STAFF_JWT_KEY_ID` | Secret da organização → Secret Kubernetes `jwt-public-keys` | Conferir o `kid` do cabeçalho do access token |
+| `CUSTOMER_JWT_PUBLIC_KEY` | Secret do repositório → Secret Kubernetes `jwt-public-keys` | Validar o token de cliente, que a customer-auth, a função Lambda de login do cliente, assina com a privada dela |
 
-**Gerar ou trocar o par.** Gere os pares fora do repositório (`*.pem` está no `.gitignore`) e atualize os secrets juntos, com um `kid` novo:
-
-```bash
-tmp="$(mktemp -d)"
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$tmp/staff.key"
-openssl pkey -in "$tmp/staff.key" -pubout -out "$tmp/staff.pub"
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$tmp/refresh.key"
-gh secret set STAFF_JWT_PRIVATE_KEY --env production -R FIAP-15SOAT/oficina-mecanica-work-order-service < "$tmp/staff.key"
-gh secret set STAFF_JWT_REFRESH_PRIVATE_KEY --env production -R FIAP-15SOAT/oficina-mecanica-work-order-service < "$tmp/refresh.key"
-gh secret set STAFF_JWT_PUBLIC_KEY --org FIAP-15SOAT --visibility all < "$tmp/staff.pub"
-gh secret set STAFF_JWT_KEY_ID --org FIAP-15SOAT --visibility all --body "staff-$(date +%Y-%m-%d)"
-rm -rf "$tmp"
-```
-
-Atualizar um Secret não reinicia os pods: depois de rodar o CD, reinicie o Deployment para que todas as réplicas assinem e validem com o par novo ao mesmo tempo. Sem isso, um pod criado pelo HPA usaria o par novo enquanto os antigos seguem com o anterior, e tokens de um seriam recusados pelo outro.
+A geração e a troca do par do token de funcionário são feitas pelo Identity, dono das privadas, e estão na documentação de segurança dele ([`oficina-mecanica-identity-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service), `docs/security.md`). Quando o par muda, o secret da organização `STAFF_JWT_PUBLIC_KEY` e o `STAFF_JWT_KEY_ID` mudam juntos; para este serviço passar a validar com o par novo, rode o CD, que regrava o Secret `jwt-public-keys`, e reinicie o Deployment, porque atualizar um Secret não reinicia os pods:
 
 ```bash
 kubectl rollout restart deployment/work-order-service -n work-order
 kubectl rollout status deployment/work-order-service -n work-order --timeout=180s
 ```
 
-O valor de um secret não pode ser lido de volta: confira a troca pelo efeito, com o `kid` novo no cabeçalho do access token de um login e uma rota autenticada respondendo `200`.
+Há uma chave ativa por emissor, sem JWKS (a lista de chaves públicas publicada pelo emissor, que permitiria duas chaves válidas durante a troca): depois da troca, os tokens assinados com o par antigo deixam de valer aqui e basta um login novo no Identity.
 
-Há uma chave ativa por emissor, sem JWKS: depois da troca, os tokens antigos deixam de valer e basta um login novo.
+## Janelas de revogação aceitas
+
+Não há lista de revogação de token, e nenhum dos dois tokens faz este serviço ler o usuário. As janelas abaixo são aceitas pela solução:
+
+| Situação | Onde vale na hora | Janela aceita neste serviço |
+|---|---|---|
+| Funcionário desativado ou com a senha trocada (pela própria conta ou por redefinição) | No Identity: o login e o refresh são recusados | O access que ele já tem continua aceito nas rotas de funcionário até expirar, **em até 10 minutos** |
+| Funcionário excluído no Identity | No Identity: login e refresh | O access continua aceito até expirar, **em até 10 minutos**; nas respostas, o usuário aparece como `null` |
+| Usuário de cliente desativado ou com a senha trocada no Identity | No login do cliente, fora deste serviço; este serviço só responde `GET /internal/users/:userId/customers`, com os clientes ativos vinculados ao usuário, consultado nesse login | O token de cliente que ele já tem continua aceito em `/api/me/*` até expirar, **em até 60 minutos**, enquanto ele tiver um vínculo com cliente ativo |
+| Vínculo revogado (`DELETE /api/customers/:customerId/users/:userId`) ou cliente desativado (`PATCH /api/customers/:customerId`) | Aqui, na próxima requisição: a `CustomerJwtStrategy` e a `CustomerAccessPolicy` leem os vínculos ativos a cada requisição | Nenhuma |
+
+Para encurtar a janela de um funcionário, desative-o no Identity e espere o access expirar; não há outro mecanismo. O motivo de não reler o usuário a cada requisição, e as alternativas descartadas, estão no [ADR 0026](./adr/0026-usuarios-lidos-no-identity-sem-replica.md).
 
 ## Riscos residuais aceitos
 
-- **Não há limitação de frequência de requisições** no login interno (`POST /api/auth/login`) nesta entrega — risco preexistente, não introduzido pela autenticação externa de clientes.
-- **A força bruta do código de redefinição de senha é limitada, não eliminada**: o espaço de busca é de 6 dígitos numéricos (10⁶ combinações), mas o teto de **5 tentativas em uma janela de 10 minutos**, combinado com a emissão sendo **exclusiva de um Admin** (o cliente nunca autoatende um reset), reduz a superfície a um evento raro e auditável, não a um endpoint público de tentativa livre.
+- **Janela de revogação dos tokens**: o token de funcionário e o de cliente continuam aceitos até expirar depois de o usuário ser desativado ou trocar a senha (ver [Janelas de revogação aceitas](#janelas-de-revogação-aceitas)).
 - **Janela entre autorizar e efetivar a decisão de orçamento (`DecideMyQuoteUseCase`).** `CustomerAccessPolicy.assertCustomerAuthorized` roda num `SELECT` neste serviço, e a decisão só é gravada depois, no Billing, o serviço dono dos orçamentos, por `POST /internal/quotes/:id/decisions`. Entre as duas não há trava: se, exatamente nessa janela, um admin revogar o vínculo (`DELETE /customers/:id/users/:userId`) ou desativar o cliente (`PATCH /customers/:id`), a decisão segue em frente usando uma autorização já revogada — e, numa aprovação, o orçamento fica aprovado, os irmãos são rejeitados e a Saga de aprovação reserva o estoque. Aceito porque exige duas ações na mesma janela de milissegundos sobre o mesmo cliente, o vínculo era válido um instante antes (não é acesso indevido, é uma revogação que chegou tarde) e fica auditado (o Billing grava quem decidiu). Os dois bancos não compartilham transação, então fechar a janela exigiria uma trava distribuída ou o Billing consultar o vínculo de volta neste serviço, criando uma cadeia síncrona de ida e volta; se um dia virar problema real, é decisão de arquitetura, não conserto de bug.
 
 ## Endpoints de saúde públicos e não autenticados
@@ -146,13 +143,13 @@ As máscaras são determinísticas e preservam a forma — `Maria Silva` → `Ma
 
 **O quanto é revelado depende do tamanho.** A partir de 7 caracteres aparecem as duas pontas (`Ma***va`); entre 4 e 6, só o caractere inicial (`Lucas` → `L***`); abaixo de 4, nada (`SP` → `***`). O degrau existe porque revelar duas pontas de um valor curto deixa de ser mascaramento: em 6 caracteres, `12**56` expõe 4 de 6 e o resto se reconstrói por tentativa. Valor vazio permanece vazio — devolver `***` sugeriria um conteúdo que não existe.
 
-**Campo de evento de negócio é mascarado por declaração, não por chamada.** Cada campo lógico tem uma `sensitivity` em `infrastructure/logging/field-registry.ts`, e é o adaptador que aplica a máscara. Por isso `subjectName`/`subjectEmail` saem mascarados sem uma linha de código no caso de uso, e por isso `dependencyName` — nome de dependência técnica, não de pessoa — sai em claro: alguém declarou `clear` explicitamente. Mascarar no ponto de chamada é o que se deve evitar, porque é o que se esquece.
+**Campo de evento de negócio é mascarado por declaração, não por chamada.** Cada campo lógico tem uma `sensitivity` em `infrastructure/logging/field-registry.ts`, e é o adaptador que aplica a máscara. Por isso `mailRecipient`, o destinatário de um e-mail, sai mascarado sem uma linha de código no caso de uso, e por isso `dependencyName` — nome de dependência técnica, não de pessoa — sai em claro: alguém declarou `clear` explicitamente. Mascarar no ponto de chamada é o que se deve evitar, porque é o que se esquece.
 
 Isso **não** torna o registro impessoal. Uma máscara determinística que preserva a forma revela parte do valor e permite ligar ocorrências; portanto **conteúdo mascarado continua sendo dado pessoal** para fins de retenção e de controle de acesso. Pseudonimização com chave (HMAC) foi considerada e rejeitada como desproporcional aqui — adiciona provisionamento de chave, rotação e um caminho de fallback, e torna os valores ilegíveis justamente para quem está investigando.
 
 ### `name` é pessoal por padrão, com isenção explícita e posicional
 
-A intuição é que `customer.name` é dado pessoal enquanto `service.name` não é. **Esse caminho não existe no payload:** `POST /api/customers`, `POST /api/users` e, no Inventory, `POST /api/services` e `POST /api/parts-supplies` recebem todos o campo em `body.name`. Redação por caminho também não os distingue — só rota + caminho distingue.
+A intuição é que `customer.name` é dado pessoal enquanto `service.name` não é. **Esse caminho não existe no payload:** `POST /api/customers` e, no Inventory, `POST /api/services` e `POST /api/parts-supplies` recebem todos o campo em `body.name`. Redação por caminho também não os distingue — só rota + caminho distingue.
 
 A decisão: `name` é **pessoal por padrão**, com uma isenção CLEAR pequena, explícita e revisável para os recursos de catálogo `services` e `parts-supplies`, derivada do segmento de URL. As rotas de catálogo são do Inventory, e este serviço não as tem mais; a isenção continua no código porque o kit de logging é copiado igual entre os serviços, e é no Inventory que ela tem efeito.
 
@@ -178,7 +175,7 @@ A correção nos padrões é a forma `(?<!classe)(?=(classe+))\1` — fronteira 
 
 Só três cabeçalhos de requisição são registrados: `content-type`, `content-length` e `accept-language`. `Authorization` e `Cookie` não são registrados, nem mascarados, nem enumerados. A representação padrão do objeto de requisição da biblioteca de logging (que carrega **todos** os cabeçalhos) é neutralizada por configuração — `quietReqLogger`/`quietResLogger`, serializers anulados e um filtro final contra o dicionário de campos.
 
-**A URL nunca é registrada em forma bruta.** Qualquer query string passa pela mesma classificação do corpo: um campo `token` é classificado como SEGREDO e removido antes da emissão de `url.query`. A decisão de orçamento usa `POST /api/me/quotes/:id/decisions`, com o Cliente da Oficina autenticado (ver [ADR 0004](./adr/0004-autenticacao-de-clientes.md)); a rota pública `POST /api/auth/password-reset-confirmations` também não transporta segredo na URL.
+**A URL nunca é registrada em forma bruta.** Qualquer query string passa pela mesma classificação do corpo: um campo `token` é classificado como SEGREDO e removido antes da emissão de `url.query`. A decisão de orçamento usa `POST /api/me/quotes/:id/decisions`, com o Cliente da Oficina autenticado (ver [ADR 0004](./adr/0004-autenticacao-de-clientes.md)), sem segredo na URL.
 
 O caminho é **canonicalizado antes da varredura** (`url-attributes.ts`), nesta ordem: trunca, decodifica até estabilizar, varre. Sem decodificar, `maria.silva%40gmail.com` não tem a forma de um e-mail e um token com `%2E` no lugar do ponto não tem a forma de um JWT — o percent-encoding driblaria o scrubber inteiro. A decodificação se repete sob um teto declarado (`MAX_DECODE_PASSES`) porque `%2540` decodifica para `%40`, que ainda não tem forma de arroba: com uma passagem só, um e-mail duplamente codificado atravessava a redação inteira. A varredura roda uma vez, sobre a forma já estável.
 
@@ -202,7 +199,7 @@ Num `200`, o corpo não diz nada que o banco não diga; numa falha de validaçã
 
 **O indicador de truncagem cobre todos os limites, não só o de bytes.** Profundidade, tamanho de array, orçamento de entradas e corte de string também descartam conteúdo, e o corte de string é o único que não deixa nem marcador em banda — sem o indicador, um campo de 9 KB virava 2048 caracteres e o log afirmava, por omissão, estar completo. Qualquer limite aplicado durante a caminhada marca um estado compartilhado que o `serializeBody` consolida.
 
-**O nome da propriedade também é conteúdo.** A classificação lê a chave para decidir o tratamento do valor, mas a chave em si é texto controlado pelo cliente: um payload em forma de mapa (`{ "maria.silva@gmail.com": … }`, `{ "123.456.789-09": … }`) atravessaria a redação inteira. Por isso a chave é classificada pelo nome **original** e depois passa pelo mesmo scrubber por forma, com teto de comprimento próprio. A varredura é no-op para nome de campo normal — `nome`, `e_mail` e `documento` não casam com padrão nenhum e saem intactos —, então o que se perde é a identidade do caso patológico, nunca o diagnóstico de "o cliente mandou a chave errada", que é o motivo de capturar o corpo. Truncar e mascarar podem colapsar duas chaves na mesma string; a colisão vira sufixo determinístico em vez de sobrescrita silenciosa. O sufixo vem de um **contador por chave-base**: reiniciar a busca em `~2` a cada colisão custava O(n²) — mil e-mails distintos que mascaram para a mesma string davam ~500 mil consultas e 186 ms de event loop por requisição, contra 12,6 ms sem colisão, e o vetor é alcançável sem autenticação em `POST /api/auth/login`. Com o contador, 9,5 ms e curva plana.
+**O nome da propriedade também é conteúdo.** A classificação lê a chave para decidir o tratamento do valor, mas a chave em si é texto controlado pelo cliente: um payload em forma de mapa (`{ "maria.silva@gmail.com": … }`, `{ "123.456.789-09": … }`) atravessaria a redação inteira. Por isso a chave é classificada pelo nome **original** e depois passa pelo mesmo scrubber por forma, com teto de comprimento próprio. A varredura é no-op para nome de campo normal — `nome`, `e_mail` e `documento` não casam com padrão nenhum e saem intactos —, então o que se perde é a identidade do caso patológico, nunca o diagnóstico de "o cliente mandou a chave errada", que é o motivo de capturar o corpo. Truncar e mascarar podem colapsar duas chaves na mesma string; a colisão vira sufixo determinístico em vez de sobrescrita silenciosa. O sufixo vem de um **contador por chave-base**: reiniciar a busca em `~2` a cada colisão custava O(n²) — mil e-mails distintos que mascaram para a mesma string davam ~500 mil consultas e 186 ms de event loop por requisição, contra 12,6 ms sem colisão, e o vetor era alcançável sem autenticação numa rota pública que recebe corpo. Com o contador, 9,5 ms e curva plana.
 
 ### Chaves de telemetria não são caminhos de payload
 

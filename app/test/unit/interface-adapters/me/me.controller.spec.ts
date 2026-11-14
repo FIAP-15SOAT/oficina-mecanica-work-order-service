@@ -3,11 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { MeController } from '@interface-adapters/me/me.controller';
 import { MePresenter } from '@interface-adapters/me/me.presenter';
 
-import { UserRole } from '@domain/enums/user-role.enum';
-import { CustomerType } from '@domain/enums/customer-type.enum';
 import { QuoteDecisionAction } from '@domain/enums/quote-decision-action.enum';
-import { AuthFlow } from '@domain/enums/auth-flow.enum';
-import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
 
 import { createMockWorkOrder } from '../../../helpers/work-order-mock.factory';
 import {
@@ -19,8 +15,6 @@ import { createMockCustomer } from '../../../helpers/customer-mock.factory';
 
 describe('MeController', () => {
   let controller: MeController;
-  let changePasswordUseCase: { execute: jest.Mock };
-  let findUserByIdUseCase: { execute: jest.Mock };
   let findAllMyWorkOrdersUseCase: { execute: jest.Mock };
   let findMyWorkOrderByIdUseCase: { execute: jest.Mock };
   let findMyWorkOrdersQuotesUseCase: { execute: jest.Mock };
@@ -29,8 +23,6 @@ describe('MeController', () => {
   let findMyWorkOrderPaymentsUseCase: { execute: jest.Mock };
 
   beforeEach(() => {
-    changePasswordUseCase = { execute: jest.fn() };
-    findUserByIdUseCase = { execute: jest.fn() };
     findAllMyWorkOrdersUseCase = { execute: jest.fn() };
     findMyWorkOrderByIdUseCase = { execute: jest.fn() };
     findMyWorkOrdersQuotesUseCase = { execute: jest.fn() };
@@ -39,8 +31,6 @@ describe('MeController', () => {
     findMyWorkOrderPaymentsUseCase = { execute: jest.fn() };
 
     controller = new MeController(
-      changePasswordUseCase,
-      findUserByIdUseCase,
       findAllMyWorkOrdersUseCase,
       findMyWorkOrderByIdUseCase,
       findMyWorkOrdersQuotesUseCase,
@@ -48,47 +38,6 @@ describe('MeController', () => {
       decideQuoteUseCase,
       findMyWorkOrderPaymentsUseCase,
     );
-  });
-
-  describe('changePassword', () => {
-    it('should forward to the use case', async () => {
-      const userId = randomUUID();
-      const input = { currentPassword: 'old-pass', newPassword: 'new-pass' };
-
-      changePasswordUseCase.execute.mockResolvedValue(undefined);
-
-      await controller.changePassword(userId, input);
-
-      expect(changePasswordUseCase.execute).toHaveBeenCalledWith(userId, input);
-    });
-  });
-
-  describe('getMe', () => {
-    it('should look up the principal by id and wrap the presenter result in data', async () => {
-      const principal: AuthenticatedPrincipal = {
-        sub: randomUUID(),
-        authFlow: AuthFlow.INTERNAL,
-        email: 'joao@example.com',
-        role: UserRole.ATTENDANT,
-      };
-      const result = {
-        id: principal.sub,
-        name: 'João',
-        email: principal.email,
-        role: principal.role,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        customers: [createMockCustomer({ type: CustomerType.INDIVIDUAL })],
-      };
-
-      findUserByIdUseCase.execute.mockResolvedValue(result);
-
-      const response = await controller.getMe(principal);
-
-      expect(findUserByIdUseCase.execute).toHaveBeenCalledWith(principal.sub);
-      expect(response).toEqual(MePresenter.toMeDataResponse(result));
-    });
   });
 
   describe('listWorkOrders', () => {

@@ -1,13 +1,33 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
+import { CustomerType } from '@domain/enums/customer-type.enum';
 import { PaginatedResponseDto } from '@infrastructure/http/common/dto/paginated-response.dto';
 import {
   MyWorkOrderResponse,
   MyWorkOrderDataResponse,
   MyWorkOrderPaginatedResponse,
   MyVehicleSummary,
+  MyCustomerSummary,
 } from '@interface-adapters/me/responses/me.response';
-import { MyCustomerSummaryDto } from './me-response.dto';
+
+export class MyCustomerSummaryDto implements MyCustomerSummary {
+  @ApiProperty({
+    format: 'uuid',
+    example: '550e8400-e29b-41d4-a716-446655440000',
+    description: 'ID do cliente',
+  })
+  id!: string;
+
+  @ApiProperty({ example: 'Oficina Parceira LTDA', description: 'Nome do cliente' })
+  name!: string;
+
+  @ApiProperty({
+    enum: CustomerType,
+    example: CustomerType.COMPANY,
+    description: 'Tipo do cliente: INDIVIDUAL (pessoa física) ou COMPANY (empresa)',
+  })
+  type!: CustomerType;
+}
 
 export class MyVehicleSummaryDto implements MyVehicleSummary {
   @ApiProperty({

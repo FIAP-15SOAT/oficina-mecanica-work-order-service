@@ -6,7 +6,6 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
-  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -15,7 +14,6 @@ import {
   ApiBearerAuth,
   ApiConflictResponse,
   ApiInternalServerErrorResponse,
-  ApiNoContentResponse,
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
@@ -23,8 +21,6 @@ import {
   ApiProduces,
   ApiServiceUnavailableResponse,
   ApiTags,
-  ApiUnauthorizedResponse,
-  ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
 
 import { CustomerArea } from '@infrastructure/http/decorators/customer-area.decorator';
@@ -32,10 +28,8 @@ import { CurrentPrincipal } from '@infrastructure/http/decorators/current-princi
 import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
 
 import { MeController as MeCleanController } from '@interface-adapters/me/me.controller';
-import { ChangeOwnPasswordRequestDto } from './dto/requests/change-own-password-request.dto';
 import { FindMyWorkOrdersQueryDto } from './dto/requests/find-my-work-orders-query.dto';
 import { DecideMyQuoteRequestDto } from './dto/requests/decide-my-quote-request.dto';
-import { MeDataResponseDto } from './dto/responses/me-response.dto';
 import {
   MyWorkOrderDataResponseDto,
   MyWorkOrderPaginatedResponseDto,
@@ -53,30 +47,6 @@ import { MyPaymentListResponseDto } from './dto/responses/my-payment-response.dt
 @Controller('me')
 export class MeController {
   constructor(private readonly controller: MeCleanController) {}
-
-  @Get()
-  @CustomerArea('any')
-  @ApiOperation({ summary: 'Identidade do sujeito autenticado (interno ou externo)' })
-  @ApiOkResponse({ type: MeDataResponseDto })
-  @ApiUnauthorizedResponse({ description: 'Não autenticado' })
-  getMe(@CurrentPrincipal() principal: AuthenticatedPrincipal): Promise<MeDataResponseDto> {
-    return this.controller.getMe(principal);
-  }
-
-  @Patch('password')
-  @CustomerArea('any')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Trocar a própria senha (token interno ou externo)' })
-  @ApiNoContentResponse()
-  @ApiUnauthorizedResponse({ description: 'Não autenticado ou senha atual incorreta' })
-  @ApiUnprocessableEntityResponse({ description: 'Nova senha não atende aos requisitos de força' })
-  @ApiConflictResponse({ description: 'Nova senha é igual à senha atual' })
-  changePassword(
-    @Body() request: ChangeOwnPasswordRequestDto,
-    @CurrentPrincipal() principal: AuthenticatedPrincipal,
-  ): Promise<void> {
-    return this.controller.changePassword(principal.sub, request);
-  }
 
   @Get('work-orders')
   @CustomerArea()

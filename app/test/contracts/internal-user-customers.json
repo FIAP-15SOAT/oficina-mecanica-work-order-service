@@ -1,0 +1,19 @@
+{
+  "$source": "oficina-mecanica-work-order-service app/test/contracts/internal-user-customers.json",
+  "data": [
+    {
+      "id": "70bb2668-aa3a-4412-afca-198286ca98db",
+      "name": "João da Silva",
+      "type": "INDIVIDUAL",
+      "document": "12345678909",
+      "isActive": true
+    },
+    {
+      "id": "c37a755d-9257-43ad-ae38-890efe884d63",
+      "name": "Oficina Parceira LTDA",
+      "type": "COMPANY",
+      "document": "12345678000195",
+      "isActive": true
+    }
+  ]
+}

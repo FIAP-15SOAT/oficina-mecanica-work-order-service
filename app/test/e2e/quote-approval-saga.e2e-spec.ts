@@ -4,7 +4,7 @@ import request from 'supertest';
 import { GetQueueUrlCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
-import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
+import { StaffUser, createStaffUser } from '../helpers/auth.helper';
 import { readInternalQuoteFixture } from '../helpers/billing-quotes-gateway-mock.factory';
 import {
   InternalServicesStub,
@@ -24,7 +24,7 @@ const CUSTOMER_EMAIL = 'saga@e2e.test';
 describe('Quote approval saga (E2E)', () => {
   let ctx: TestContext;
   let httpServer: Server;
-  let adminAuth: AuthTokens;
+  let adminAuth: StaffUser;
   let stub: InternalServicesStub;
   let unitOfWork: IUnitOfWork;
   let sqs: SQSClient;
@@ -46,11 +46,7 @@ describe('Quote approval saga (E2E)', () => {
     inventoryQueueUrl = inventoryQueue.QueueUrl as string;
     billingQueueUrl = billingQueue.QueueUrl as string;
 
-    adminAuth = await registerAndLogin(
-      httpServer,
-      { name: 'Admin Saga', email: 'admin-saga@e2e.test', role: 'ADMIN' },
-      ctx.prisma,
-    );
+    adminAuth = createStaffUser({ stub }, { name: 'Admin Saga' });
 
     const customer = await ctx.prisma.customer.create({
       data: {
@@ -77,13 +73,13 @@ describe('Quote approval saga (E2E)', () => {
   async function createWorkOrderInDiagnosis(): Promise<{ id: string; number: string }> {
     const res = await request(httpServer)
       .post('/api/work-orders')
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .send({ customerId, vehicleId, problemDescription: 'Revisão geral' })
       .expect(201);
 
     await request(httpServer)
       .patch(`/api/work-orders/${res.body.data.id}`)
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .send({ status: 'IN_DIAGNOSIS' })
       .expect(200);
 
@@ -188,7 +184,7 @@ describe('Quote approval saga (E2E)', () => {
 
     const woRes = await request(httpServer)
       .get(`/api/work-orders/${workOrder.id}`)
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .expect(200);
 
     const history = await ctx.prisma.statusHistory.findFirstOrThrow({
@@ -348,7 +344,7 @@ describe('Quote approval saga (E2E)', () => {
 
     await request(httpServer)
       .patch(`/api/work-orders/${workOrder.id}`)
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .send({ status: 'CANCELLED', notes: 'Cancelado pelo cliente' })
       .expect(200);
 

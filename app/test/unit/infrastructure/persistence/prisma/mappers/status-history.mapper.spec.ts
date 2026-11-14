@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto';
 import { StatusHistoryMapper } from '@infrastructure/persistence/prisma/mappers/status-history.mapper';
 
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
-import { UserRole } from '@domain/enums/user-role.enum';
 
 describe('StatusHistoryMapper', () => {
   describe('toDomain', () => {
@@ -47,38 +46,6 @@ describe('StatusHistoryMapper', () => {
       expect(domainEntity.changedById).toBeNull();
       expect(domainEntity.previousStatus).toBeNull();
       expect(domainEntity.notes).toBeNull();
-    });
-
-    it('should map changedBy relation to domain User entity', () => {
-      const now = new Date();
-      const userId = randomUUID();
-      const prismaRecord = {
-        id: randomUUID(),
-        workOrderId: randomUUID(),
-        changedById: userId,
-        previousStatus: WorkOrderStatus.RECEIVED,
-        newStatus: WorkOrderStatus.IN_DIAGNOSIS,
-        notes: null,
-        createdAt: now,
-        changedBy: {
-          id: userId,
-          name: 'Tech User',
-          email: 'tech@test.com',
-          cpf: null,
-          passwordHash: 'hash',
-          role: UserRole.MECHANIC,
-          isActive: true,
-          passwordChangedAt: now,
-          createdAt: now,
-          updatedAt: now,
-        },
-      };
-
-      const domainEntity = StatusHistoryMapper.toDomain(prismaRecord);
-
-      expect(domainEntity.changedBy).toBeDefined();
-      expect(domainEntity.changedBy!.id).toBe(userId);
-      expect(domainEntity.changedBy!.name).toBe('Tech User');
     });
   });
 });

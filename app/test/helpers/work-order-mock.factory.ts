@@ -8,7 +8,7 @@ import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order
 export function createMockWorkOrder(overrides: Partial<WorkOrder> = {}): WorkOrder {
   const now = new Date();
 
-  const { customer, vehicle, assignedUser, services, partSupplies, ...dataOverrides } = overrides;
+  const { customer, vehicle, services, partSupplies, ...dataOverrides } = overrides;
 
   const wo = WorkOrder.reconstitute({
     id: randomUUID(),
@@ -36,7 +36,6 @@ export function createMockWorkOrder(overrides: Partial<WorkOrder> = {}): WorkOrd
 
   if (customer !== undefined) wo.customer = customer;
   if (vehicle !== undefined) wo.vehicle = vehicle;
-  if (assignedUser !== undefined) wo.assignedUser = assignedUser;
   return wo;
 }
 

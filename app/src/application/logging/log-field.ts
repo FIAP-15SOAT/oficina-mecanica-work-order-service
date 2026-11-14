@@ -1,8 +1,5 @@
 export type LogicalFieldName =
   | 'subjectId'
-  | 'subjectName'
-  | 'subjectEmail'
-  | 'failureReason'
   | 'quoteId'
   | 'workOrderId'
   | 'workOrderNumber'
@@ -18,7 +15,6 @@ export type LogicalFieldName =
   | 'sagaStatus'
   | 'sagaFailureReason'
   | 'targetUserId'
-  | 'targetUserActive'
   | 'port'
   | 'signal'
   | 'mailOperation'
@@ -34,7 +30,6 @@ export type LogicalFieldName =
   | 'customerActive'
   | 'accessUserCreated'
   | 'initialPasswordSent'
-  | 'externalAccessFailureReason'
-  | 'resetOutcome';
+  | 'externalAccessFailureReason';
 
 export type LogFields = Partial<Record<LogicalFieldName, unknown>>;

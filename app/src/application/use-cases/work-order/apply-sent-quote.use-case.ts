@@ -3,10 +3,6 @@ import { WorkOrder } from '@domain/entities/work-order.entity';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
 import { IRepositories, IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
-import {
-  CustomerEmailRecipient,
-  CustomerEmailRecipients,
-} from '@domain/services/customer-email-recipients';
 
 import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
@@ -14,6 +10,11 @@ import { recordWorkOrderTransition } from '@application/metrics/work-order-metri
 import { IApplySentQuoteUseCase } from '@application/ports/input/work-order/apply-sent-quote.use-case.interface';
 import { ApplySentQuoteInputDto } from '@application/ports/input/work-order/dto/apply-sent-quote.dto';
 import { ICache } from '@application/ports/output/services/cache.service.interface';
+import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
+import {
+  CustomerEmailRecipient,
+  CustomerEmailRecipients,
+} from '@application/services/customer-email-recipients';
 import {
   IEmailSenderService,
   SendEmailInput,
@@ -38,6 +39,7 @@ export class ApplySentQuoteUseCase implements IApplySentQuoteUseCase {
     private readonly metrics: IMetrics,
     private readonly statusHistoryRepository: IStatusHistoryRepository,
     private readonly cache: ICache,
+    private readonly identityUsersGateway: IIdentityUsersGateway,
   ) {}
 
   async execute(input: ApplySentQuoteInputDto): Promise<void> {
@@ -105,7 +107,8 @@ export class ApplySentQuoteUseCase implements IApplySentQuoteUseCase {
     workOrderStatusTransition?: StatusHistory,
   ): Promise<SentQuoteApplication> {
     const customer = (await repos.customer.findById(workOrder.customerId))!;
-    const linkedUsers = await repos.userCustomer.findUsersByCustomerId(customer.id);
+    const linkedUserIds = await repos.userCustomer.findUserIdsByCustomerId(customer.id);
+    const linkedUsers = await this.identityUsersGateway.findByIds(linkedUserIds);
 
     return {
       applied: true,

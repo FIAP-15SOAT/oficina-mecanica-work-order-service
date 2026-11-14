@@ -66,12 +66,15 @@ export class WorkOrderController {
   })
   @ApiUnauthorizedResponse({ description: 'Não autenticado' })
   @ApiForbiddenResponse({ description: 'Acesso negado' })
-  @ApiNotFoundResponse({ description: 'Serviço ou peça/insumo não encontrado' })
+  @ApiNotFoundResponse({
+    description: 'Serviço, peça/insumo ou usuário atribuído como mecânico não encontrado',
+  })
   @ApiConflictResponse({
-    description: 'Regra de negócio violada',
+    description: 'Regra de negócio violada, como atribuir quem não é um mecânico ativo',
   })
   @ApiServiceUnavailableResponse({
-    description: 'Billing ou Inventory indisponível ao criar o orçamento inicial',
+    description:
+      'Identity indisponível ao conferir o mecânico, ou Billing ou Inventory indisponível ao criar o orçamento inicial; nada é gravado',
   })
   create(
     @Body() request: CreateWorkOrderRequestDto,
@@ -104,8 +107,14 @@ export class WorkOrderController {
   @Roles(UserRole.ADMIN, UserRole.MECHANIC, UserRole.ATTENDANT)
   @ApiOperation({ summary: 'Atualizar Ordem de Serviço' })
   @ApiOkResponse({ type: WorkOrderDataResponseDto })
-  @ApiNotFoundResponse()
+  @ApiNotFoundResponse({
+    description: 'Ordem de Serviço ou usuário atribuído como mecânico não encontrado',
+  })
+  @ApiConflictResponse({
+    description: 'Regra de negócio violada, como atribuir quem não é um mecânico ativo',
+  })
   @ApiUnprocessableEntityResponse()
+  @ApiServiceUnavailableResponse({ description: 'Identity indisponível; nada é gravado' })
   @ApiParam({ name: 'id', format: 'uuid' })
   update(
     @Param('id', ParseUUIDPipe) id: string,

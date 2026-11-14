@@ -101,33 +101,38 @@ describe('PinoLoggerAdapter', () => {
   });
 
   it('should mask a field the registry classifies as personal data', () => {
-    adapter.event(BUSINESS_EVENTS.AUTHENTICATION_SUCCEEDED, {
-      subjectId: 'user-1',
-      subjectName: 'Maria Silva',
-      subjectEmail: 'maria.silva@gmail.com',
+    const mailed = defineLogEvent<{ subjectId: string; mailRecipient: string }>({
+      name: 'mail.sent',
+      message: 'mail sent',
+      level: 'info',
     });
+
+    adapter.event(mailed, { subjectId: 'user-1', mailRecipient: 'maria.silva@gmail.com' });
 
     expect(lines[0]).toMatchObject({
       'oficina.auth.subject.id': 'user-1',
-      'oficina.auth.subject.name': 'Ma***va',
-      'oficina.auth.subject.email': 'ma***va@gmail.com',
+      'oficina.mail.recipient': 'ma***va@gmail.com',
     });
   });
 
   it('should omit optional event fields that are not provided', () => {
-    adapter.event(BUSINESS_EVENTS.AUTHENTICATION_FAILED, { failureReason: 'unknown_user' });
+    adapter.event(BUSINESS_EVENTS.SAGA_STEP_SKIPPED, {
+      sagaType: 'QUOTE_APPROVAL',
+      quoteId: 'quote-1',
+    });
 
-    expect(lines[0]['oficina.auth.failure.reason']).toBe('unknown_user');
-    expect(lines[0]).not.toHaveProperty('oficina.auth.subject.id');
+    expect(lines[0]['oficina.quote.id']).toBe('quote-1');
+    expect(lines[0]).not.toHaveProperty('oficina.saga.status');
   });
 
   it('should omit an optional event field explicitly passed as undefined', () => {
-    adapter.event(BUSINESS_EVENTS.AUTHENTICATION_FAILED, {
-      failureReason: 'unknown_user',
-      subjectId: undefined,
+    adapter.event(BUSINESS_EVENTS.SAGA_STEP_SKIPPED, {
+      sagaType: 'QUOTE_APPROVAL',
+      quoteId: 'quote-1',
+      sagaStatus: undefined,
     });
 
-    expect(lines[0]).not.toHaveProperty('oficina.auth.subject.id');
+    expect(lines[0]).not.toHaveProperty('oficina.saga.status');
   });
 
   it('should drop a field the registry does not know', () => {
@@ -207,9 +212,10 @@ describe('PinoLoggerAdapter', () => {
     });
 
     expect(() =>
-      adapter.event(BUSINESS_EVENTS.USER_STATUS_UPDATED, {
-        targetUserId: 'user-1',
-        targetUserActive: false,
+      adapter.event(BUSINESS_EVENTS.CUSTOMER_STATUS_UPDATED, {
+        subjectId: 'user-1',
+        customerId: 'customer-1',
+        customerActive: false,
       }),
     ).not.toThrow();
 
@@ -223,13 +229,14 @@ describe('PinoLoggerAdapter', () => {
   it('should report the field and drop it when the registry does not know the logical name', () => {
     const stderr = captureDiagnostics();
 
-    adapter.event(BUSINESS_EVENTS.USER_STATUS_UPDATED, {
-      targetUserId: 'user-1',
-      targetUserActive: true,
+    adapter.event(BUSINESS_EVENTS.CUSTOMER_STATUS_UPDATED, {
+      subjectId: 'user-1',
+      customerId: 'customer-1',
+      customerActive: true,
     });
 
     expect(stderr.spy).not.toHaveBeenCalled();
-    expect(lines[0]['oficina.target.user.active']).toBe(true);
+    expect(lines[0]['oficina.customer.active']).toBe(true);
 
     stderr.restore();
   });
@@ -241,14 +248,14 @@ describe('PinoLoggerAdapter — event with an attached exception', () => {
     const adapter = new PinoLoggerAdapter(new PinoLogger(params));
 
     adapter.event(
-      BUSINESS_EVENTS.USER_STATUS_UPDATED,
-      { targetUserId: 'user-1', targetUserActive: false },
+      BUSINESS_EVENTS.CUSTOMER_STATUS_UPDATED,
+      { subjectId: 'user-1', customerId: 'customer-1', customerActive: false },
       new TypeError('falhou'),
     );
 
     expect(lines[0]).toMatchObject({
-      'oficina.event.name': 'user.status.updated',
-      'oficina.target.user.id': 'user-1',
+      'oficina.event.name': 'customer.status.updated',
+      'oficina.customer.id': 'customer-1',
       'exception.type': 'TypeError',
       'exception.message': 'falhou',
     });

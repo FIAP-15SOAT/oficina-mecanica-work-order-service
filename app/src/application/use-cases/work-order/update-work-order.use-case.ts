@@ -1,9 +1,8 @@
-import { User } from '@domain/entities/user.entity';
 import { WorkOrder } from '@domain/entities/work-order.entity';
 
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
-import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 
+import { MechanicAssignmentPolicy } from '@application/services/mechanic-assignment-policy';
 import { UpdateWorkOrderDto } from '@application/ports/input/work-order/dto/update-work-order.dto';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { ICache } from '@application/ports/output/services/cache.service.interface';
@@ -12,7 +11,7 @@ import { workOrderCacheKey } from '@application/keys/work-order-cache-key';
 export class UpdateWorkOrderUseCase {
   constructor(
     private readonly workOrderRepository: IWorkOrderRepository,
-    private readonly userRepository: IUserRepository,
+    private readonly mechanicAssignmentPolicy: MechanicAssignmentPolicy,
     private readonly cache: ICache,
   ) {}
 
@@ -23,19 +22,11 @@ export class UpdateWorkOrderUseCase {
       throw new ResourceNotFoundException('Ordem de serviço', id);
     }
 
-    let assignedUser: User | null | undefined = undefined;
-
     if (dto.assignedUserId) {
-      assignedUser = await this.userRepository.findById(dto.assignedUserId);
-
-      if (!assignedUser) {
-        throw new ResourceNotFoundException('Usuário', dto.assignedUserId);
-      }
+      await this.mechanicAssignmentPolicy.ensureAssignable(dto.assignedUserId);
     }
 
-    const { assignedUserId: _, ...updateData } = dto;
-
-    workOrder.update({ ...updateData, assignedUser });
+    workOrder.update({ ...dto, assignedUserId: dto.assignedUserId ?? undefined });
 
     const saved = await this.workOrderRepository.update(workOrder);
 
