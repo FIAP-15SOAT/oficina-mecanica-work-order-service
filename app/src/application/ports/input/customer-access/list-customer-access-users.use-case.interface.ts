@@ -1,5 +1,5 @@
-import { UserPublicView } from '@domain/entities/user.entity';
+import { AccessUserOutputDto } from './dto/grant-customer-access.dto';
 
 export interface IListCustomerAccessUsersUseCase {
-  execute(customerId: string): Promise<UserPublicView[]>;
+  execute(customerId: string): Promise<AccessUserOutputDto[]>;
 }

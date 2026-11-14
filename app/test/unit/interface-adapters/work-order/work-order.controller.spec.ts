@@ -17,6 +17,7 @@ import { IUpdateWorkOrderStatusUseCase } from '@application/ports/input/work-ord
 import { IUpdateWorkOrderServiceStatusUseCase } from '@application/ports/input/work-order/update-work-order-service-status.use-case.interface';
 import { IFindWorkOrderStatusHistoryUseCase } from '@application/ports/input/work-order/find-work-order-status-history.use-case.interface';
 import { IFindCatalogItemsUseCase } from '@application/ports/input/catalog/find-catalog-items.use-case.interface';
+import { IFindUsersByIdsUseCase } from '@application/ports/input/identity/find-users-by-ids.use-case.interface';
 import { FindCatalogItemsOutputDto } from '@application/ports/input/catalog/dto/find-catalog-items.dto';
 import { ServiceIntegrationException } from '@infrastructure/exceptions/service-integration.exception';
 
@@ -33,6 +34,7 @@ import {
   createMockInventoryPartSupplyGatewayResponse,
   createMockInventoryServiceGatewayResponse,
 } from '../../../helpers/inventory-catalog-gateway-mock.factory';
+import { createMockIdentityUserGatewayResponse } from '../../../helpers/identity-users-gateway-mock.factory';
 
 describe('WorkOrderController', () => {
   let controller: WorkOrderController;
@@ -44,6 +46,7 @@ describe('WorkOrderController', () => {
   let updateServiceStatusUseCase: jest.Mocked<IUpdateWorkOrderServiceStatusUseCase>;
   let findStatusHistoryUseCase: jest.Mocked<IFindWorkOrderStatusHistoryUseCase>;
   let findCatalogItemsUseCase: jest.Mocked<IFindCatalogItemsUseCase>;
+  let findUsersByIdsUseCase: jest.Mocked<IFindUsersByIdsUseCase>;
 
   const customer = createMockCustomer();
   const vehicle = createMockVehicle({ customerId: customer.id });
@@ -59,6 +62,8 @@ describe('WorkOrderController', () => {
     findStatusHistoryUseCase = { execute: jest.fn() };
     findCatalogItemsUseCase = { execute: jest.fn() };
 
+    findUsersByIdsUseCase = { execute: jest.fn().mockResolvedValue([]) };
+
     controller = new WorkOrderController(
       createUseCase,
       findByIdUseCase,
@@ -68,6 +73,7 @@ describe('WorkOrderController', () => {
       updateServiceStatusUseCase,
       findStatusHistoryUseCase,
       findCatalogItemsUseCase,
+      findUsersByIdsUseCase,
     );
   });
 
@@ -92,7 +98,7 @@ describe('WorkOrderController', () => {
 
       const result = await controller.create(request, userId);
 
-      expect(result).toEqual(WorkOrderPresenter.toDataResponse(created, emptyCatalog));
+      expect(result).toEqual(WorkOrderPresenter.toDataResponse(created, emptyCatalog, []));
       expect(createUseCase.execute).toHaveBeenCalledWith({ ...request, userId });
 
       expect(findCatalogItemsUseCase.execute).toHaveBeenCalledWith({
@@ -114,10 +120,13 @@ describe('WorkOrderController', () => {
       const result = await controller.findAll({ status: WorkOrderStatus.RECEIVED });
 
       expect(result).toEqual(
-        WorkOrderPresenter.toPaginatedResponse({
-          items: [workOrder],
-          pagination: { totalRecords: 1, totalPages: 1, page: 1, limit: 10 },
-        }),
+        WorkOrderPresenter.toPaginatedResponse(
+          {
+            items: [workOrder],
+            pagination: { totalRecords: 1, totalPages: 1, page: 1, limit: 10 },
+          },
+          [],
+        ),
       );
 
       expect(findAllPaginatedUseCase.execute).toHaveBeenCalledWith({
@@ -125,6 +134,34 @@ describe('WorkOrderController', () => {
         limit: 10,
         status: WorkOrderStatus.RECEIVED,
       });
+    });
+
+    it('should resolve the users of the whole page in one lookup', async () => {
+      const mechanic = createMockIdentityUserGatewayResponse();
+      const otherMechanic = createMockIdentityUserGatewayResponse();
+
+      const workOrders = [
+        createMockWorkOrder({ customer, vehicle, assignedUserId: mechanic.id }),
+        createMockWorkOrder({ customer, vehicle, assignedUserId: otherMechanic.id }),
+        createMockWorkOrder({ customer, vehicle, assignedUserId: null }),
+      ];
+
+      const page = {
+        items: workOrders,
+        pagination: { totalRecords: 3, totalPages: 1, page: 1, limit: 10 },
+      };
+
+      findAllPaginatedUseCase.execute.mockResolvedValue(page);
+      findUsersByIdsUseCase.execute.mockResolvedValue([mechanic, otherMechanic]);
+
+      const result = await controller.findAll({});
+
+      expect(findUsersByIdsUseCase.execute).toHaveBeenCalledTimes(1);
+      expect(findUsersByIdsUseCase.execute).toHaveBeenCalledWith([mechanic.id, otherMechanic.id]);
+
+      expect(result).toEqual(
+        WorkOrderPresenter.toPaginatedResponse(page, [mechanic, otherMechanic]),
+      );
     });
 
     it('should forward provided page, limit and sort', async () => {
@@ -169,7 +206,104 @@ describe('WorkOrderController', () => {
         partSupplyIds: [partSupply.id],
       });
 
-      expect(result).toEqual(WorkOrderPresenter.toDataResponse(workOrder, catalog));
+      expect(result).toEqual(WorkOrderPresenter.toDataResponse(workOrder, catalog, []));
+    });
+  });
+
+  describe('findOne users', () => {
+    it('should resolve the mechanic of the work order from the identity', async () => {
+      const mechanic = createMockIdentityUserGatewayResponse();
+      const workOrder = createMockWorkOrder({ customer, vehicle, assignedUserId: mechanic.id });
+
+      findByIdUseCase.execute.mockResolvedValue(workOrder);
+      findCatalogItemsUseCase.execute.mockResolvedValue(emptyCatalog);
+      findUsersByIdsUseCase.execute.mockResolvedValue([mechanic]);
+
+      const result = await controller.findOne(workOrder.id);
+
+      expect(findUsersByIdsUseCase.execute).toHaveBeenCalledWith([mechanic.id]);
+
+      expect(result).toEqual(
+        WorkOrderPresenter.toDataResponse(workOrder, emptyCatalog, [mechanic]),
+      );
+    });
+  });
+
+  describe('users read before the write', () => {
+    it('should read the mechanic of the input before creating the work order', async () => {
+      const mechanic = createMockIdentityUserGatewayResponse();
+
+      const created = createMockWorkOrder({
+        customer,
+        vehicle,
+        assignedUserId: mechanic.id,
+      });
+
+      createUseCase.execute.mockResolvedValue(created);
+      findCatalogItemsUseCase.execute.mockResolvedValue(emptyCatalog);
+      findUsersByIdsUseCase.execute.mockResolvedValue([mechanic]);
+
+      const result = await controller.create(
+        { customerId: customer.id, vehicleId: vehicle.id, assignedUserId: mechanic.id },
+        randomUUID(),
+      );
+
+      expect(findUsersByIdsUseCase.execute).toHaveBeenCalledWith([mechanic.id]);
+      expect(result).toEqual(WorkOrderPresenter.toDataResponse(created, emptyCatalog, [mechanic]));
+    });
+
+    it('should read the mechanic of the input before updating the work order', async () => {
+      const mechanic = createMockIdentityUserGatewayResponse();
+      const updated = createMockWorkOrder({ customer, vehicle, assignedUserId: mechanic.id });
+
+      updateUseCase.execute.mockResolvedValue(updated);
+      findCatalogItemsUseCase.execute.mockResolvedValue(emptyCatalog);
+      findUsersByIdsUseCase.execute.mockResolvedValue([mechanic]);
+
+      await controller.update(updated.id, { assignedUserId: mechanic.id }, randomUUID());
+
+      expect(findByIdUseCase.execute).not.toHaveBeenCalled();
+      expect(findUsersByIdsUseCase.execute).toHaveBeenCalledWith([mechanic.id]);
+    });
+
+    it('should read the current mechanic before updating when the input has none', async () => {
+      const mechanic = createMockIdentityUserGatewayResponse();
+      const current = createMockWorkOrder({ customer, vehicle, assignedUserId: mechanic.id });
+
+      findByIdUseCase.execute.mockResolvedValue(current);
+      updateUseCase.execute.mockResolvedValue(current);
+      findCatalogItemsUseCase.execute.mockResolvedValue(emptyCatalog);
+      findUsersByIdsUseCase.execute.mockResolvedValue([mechanic]);
+
+      await controller.update(current.id, { problemDescription: 'Ruído' }, randomUUID());
+
+      expect(findUsersByIdsUseCase.execute).toHaveBeenCalledWith([mechanic.id]);
+    });
+
+    it('should fail the creation without writing when the identity is unavailable', async () => {
+      findUsersByIdsUseCase.execute.mockRejectedValue(
+        new ServiceIntegrationException('Serviço de destino indisponível'),
+      );
+
+      await expect(
+        controller.create({ customerId: customer.id, vehicleId: vehicle.id }, randomUUID()),
+      ).rejects.toBeInstanceOf(ServiceIntegrationException);
+
+      expect(createUseCase.execute).not.toHaveBeenCalled();
+    });
+
+    it('should fail the update without writing when the identity is unavailable', async () => {
+      findByIdUseCase.execute.mockResolvedValue(createMockWorkOrder({ customer, vehicle }));
+
+      findUsersByIdsUseCase.execute.mockRejectedValue(
+        new ServiceIntegrationException('Serviço de destino indisponível'),
+      );
+
+      await expect(
+        controller.update(randomUUID(), { problemDescription: 'Ruído' }, randomUUID()),
+      ).rejects.toBeInstanceOf(ServiceIntegrationException);
+
+      expect(updateUseCase.execute).not.toHaveBeenCalled();
     });
   });
 
@@ -184,12 +318,13 @@ describe('WorkOrderController', () => {
         problemDescription: request.problemDescription,
       });
 
+      findByIdUseCase.execute.mockResolvedValue(updated);
       updateUseCase.execute.mockResolvedValue(updated);
       findCatalogItemsUseCase.execute.mockResolvedValue(emptyCatalog);
 
       const result = await controller.update(updated.id, request, userId);
 
-      expect(result).toEqual(WorkOrderPresenter.toDataResponse(updated, emptyCatalog));
+      expect(result).toEqual(WorkOrderPresenter.toDataResponse(updated, emptyCatalog, []));
       expect(updateUseCase.execute).toHaveBeenCalledWith(updated.id, { ...request, userId });
     });
   });
@@ -235,7 +370,7 @@ describe('WorkOrderController', () => {
         userId,
       });
 
-      expect(result).toEqual(WorkOrderPresenter.toDataResponse(updated, catalog));
+      expect(result).toEqual(WorkOrderPresenter.toDataResponse(updated, catalog, []));
     });
 
     it('should answer 503 without changing the status when the catalog is unavailable', async () => {
@@ -324,7 +459,40 @@ describe('WorkOrderController', () => {
 
       const result = await controller.getStatusHistory(randomUUID());
 
-      expect(result).toEqual(WorkOrderPresenter.toStatusHistoryListResponse(history));
+      expect(result).toEqual(WorkOrderPresenter.toStatusHistoryListResponse(history, []));
+    });
+
+    it('should resolve the history authors, leaving out the entries without author', async () => {
+      const author = createMockIdentityUserGatewayResponse();
+      const workOrderId = randomUUID();
+
+      const history = [
+        StatusHistory.create({
+          workOrderId,
+          changedById: author.id,
+          newStatus: WorkOrderStatus.RECEIVED,
+        }),
+        StatusHistory.create({
+          workOrderId,
+          changedById: author.id,
+          previousStatus: WorkOrderStatus.RECEIVED,
+          newStatus: WorkOrderStatus.IN_DIAGNOSIS,
+        }),
+        StatusHistory.create({
+          workOrderId,
+          previousStatus: WorkOrderStatus.IN_DIAGNOSIS,
+          newStatus: WorkOrderStatus.AWAITING_APPROVAL,
+        }),
+      ];
+
+      findStatusHistoryUseCase.execute.mockResolvedValue(history);
+      findUsersByIdsUseCase.execute.mockResolvedValue([author]);
+
+      const result = await controller.getStatusHistory(workOrderId);
+
+      expect(findUsersByIdsUseCase.execute).toHaveBeenCalledWith([author.id, author.id]);
+
+      expect(result).toEqual(WorkOrderPresenter.toStatusHistoryListResponse(history, [author]));
     });
 
     it('should forward the work order id to the use case', async () => {

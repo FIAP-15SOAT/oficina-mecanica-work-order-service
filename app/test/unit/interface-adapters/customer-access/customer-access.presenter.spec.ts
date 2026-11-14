@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
 import { CustomerAccessPresenter } from '@interface-adapters/customer-access/customer-access.presenter';
-import { UserPublicView } from '@domain/entities/user.entity';
 import { UserRole } from '@domain/enums/user-role.enum';
 import { CustomerType } from '@domain/enums/customer-type.enum';
-import { GrantCustomerAccessOutputDto } from '@application/ports/input/customer-access/dto/grant-customer-access.dto';
+import {
+  AccessUserOutputDto,
+  GrantCustomerAccessOutputDto,
+} from '@application/ports/input/customer-access/dto/grant-customer-access.dto';
 import { LinkedCustomerOutputDto } from '@application/ports/input/customer-access/dto/list-user-customers.dto';
 
 describe('CustomerAccessPresenter', () => {
@@ -17,8 +19,6 @@ describe('CustomerAccessPresenter', () => {
           email: 'joao@example.com',
           role: null,
           isActive: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
         },
         customer: {
           id: randomUUID(),
@@ -35,19 +35,35 @@ describe('CustomerAccessPresenter', () => {
 
   describe('toAccessUserListResponse', () => {
     it('should wrap the users in a data property', () => {
-      const users: UserPublicView[] = [
+      const users: AccessUserOutputDto[] = [
         {
           id: randomUUID(),
           name: 'João da Silva',
           email: 'joao@example.com',
           role: UserRole.ATTENDANT,
           isActive: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
         },
       ];
 
       expect(CustomerAccessPresenter.toAccessUserListResponse(users)).toEqual({ data: users });
+    });
+  });
+
+  describe('toInternalUserCustomerListResponse', () => {
+    it('should wrap the customers in a data property', () => {
+      const customers = [
+        {
+          id: randomUUID(),
+          name: 'Oficina Parceira LTDA',
+          type: CustomerType.COMPANY,
+          document: '12345678000195',
+          isActive: true,
+        },
+      ];
+
+      expect(CustomerAccessPresenter.toInternalUserCustomerListResponse(customers)).toEqual({
+        data: customers,
+      });
     });
   });
 

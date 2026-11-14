@@ -7,6 +7,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiProduces,
+  ApiServiceUnavailableResponse,
   ApiTags,
 } from '@nestjs/swagger';
 
@@ -32,6 +33,9 @@ export class UserCustomersController {
   @ApiParam({ name: 'userId', format: 'uuid' })
   @ApiOkResponse({ type: LinkedCustomerListResponseDto })
   @ApiNotFoundResponse({ description: 'Usuário não encontrado' })
+  @ApiServiceUnavailableResponse({
+    description: 'Identity, o serviço dono dos usuários, indisponível',
+  })
   listUserCustomers(
     @Param('userId', ParseUUIDPipe) userId: string,
   ): Promise<LinkedCustomerListResponseDto> {

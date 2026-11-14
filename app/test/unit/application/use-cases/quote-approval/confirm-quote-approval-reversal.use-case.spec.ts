@@ -5,13 +5,21 @@ import { SagaType } from '@domain/enums/saga-type.enum';
 import { SagaStatus } from '@domain/enums/saga-status.enum';
 import { SagaFailureReason } from '@domain/enums/saga-failure-reason.enum';
 import { createMockWorkOrder } from '../../../../helpers/work-order-mock.factory';
-import { createMockCustomer } from '../../../../helpers/customer-mock.factory';
-import { createMockSagaInstance } from '../../../../helpers/saga-instance-mock.factory';
+import {
+  createMockSagaInstance,
+  createMockSagaInstanceRepository,
+} from '../../../../helpers/saga-instance-mock.factory';
+import { createMockCustomerEmailRecipientsResolver } from '../../../../helpers/customer-email-recipients-resolver-mock.factory';
 import { createMockUnitOfWorkWithRepos } from '../../../../helpers/unit-of-work-mock.factory';
 import { IUnitOfWork, IRepositories } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { createMockLogger } from '../../../../helpers/logger-mock.factory';
-import { IEmailSenderService } from '@application/ports/output/services/email-sender.service.interface';
+import { ISagaInstanceRepository } from '@domain/interfaces/repositories/saga-instance.repository.interface';
+import {
+  CustomerEmailRecipient,
+  CustomerEmailRecipientsResolver,
+} from '@application/services/customer-email-recipients';
+import { WorkOrderEmailComposer } from '@application/notifications/work-order-email.composer';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { BUSINESS_METRICS } from '@application/metrics/business-metric.catalog';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
@@ -23,9 +31,11 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
   let useCase: ConfirmQuoteApprovalReversalUseCase;
   let unitOfWork: jest.Mocked<IUnitOfWork>;
   let repos: jest.Mocked<IRepositories>;
+  let sagaInstanceRepository: jest.Mocked<ISagaInstanceRepository>;
+  let customerEmailRecipientsResolver: jest.Mocked<CustomerEmailRecipientsResolver>;
   let logger: jest.Mocked<ILogger>;
-  let emailSender: jest.Mocked<IEmailSenderService>;
   let metrics: jest.Mocked<IMetrics>;
+  let recipients: CustomerEmailRecipient[];
   let quoteId: string;
   let workOrder: WorkOrder;
   let saga: SagaInstance;
@@ -33,18 +43,22 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
   beforeEach(() => {
     ({ unitOfWork, repos } = createMockUnitOfWorkWithRepos());
 
-    logger = createMockLogger();
+    sagaInstanceRepository = createMockSagaInstanceRepository();
 
-    emailSender = { send: jest.fn().mockResolvedValue(undefined) };
+    customerEmailRecipientsResolver = createMockCustomerEmailRecipientsResolver();
+
+    logger = createMockLogger();
 
     metrics = createMockMetrics();
 
     quoteId = randomUUID();
 
-    workOrder = createMockWorkOrder({
-      status: WorkOrderStatus.AWAITING_APPROVAL,
-      customer: createMockCustomer({ name: 'Maria Souza' }),
-    });
+    recipients = [
+      { email: 'joao@example.com', name: 'João Lima', hasAccess: true },
+      { email: 'ana@example.com', name: 'Ana Reis', hasAccess: true },
+    ];
+
+    workOrder = createMockWorkOrder({ status: WorkOrderStatus.AWAITING_APPROVAL });
 
     saga = createMockSagaInstance({
       correlationId: quoteId,
@@ -53,11 +67,21 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
       failureReason: SagaFailureReason.INSUFFICIENT_STOCK,
     });
 
+    sagaInstanceRepository.findByTypeAndCorrelationId.mockResolvedValue(saga);
+
+    customerEmailRecipientsResolver.resolveForWorkOrder.mockResolvedValue(recipients);
+
     jest.mocked(repos.sagaInstance.findByTypeAndCorrelationId).mockResolvedValue(saga);
 
-    jest.mocked(repos.workOrder.findByIdWithDetails).mockResolvedValue(workOrder);
+    jest.mocked(repos.workOrder.findById).mockResolvedValue(workOrder);
 
-    useCase = new ConfirmQuoteApprovalReversalUseCase(unitOfWork, logger, emailSender, metrics);
+    useCase = new ConfirmQuoteApprovalReversalUseCase(
+      unitOfWork,
+      sagaInstanceRepository,
+      customerEmailRecipientsResolver,
+      logger,
+      metrics,
+    );
   });
 
   it('should compensate the saga and record the reversal for missing stock in the history', async () => {
@@ -120,35 +144,49 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
     });
   });
 
-  it('should e-mail the customer about the missing stock after the commit', async () => {
+  it('should add the stock shortage e-mail for each recipient in the transaction of the compensation', async () => {
     await useCase.execute(quoteId);
 
-    expect(emailSender.send).toHaveBeenCalledWith({
-      toEmail: workOrder.customer!.email.value,
-      toName: 'Maria Souza',
-      subject: `Orçamento da Ordem de Serviço ${workOrder.number.toString()} - Estoque insuficiente`,
-      message: {
-        text: expect.stringContaining('voltou a aguardar sua aprovação'),
-        html: expect.stringContaining('voltou a aguardar sua aprovação'),
-      },
-    });
+    expect(sagaInstanceRepository.findByTypeAndCorrelationId).toHaveBeenCalledWith(
+      SagaType.QUOTE_APPROVAL,
+      quoteId,
+    );
 
-    expect(emailSender.send.mock.invocationCallOrder[0]).toBeGreaterThan(
-      unitOfWork.executeTransaction.mock.invocationCallOrder[0],
+    expect(customerEmailRecipientsResolver.resolveForWorkOrder).toHaveBeenCalledWith(workOrder.id);
+
+    expect(
+      customerEmailRecipientsResolver.resolveForWorkOrder.mock.invocationCallOrder[0],
+    ).toBeLessThan(unitOfWork.executeTransaction.mock.invocationCallOrder[0]);
+
+    expect(repos.outbox.add).toHaveBeenCalledTimes(2);
+
+    for (const [index, recipient] of recipients.entries()) {
+      expect(repos.outbox.add).toHaveBeenNthCalledWith(
+        index + 1,
+        WorkOrderEmailComposer.quoteApprovalReverted({
+          recipient,
+          workOrderId: workOrder.id,
+          workOrderNumber: workOrder.number.toString(),
+        }),
+      );
+    }
+
+    expect(repos.workOrder.update).toHaveBeenCalledWith(workOrder);
+
+    expect(jest.mocked(repos.workOrder.update).mock.invocationCallOrder[0]).toBeLessThan(
+      jest.mocked(repos.outbox.add).mock.invocationCallOrder[0],
     );
   });
 
-  it('should keep the compensation when the e-mail fails', async () => {
-    emailSender.send.mockRejectedValueOnce(new Error('smtp down'));
-
-    await useCase.execute(quoteId);
-
-    expect(saga.status).toBe(SagaStatus.COMPENSATED);
-
-    expect(logger.event).toHaveBeenCalledWith(
-      BUSINESS_EVENTS.SAGA_COMPENSATED,
-      expect.objectContaining({ quoteId }),
+  it('should open no transaction when the recipients cannot be resolved', async () => {
+    customerEmailRecipientsResolver.resolveForWorkOrder.mockRejectedValue(
+      new Error('identity down'),
     );
+
+    await expect(useCase.execute(quoteId)).rejects.toThrow('identity down');
+
+    expect(unitOfWork.executeTransaction).not.toHaveBeenCalled();
+    expect(saga.status).toBe(SagaStatus.COMPENSATING);
   });
 
   it('should compensate a saga reverted because the work order was not awaiting approval without e-mailing anyone', async () => {
@@ -161,9 +199,11 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
       failureReason: SagaFailureReason.WORK_ORDER_NOT_AWAITING,
     });
 
+    sagaInstanceRepository.findByTypeAndCorrelationId.mockResolvedValue(notAwaitingSaga);
+
     jest.mocked(repos.sagaInstance.findByTypeAndCorrelationId).mockResolvedValue(notAwaitingSaga);
 
-    jest.mocked(repos.workOrder.findByIdWithDetails).mockResolvedValue(cancelledWorkOrder);
+    jest.mocked(repos.workOrder.findById).mockResolvedValue(cancelledWorkOrder);
 
     await useCase.execute(quoteId);
 
@@ -177,7 +217,9 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
       }),
     );
 
-    expect(emailSender.send).not.toHaveBeenCalled();
+    expect(customerEmailRecipientsResolver.resolveForWorkOrder).not.toHaveBeenCalled();
+    expect(repos.workOrder.update).not.toHaveBeenCalled();
+    expect(repos.outbox.add).not.toHaveBeenCalled();
 
     expect(logger.event).toHaveBeenCalledWith(
       BUSINESS_EVENTS.SAGA_COMPENSATED,
@@ -191,15 +233,18 @@ describe('ConfirmQuoteApprovalReversalUseCase', () => {
     ['COMPENSATED', SagaStatus.COMPENSATED],
     ['missing', undefined],
   ])('should skip a reversal when the saga is %s', async (_label, sagaStatus) => {
-    jest
-      .mocked(repos.sagaInstance.findByTypeAndCorrelationId)
-      .mockResolvedValue(sagaStatus ? createMockSagaInstance({ status: sagaStatus }) : null);
+    const settledSaga = sagaStatus ? createMockSagaInstance({ status: sagaStatus }) : null;
+
+    sagaInstanceRepository.findByTypeAndCorrelationId.mockResolvedValue(settledSaga);
+
+    jest.mocked(repos.sagaInstance.findByTypeAndCorrelationId).mockResolvedValue(settledSaga);
 
     await useCase.execute(quoteId);
 
+    expect(customerEmailRecipientsResolver.resolveForWorkOrder).not.toHaveBeenCalled();
     expect(repos.sagaInstance.update).not.toHaveBeenCalled();
     expect(repos.statusHistory.create).not.toHaveBeenCalled();
-    expect(emailSender.send).not.toHaveBeenCalled();
+    expect(repos.outbox.add).not.toHaveBeenCalled();
 
     expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.SAGA_STEP_SKIPPED, {
       sagaType: SagaType.QUOTE_APPROVAL,

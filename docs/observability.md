@@ -80,7 +80,7 @@ Casos de uso declaram **nomes lógicos** (`quoteId`) no tipo da entrada do catá
 
 O vocabulário lógico (`application/logging/log-field.ts`) e o registro em `infrastructure/logging/field-registry.ts` são a **única** declaração de um campo: dele saem a chave física, a entrada do dicionário e a sensibilidade que decide o mascaramento. O registro é um `Record<LogicalFieldName, …>`, então esquecer uma entrada é erro de compilação — e um teste de tipo em `field-registry.spec.ts` fecha a outra direção, falhando quando um campo declarado não é emitido por nenhum evento.
 
-A sensibilidade declarada é o que mascara: `subjectName`/`subjectEmail` saem mascarados sem que o caso de uso faça nada, e `dependencyName` — nome de dependência técnica, não de pessoa — sai em claro por declaração explícita, não por acidente.
+A sensibilidade declarada é o que mascara: um campo declarado `pii` (dado pessoal) sairia mascarado sem que o caso de uso faça nada, e `dependencyName` — nome de dependência técnica, não de pessoa — sai em claro por declaração explícita, não por acidente. Hoje nenhum campo do catálogo é `pii`: os eventos levam ids, números e status, nunca nome ou e-mail.
 
 ### Sucesso transacional é registrado depois do commit
 
@@ -105,11 +105,11 @@ O trecho é do `CompleteQuoteApprovalUseCase`, o passo da Saga de aprovação qu
 
 Nenhum tipo de retorno público muda, nenhuma regra de negócio é duplicada, e um rollback lança antes do emit — então uma operação revertida nunca produz log de sucesso.
 
-**O caso inverso, dito explicitamente para ninguém "consertar":** o log técnico do mailer acompanha o envio, onde quer que ele rode. Os e-mails de orçamento (`ApplySentQuoteUseCase` e `ConfirmQuoteApprovalReversalUseCase`) saem depois do commit, para que um rollback não deixe o cliente avisado de algo que não aconteceu; mas um e-mail enviado dentro de uma transação gera o log antes do commit, e isso está **correto**: o e-mail foi realmente enviado, e um rollback não o desenvia. A regra pós-commit governa afirmações de sucesso *de negócio*, não registros de efeito colateral irreversível.
+**Os e-mails ao cliente não abrem exceção.** Eles são mensagens `notification.email.send` gravadas no outbox dentro da transação (ver [Arquitetura › E-mails ao cliente](architecture.md#e-mails-ao-cliente)): um rollback desfaz a mensagem junto com o resto, e o log do envio é da função serverless de notificação, que só recebe a mensagem depois do commit.
 
 ### A régua para dar um logger a um caso de uso
 
-*Este log responde a uma pergunta que o access log não responde?* Método, rota, status, duração e autor já estão lá — `logger.info('entrando em FindAllCustomers')` é ruído puro. O logger é injetado somente nos casos de uso que emitem eventos de segurança ou negócio declarados: autenticação e senha, concessão/revogação de acesso, os passos das Sagas de aprovação e de cobrança (`saga.*`), as mensagens de orçamento ignoradas (`quote_event.skipped`), a compensação da abertura que falhou (`work_order.opening.compensation_failed`), usuário e transições de ordem de serviço. Os demais casos de uso não recebem logger deliberadamente.
+*Este log responde a uma pergunta que o access log não responde?* Método, rota, status, duração e autor já estão lá — `logger.info('entrando em FindAllCustomers')` é ruído puro. O logger é injetado somente nos casos de uso que emitem eventos de segurança ou negócio declarados: concessão, recusa e revogação de acesso de cliente, status do cliente, os passos das Sagas de aprovação e de cobrança (`saga.*`), as mensagens de orçamento ignoradas (`quote_event.skipped`), a compensação da abertura que falhou (`work_order.opening.compensation_failed`) e as transições de ordem de serviço e de seus serviços. Os demais casos de uso não recebem logger deliberadamente.
 
 Os passos da Saga de aprovação são donos das transições da OS e emitem o evento somente depois da confirmação transacional. A decisão do Cliente da Oficina (`DecideMyQuoteUseCase`) não emite evento próprio: ela resolve a autorização por vínculo e repassa a decisão ao Billing, o serviço dono dos orçamentos, que a registra; o access log, com `http.route`, e o `request.id`, propagado ao Billing no `x-request-id`, correlacionam as linhas.
 

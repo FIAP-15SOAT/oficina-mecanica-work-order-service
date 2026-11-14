@@ -2,7 +2,6 @@ import type {
   WorkOrder as PrismaWorkOrder,
   Customer as PrismaCustomer,
   Vehicle as PrismaVehicle,
-  User as PrismaUser,
   WorkOrderService as PrismaWorkOrderService,
   WorkOrderPartSupply as PrismaWorkOrderPartSupply,
 } from '@generated/client';
@@ -11,14 +10,12 @@ import { WorkOrderNumber } from '@domain/value-objects/work-order-number.vo';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { CustomerMapper } from './customer.mapper';
 import { VehicleMapper } from './vehicle.mapper';
-import { UserMapper } from './user.mapper';
 import { WorkOrderServiceMapper } from './work-order-service.mapper';
 import { WorkOrderPartSupplyMapper } from './work-order-part-supply.mapper';
 
 type PrismaWorkOrderRecord = PrismaWorkOrder & {
   customer?: PrismaCustomer | null;
   vehicle?: PrismaVehicle | null;
-  assignedUser?: PrismaUser | null;
   services?: PrismaWorkOrderService[];
   partSupplies?: PrismaWorkOrderPartSupply[];
 };
@@ -54,10 +51,6 @@ export class WorkOrderMapper {
 
     if (record.vehicle) {
       entity.vehicle = VehicleMapper.toDomain(record.vehicle);
-    }
-
-    if (record.assignedUser) {
-      entity.assignedUser = UserMapper.toDomain(record.assignedUser);
     }
 
     return entity;

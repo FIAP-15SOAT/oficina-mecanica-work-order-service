@@ -2,9 +2,11 @@ import { Global, Module } from '@nestjs/common';
 
 import { HttpBillingPaymentsGateway } from './billing/http-billing-payments-gateway';
 import { HttpBillingQuotesGateway } from './billing/http-billing-quotes-gateway';
+import { HttpIdentityUsersGateway } from './identity/http-identity-users-gateway';
 import { HttpInventoryCatalogGateway } from './inventory/http-inventory-catalog-gateway';
 
 const GATEWAY_PROVIDERS = [
+  { provide: 'IIdentityUsersGateway', useClass: HttpIdentityUsersGateway },
   { provide: 'IInventoryCatalogGateway', useClass: HttpInventoryCatalogGateway },
   { provide: 'IBillingQuotesGateway', useClass: HttpBillingQuotesGateway },
   { provide: 'IBillingPaymentsGateway', useClass: HttpBillingPaymentsGateway },

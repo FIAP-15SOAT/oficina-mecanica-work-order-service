@@ -1,12 +1,8 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
-import {
-  CUSTOMER_AREA_KEY,
-  CustomerAreaMode,
-} from '@infrastructure/http/decorators/customer-area.decorator';
+import { CUSTOMER_AREA_KEY } from '@infrastructure/http/decorators/customer-area.decorator';
 import { IS_PUBLIC_KEY } from '@infrastructure/http/decorators/public.decorator';
-import { AnyAuthGuard } from '@infrastructure/http/guards/any-auth.guard';
 import { CustomerJwtAuthGuard } from '@infrastructure/http/guards/customer-jwt-auth.guard';
 import { JwtAuthGuard } from '@infrastructure/http/guards/jwt-auth.guard';
 
@@ -17,7 +13,6 @@ export class AuthenticationGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly staff: JwtAuthGuard,
     private readonly customer: CustomerJwtAuthGuard,
-    private readonly any: AnyAuthGuard,
   ) {}
 
   canActivate(context: ExecutionContext) {
@@ -27,9 +22,8 @@ export class AuthenticationGuard implements CanActivate {
       return true;
     }
 
-    const area = this.reflector.getAllAndOverride<CustomerAreaMode>(CUSTOMER_AREA_KEY, targets);
-    const guards = { customer: this.customer, any: this.any };
+    const customerArea = this.reflector.getAllAndOverride<boolean>(CUSTOMER_AREA_KEY, targets);
 
-    return (area ? guards[area] : this.staff).canActivate(context);
+    return (customerArea ? this.customer : this.staff).canActivate(context);
   }
 }

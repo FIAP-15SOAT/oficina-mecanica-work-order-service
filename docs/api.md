@@ -5,8 +5,10 @@
 ## Índice
 
 - [Endpoints disponíveis](#endpoints-disponíveis)
+  - [Rotas no Identity](#rotas-no-identity)
 - [Rotas internas (`/internal`)](#rotas-internas-internal)
 - [Dados de exibição dos itens](#dados-de-exibição-dos-itens)
+- [Usuários lidos no Identity](#usuários-lidos-no-identity)
 - [Formato de resposta](#formato-de-resposta)
   - [Exceção: as rotas de saúde](#exceção-as-rotas-de-saúde)
 
@@ -15,43 +17,29 @@ Após iniciar a aplicação:
 - **Swagger:** `http://localhost:3000/api/docs`
 - **Base URL:** `http://localhost:3000/api`
 
-Toda rota exige o header `Authorization: Bearer <token>` (access token), salvo as marcadas como públicas. A autenticação é negada por padrão: um guard global exige o token de funcionário em toda rota sem marcação, `@Public()` dispensa o token e `@CustomerArea()` troca o token exigido pelo do Cliente da Oficina (ver [Perfis de usuário (RBAC)](architecture.md#perfis-de-usuário-rbac)). Tokens de funcionário são obtidos em `POST /auth/login` e renovados em `POST /auth/refresh`. Um token de cliente numa rota de funcionário responde **401**.
+Toda rota exige o header `Authorization: Bearer <token>` (access token), salvo as marcadas como públicas. A autenticação é negada por padrão: um guard global exige o token de funcionário em toda rota sem marcação, `@Public()` dispensa o token e `@CustomerArea()` troca o token exigido pelo do Cliente da Oficina (ver [Perfis de usuário (RBAC)](architecture.md#perfis-de-usuário-rbac)). Um token de cliente numa rota de funcionário responde **401**.
+
+Os tokens de funcionário são emitidos pelo Identity, o serviço da solução dono dos usuários e das credenciais, em `POST /api/auth/login` e renovados em `POST /api/auth/refresh` (ver [Rotas no Identity](#rotas-no-identity)). Este serviço só valida o access token, com a chave pública: um JWT **RS256** com `kid` no cabeçalho e as claims `sub`, `email`, `name`, `role`, `typ = access`, `iss = oficina-identity`, `aud = oficina-services`, `iat` e `exp`, válido por **10 minutos**. Uma rota de funcionário responde **401** com `Token de autenticação inválido ou ausente` a um token HS256 ou sem assinatura, sem `kid` ou com outro `kid`, assinado por outra chave, com `iss` ou `aud` diferentes (como o token de cliente), com `typ` diferente de `access` (como o refresh), expirado ou sem `exp`, ou sem um `sub` UUID, um `email` ou um `role` conhecido. O usuário não é relido: o token de um funcionário desativado ou que trocou a senha continua aceito até expirar (ver [Segurança](security.md#janelas-de-revogação-aceitas)).
 
 ## Endpoints disponíveis
 
 ---
 
-**Auth** (`/api/auth`)
+### Rotas no Identity
 
-| Método | Rota | Descrição | Acesso |
-|---|---|---|---|
-| POST | `/login` | Autenticar e obter tokens (access + refresh) | Público |
-| POST | `/refresh` | Renovar tokens com refresh token | Público |
-| POST | `/password-reset-confirmations` | Confirmar redefinição de senha com código numérico de 6 dígitos (`email`, `code`, `newPassword`) emitido por um Admin — ver `POST /users/:userId/password-resets` | Público |
+O login, o refresh, a redefinição de senha, o cadastro de usuários, o perfil e a troca da própria senha são do Identity, o serviço da solução dono dos usuários e das credenciais ([`oficina-mecanica-identity-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service), que documenta o contrato delas). Pelo API Gateway, essas rotas chegam ao Identity; este serviço não as tem.
 
-> `GET /me` (ver seção **Minha Conta** abaixo) aceita tanto o token interno (`jwt`) quanto o externo (`customer-jwt`) e devolve a identidade do sujeito autenticado independentemente do fluxo.
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/api/auth/login` | Login do funcionário: devolve o access token, o refresh token e o usuário |
+| POST | `/api/auth/refresh` | Troca um refresh token válido por um par novo |
+| POST | `/api/auth/password-reset-confirmations` | Confirma o código de redefinição de senha e grava a senha nova |
+| POST, GET, PUT, PATCH, DELETE | `/api/users`, `/api/users/:id` | Cadastro, consulta, edição, ativação e exclusão de funcionários, só pelo `ADMIN` |
+| POST | `/api/users/:userId/password-resets` | Gera um código de redefinição de senha e o envia por e-mail |
+| GET | `/api/me` | Perfil do usuário do token (funcionário ou cliente), com as empresas que ele representa, lidas aqui em `GET /internal/users/:userId/customers` |
+| PATCH | `/api/me/password` | Troca a própria senha (funcionário ou cliente) |
 
-> O access token de funcionário é um JWT **RS256** com `kid` no cabeçalho e as claims `sub`, `email`, `name`, `role`, `typ = access`, `iss = oficina-identity`, `aud = oficina-services`, `iat` e `exp`, válido por **10 minutos**. O refresh token é RS256 com chave própria, `typ = refresh` e `aud = oficina-identity`, e vale **7 dias**. Uma rota de funcionário responde **401** a um token HS256 ou sem assinatura, sem `kid` ou com outro `kid`, assinado por outra chave, com `iss` ou `aud` diferentes (como o token de cliente), com `typ` diferente de `access` (como o refresh), expirado ou sem `exp`, ou de um usuário desativado ou que trocou a senha depois da emissão.
-
-> `POST /auth/refresh` responde **401** com a mensagem única `Refresh token inválido ou expirado` para todas as causas de falha — token inválido ou expirado, usuário inexistente e usuário desativado. A resposta é deliberadamente idêntica nos três casos para não revelar se o usuário existe; a causa fica registrada apenas no log (ver [Segurança](security.md#proteção-de-dados-nos-logs)).
-
-> `POST /auth/password-reset-confirmations` responde **401** com a mensagem única `Código de redefinição inválido ou expirado` para todas as causas de falha — usuário inexistente, nenhum código emitido, código expirado (10 minutos), código esgotado (5 tentativas) ou código incorreto —, pelo mesmo motivo de não revelar a causa exata.
-
----
-
-**Usuários** (`/api/users`) — *ADMIN*
-
-| Método | Rota | Descrição | Perfis |
-|---|---|---|---|
-| POST | `/` | Criar usuário (`name`, `email`, `role`, `cpf` opcional) — **não recebe senha**: uma senha aleatória forte é gerada e enviada por e-mail ao usuário | ADMIN |
-| GET | `/` | Listar (paginado; filtros: `name`, `role`) | ADMIN |
-| GET | `/:id` | Buscar por ID | ADMIN |
-| PUT | `/:id` | Atualizar dados (também sem campo de senha) | ADMIN |
-| PATCH | `/:id` | Alterar status (ativo/inativo) via `{ active: boolean }` | ADMIN |
-| DELETE | `/:id` | Remover | ADMIN |
-| POST | `/:userId/password-resets` | Emitir código numérico de 6 dígitos para redefinição de senha, enviado por e-mail ao usuário (válido por 10 minutos, 5 tentativas) — confirmado em `POST /auth/password-reset-confirmations` | ADMIN |
-
-> A força mínima da senha é definida em `domain/constants/regex/password.regex.ts` e validada **na camada de domínio** (`User.validatePasswordStrength`). Isso vale tanto para a senha inicial gerada em `POST /users` quanto para a nova senha em `PATCH /me/password` e `POST /auth/password-reset-confirmations`.
+`GET /api/users/:userId/customers` continua neste serviço (ver **Acesso Externo de Clientes** abaixo), porque os vínculos são daqui.
 
 ---
 
@@ -72,7 +60,7 @@ Toda rota exige o header `Authorization: Bearer <token>` (access token), salvo a
 
 | Método | Rota | Descrição | Perfis |
 |---|---|---|---|
-| POST | `/` | Cadastrar cliente (CPF ou CNPJ, endereço obrigatório). Aceita `createAccess?: boolean` — concede acesso externo automaticamente reaproveitando o caso de uso de `POST /customers/:id/users`. Default: `true` para `INDIVIDUAL`, sempre `false` para `COMPANY` (`createAccess: true` com `COMPANY` é rejeitado com **409**) | ADMIN, ATTENDANT |
+| POST | `/` | Cadastrar cliente (CPF ou CNPJ, endereço obrigatório). Aceita `createAccess?: boolean` — concede acesso externo automaticamente reaproveitando o caso de uso de `POST /customers/:id/users`. Default: `true` para `INDIVIDUAL`, sempre `false` para `COMPANY` (`createAccess: true` com `COMPANY` é rejeitado com **409**). Com o acesso, o usuário é pedido ao Identity antes de gravar o cliente: a recusa do Identity (**409** ou **422**) chega com a mensagem dele, e o Identity fora do ar responde **503**, sem cliente gravado | ADMIN, ATTENDANT |
 | GET | `/` | Listar (paginado; filtros: `name`, `type`, `document`) | ADMIN, ATTENDANT |
 | GET | `/:id` | Buscar por ID | ADMIN, ATTENDANT |
 | GET | `/:id/vehicles` | Listar veículos do cliente | ADMIN, ATTENDANT |
@@ -85,13 +73,15 @@ Toda rota exige o header `Authorization: Bearer <token>` (access token), salvo a
 
 | Método | Rota | Descrição | Perfis |
 |---|---|---|---|
-| POST | `/customers/:customerId/users` | Conceder acesso externo a um cliente. Para `Customer.type = INDIVIDUAL`, vincula o próprio cliente (usa CPF/e-mail do cadastro); para `COMPANY`, exige `name` + `email` + `cpf` do operador que vai representar a empresa. Se o CPF já pertence a um `User` existente, **reaproveita** essa conta (mesma pessoa física) e só cria o vínculo — sem senha inicial, sem alterar nome/e-mail/role da conta; caso contrário, cria um `User` novo e envia a senha inicial por e-mail. Se o e-mail já pertencer a **outro** usuário (interno ou externo) que não é o dono do CPF informado, retorna **409** — ver [ADR 0004](adr/0004-autenticacao-de-clientes.md) | ADMIN, ATTENDANT |
-| GET | `/customers/:customerId/users` | Listar usuários com acesso a um cliente | ADMIN, ATTENDANT |
+| POST | `/customers/:customerId/users` | Conceder acesso externo a um cliente. Para `Customer.type = INDIVIDUAL`, vincula o próprio cliente (usa nome, CPF e e-mail do cadastro); para `COMPANY`, exige `name` + `email` + `cpf` do operador que vai representar a empresa. O usuário de acesso fica no Identity: este serviço pede a ele o usuário pelo CPF, que **reaproveita** a conta que já existe (mesma pessoa física, sem senha inicial e sem alterar nome, e-mail ou papel) ou cria uma nova e envia a senha inicial por e-mail, e só então grava o vínculo. A resposta `201` traz `{ user, customer, initialPasswordSent }` (ver [Usuários lidos no Identity](#usuários-lidos-no-identity)) | ADMIN, ATTENDANT |
+| GET | `/customers/:customerId/users` | Listar os usuários com acesso a um cliente, cada um como `{ id, name, email, role, isActive }`. Um usuário vinculado que o Identity não conhece mais fica fora da lista | ADMIN, ATTENDANT |
 | DELETE | `/customers/:customerId/users/:userId` | Revogar o vínculo de um usuário com um cliente — efeito imediato, sem lista de revogação de token | ADMIN, ATTENDANT |
 | PATCH | `/customers/:customerId` | Ativar (`isActive: true`) ou desativar (`isActive: false`) um cliente. Cliente inativo perde acesso a `/api/me/*` imediatamente | ADMIN, ATTENDANT |
-| GET | `/users/:userId/customers` | Listar os clientes vinculados a um usuário | ADMIN, ATTENDANT |
+| GET | `/users/:userId/customers` | Listar os clientes vinculados a um usuário, cada um como `{ id, name, type, isActive }`. Usuário que o Identity não conhece responde **404** com `Usuário não encontrado(a) com identificador: <id>` | ADMIN, ATTENDANT |
 
-> Ver [Identidade externa, autenticação e autorização por vínculo](architecture.md#identidade-externa-autenticação-e-autorização-por-vínculo) para o modelo `User`/`Customer`/`UserCustomer`.
+> **Respostas da concessão de acesso.** Nome do operador com menos de 3 caracteres responde **400** `O nome deve ter no mínimo 3 caracteres`, e CPF que não é um CPF válido, **400** `CPF inválido`, sem chamar o Identity. Cliente inexistente responde **404**; cliente inativo, **409** `Cliente inativo não pode receber novos acessos`; `COMPANY` sem os três dados do operador, **409** `Nome, e-mail e CPF são obrigatórios para conceder acesso a um cliente do tipo COMPANY`; vínculo que já existe, **409** `Usuário já possui acesso a este cliente`. Quando o Identity recusa o usuário, a resposta traz o status e a mensagem dele: **409** `O e-mail informado já pertence a outro usuário. Verifique o cadastro do cliente` quando o e-mail é de outra pessoa, ou **422** `CPF inválido`; nada é gravado, e a concessão pode ser repetida depois de corrigir o cadastro. Com o Identity fora do ar, **503** `Serviço de destino indisponível`, sem nada gravado. Se o Identity criou o usuário e a gravação do vínculo falhou, repetir a concessão reaproveita o mesmo usuário pelo CPF.
+>
+> Ver [Identidade externa, autenticação e autorização por vínculo](architecture.md#identidade-externa-autenticação-e-autorização-por-vínculo) para o modelo de usuário, `Customer` e `UserCustomer`.
 
 ---
 
@@ -205,14 +195,14 @@ Enquanto a OS está em `AWAITING_PAYMENT`, iniciar serviço, entregar e cancelar
 
 | Método | Rota | Descrição | Acesso |
 |---|---|---|---|
-| GET | `/` | Identidade do sujeito autenticado — funciona com token interno **ou** externo. `customers` lista só as empresas (`COMPANY`) que o usuário representa; fica vazio para quem só acessa o próprio cadastro pessoa física (o cadastro `INDIVIDUAL` não aparece ali por ser o próprio usuário, não alguém que ele representa) | JWT interno OU `customer-jwt` |
-| PATCH | `/password` | Trocar a própria senha (`currentPassword`, `newPassword`) — funciona com token interno **ou** externo | JWT interno OU `customer-jwt` |
 | GET | `/work-orders` | Listar ordens de serviço dos clientes vinculados ao usuário autenticado (paginado; filtro opcional `customerId`). Cada item traz `customer: { id, name, type }` — necessário para quem representa mais de uma empresa distinguir a qual cliente cada ordem pertence | `customer-jwt` |
 | GET | `/work-orders/:workOrderId` | Detalhe de uma ordem de serviço vinculada, incluindo `customer: { id, name, type }` | `customer-jwt` |
 | GET | `/work-orders/:workOrderId/quotes` | Orçamentos de uma ordem de serviço vinculada, sem itens, lidos no Billing | `customer-jwt` |
 | GET | `/quotes/:quoteId` | Orçamento e itens de uma ordem vinculada, lidos no Billing | `customer-jwt` |
 | POST | `/quotes/:quoteId/decisions` | Aprovar (`{ "action": "approve" }`) ou rejeitar (`{ "action": "reject", "reason": "..." }`) um orçamento vinculado; a decisão é repassada ao Billing | `customer-jwt` |
 | GET | `/work-orders/:workOrderId/payments` | Cobranças de uma ordem de serviço vinculada, lidas no Billing: `id`, `amount`, `status` (`PENDING`, `APPROVED`, `EXPIRED`, `CANCELLED` ou `REJECTED`), `checkoutUrl` (o link de pagamento), `expiresAt`, `createdAt` e `updatedAt`, no envelope `{ data: [...] }` | `customer-jwt` |
+
+> O perfil (`GET /api/me`) e a troca da própria senha (`PATCH /api/me/password`) ficam no Identity (ver [Rotas no Identity](#rotas-no-identity)); aqui ficam as rotas de ordens e orçamentos do cliente.
 
 > O token `customer-jwt` (RS256) é emitido por uma **função serverless externa** a esta aplicação, após autenticar o Cliente da Oficina por CPF + senha — a API só verifica a assinatura com `CUSTOMER_JWT_PUBLIC_KEY`. Toda rota `/api/me/*` que aponta a um recurso específico (`workOrderId`/`quoteId`) resolve a autorização **por vínculo** a cada requisição, consultando `UserCustomer` no banco — o token nunca carrega `customerId`. Um recurso inexistente e um recurso de um cliente não vinculado respondem igualmente **404** (nunca 403), para não virar oráculo de enumeração. Ver [Identidade externa, autenticação e autorização por vínculo](architecture.md#identidade-externa-autenticação-e-autorização-por-vínculo).
 
@@ -236,8 +226,9 @@ Rotas para os outros serviços da oficina, pela rede do cluster. Ficam **fora do
 | Método | Rota | Descrição | Acesso |
 |---|---|---|---|
 | GET | `/internal/work-orders/:id` | Detalhe da OS, com o mesmo corpo de `GET /api/work-orders/:id`. `400` para id que não é UUID e `404` para OS inexistente | Rede do cluster |
+| GET | `/internal/users/:userId/customers` | Diz ao Identity quais clientes o usuário acessa, para o perfil de `GET /api/me`: `200 { data: [{ id, name, type, document, isActive }] }`, só os clientes ativos com vínculo. Usuário sem vínculo responde lista vazia, nunca `404`. `400` para id que não é UUID | Rede do cluster |
 
-O Billing chama essa rota para conferir a OS antes de criar, enviar e aprovar um orçamento e antes de criar uma cobrança. O corpo segue o mesmo envelope das rotas públicas. O contrato fica numa fixture versionada, `app/test/contracts/internal-work-order.json`, conferida pelo e2e (ver [Contrato das rotas `/internal`](testing.md#contrato-das-rotas-internal)); detalhes do cliente HTTP das chamadas entre serviços em [Chamadas internas](architecture.md#chamadas-internas).
+O Billing chama a rota da OS para conferir a OS antes de criar, enviar e aprovar um orçamento e antes de criar uma cobrança. O corpo segue o mesmo envelope das rotas públicas. Os contratos ficam em fixtures versionadas em `app/test/contracts/` (`internal-work-order.json` e `internal-user-customers.json`), conferidas pelo e2e (ver [Contrato das rotas `/internal`](testing.md#contrato-das-rotas-internal)); detalhes do cliente HTTP das chamadas entre serviços em [Chamadas internas](architecture.md#chamadas-internas).
 
 ---
 
@@ -247,6 +238,18 @@ Os itens da OS guardam o id do serviço ou da peça, a quantidade e o preço. Os
 
 - Um item que o Inventory não acha mais aparece com id, quantidade e preço e os campos de exibição nulos.
 - Com o Inventory fora do ar, essas rotas respondem **503**. As que gravam e mostram itens (mudança de status e execução de serviço) leem o catálogo antes de gravar, então o 503 sai sem nada gravado.
+
+---
+
+## Usuários lidos no Identity
+
+A OS, o histórico e os vínculos guardam só o id do usuário. O nome, o e-mail e o papel são lidos no Identity, por `GET /internal/users/:id`, a cada resposta que os mostra: o mecânico atribuído (`assignedUser`) no detalhe e na lista de OS, nas rotas que devolvem a OS, o autor de cada entrada do histórico (`changedBy`) e os usuários com acesso a um cliente. O mecânico e o autor saem no formato `{ id, name, email, role }`.
+
+- Um usuário que o Identity não conhece mais aparece como `null` (`assignedUser` e `changedBy`) ou fica fora da lista de usuários de um cliente.
+- O usuário com acesso a um cliente, em `GET /api/customers/:customerId/users` e na resposta de `POST /api/customers/:customerId/users`, sai no formato que o Identity devolve, `{ id, name, email, role, isActive }`. `role` é `null` para o usuário de acesso de um cliente.
+- Com o Identity fora do ar, sem resposta em 2 segundos, com erro 5xx ou com uma resposta fora do contrato, essas rotas respondem **503** com `Serviço de destino indisponível`. As que gravam (abrir e editar a OS com mecânico, mudar o status da OS e conceder acesso) leem o Identity antes de gravar, então o 503 sai sem nada gravado.
+- Abrir ou editar uma OS com `assignedUserId` confere o usuário no Identity: usuário desconhecido responde **404** `Usuário não encontrado(a) com identificador: <id>`, e usuário que não é `MECHANIC` ou está desativado responde **409** `Apenas mecânicos ativos podem ser atribuídos a uma ordem de serviço`.
+- Os e-mails do orçamento enviado, do link de pagamento e da falta de estoque vão aos usuários ativos vinculados ao cliente, lidos no Identity quando chega a mensagem do Billing (`billing.quote.sent`, `billing.payment.requested` ou `billing.quote.approval_reverted`); sem usuário ativo vinculado, vão ao e-mail do cadastro do cliente. Com o Identity fora do ar, a mensagem que levaria e-mail falha sem nada gravado e volta à fila, até ir para a DLQ (a fila de mensagens mortas) na quinta entrega; a que não leva e-mail, como a entrega repetida ou o pedido de cobrança de uma OS que não aceita mais pagamento, é aplicada normalmente.
 
 ---
 

@@ -1,5 +1,4 @@
 import { WorkOrder } from '@domain/entities/work-order.entity';
-import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
 import { ICache } from '@application/ports/output/services/cache.service.interface';
@@ -13,7 +12,6 @@ import {
 export class FindWorkOrderByIdUseCase {
   constructor(
     private readonly workOrderRepository: IWorkOrderRepository,
-    private readonly userRepository: IUserRepository,
     private readonly cache: ICache,
   ) {}
 
@@ -38,15 +36,7 @@ export class FindWorkOrderByIdUseCase {
   private async findCachedWorkOrder(id: string): Promise<WorkOrder | null> {
     const value = await this.cache.get(workOrderCacheKey(id));
 
-    const workOrder = value === null ? null : this.parseCachedWorkOrder(value);
-
-    if (workOrder) {
-      workOrder.assignedUser = workOrder.assignedUserId
-        ? await this.userRepository.findById(workOrder.assignedUserId)
-        : null;
-    }
-
-    return workOrder;
+    return value === null ? null : this.parseCachedWorkOrder(value);
   }
 
   // A value this code cannot read (corrupted or written by another version) is a miss.

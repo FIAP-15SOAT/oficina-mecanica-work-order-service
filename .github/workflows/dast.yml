@@ -18,9 +18,15 @@ env:
   COMPOSE_FILE: app/docker-compose.yml:app/docker-compose.dast.yml
   COMPOSE_PROJECT_NAME: dast
   API_BASE_URL: http://localhost:3000
-  SEED_ADMIN_EMAIL: ${{ secrets.SEED_ADMIN_EMAIL }}
-  SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
-  SEED_CUSTOMER_USER_EMAIL: joao.silva@email.com
+  STAFF_JWT_KEY_ID: staff-dast
+  # Canonical ADMIN user (docs/seed-ids.md): a UUID sub, because it is stored in uuid columns such as status_history.changed_by_id.
+  STAFF_ADMIN_ID: 1c905c27-4c5e-4d85-a53d-914ed8b87bbe
+  STAFF_ADMIN_EMAIL: guilhermedarochasalvador@gmail.com
+  STAFF_ADMIN_NAME: Guilherme da Rocha Salvador
+  STAFF_JWT_ISSUER: oficina-identity
+  STAFF_JWT_AUDIENCE: oficina-services
+  # Canonical id of the seeded customer user joao.silva@email.com (prisma/seeds/seed-ids.ts).
+  CUSTOMER_USER_ID: 212ca9d7-fa8f-4111-9746-d431da68b063
   STACK_WAIT_TIMEOUT: 180
 
 jobs:
@@ -40,24 +46,39 @@ jobs:
           openssl rsa -in /tmp/customer-jwt.key -pubout -out /tmp/customer-jwt.pub
           echo "CUSTOMER_JWT_PUBLIC_KEY=$(awk 'NF {sub(/\r/, ""); printf "%s\\n", $0}' /tmp/customer-jwt.pub)" >> "$GITHUB_ENV"
 
-      # Ephemeral staff token key pairs (access and refresh), only for this run.
-      - name: Generate ephemeral RS256 key pairs for the staff tokens
+      # Ephemeral key pair, generated on every run and never committed. The job
+      # plays the role of Identity: it signs an ADMIN access token with the
+      # private key and gives the service only the public key. The private key
+      # is deleted right after signing.
+      - name: Generate an ephemeral RS256 key pair and sign an ADMIN staff token
         run: |
-          pem_line() { awk 'NF {sub(/\r/, ""); printf "%s\\n", $0}' "$1"; }
-          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /tmp/staff-jwt.key
-          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out /tmp/staff-refresh.key
-          openssl pkey -in /tmp/staff-jwt.key -pubout -out /tmp/staff-jwt.pub
-          staff_private="$(pem_line /tmp/staff-jwt.key)"
-          refresh_private="$(pem_line /tmp/staff-refresh.key)"
-          echo "::add-mask::$staff_private"
-          echo "::add-mask::$refresh_private"
+          set -euo pipefail
+          key_dir="$RUNNER_TEMP/staff-jwt"
+          mkdir -p "$key_dir"
+          trap 'rm -rf "$key_dir"' EXIT
+
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$key_dir/private.pem"
+          openssl pkey -in "$key_dir/private.pem" -pubout -out "$key_dir/public.pem"
+
+          b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+
+          now="$(date +%s)"
+          # One hour, not the ten minutes of a real access token: it is signed
+          # before the stack starts, and the whole run takes about nine minutes.
+          exp="$((now + 3600))"
+          header="{\"alg\":\"RS256\",\"typ\":\"JWT\",\"kid\":\"${STAFF_JWT_KEY_ID}\"}"
+          payload="{\"sub\":\"${STAFF_ADMIN_ID}\",\"email\":\"${STAFF_ADMIN_EMAIL}\",\"name\":\"${STAFF_ADMIN_NAME}\",\"role\":\"ADMIN\",\"typ\":\"access\",\"iss\":\"${STAFF_JWT_ISSUER}\",\"aud\":\"${STAFF_JWT_AUDIENCE}\",\"iat\":${now},\"exp\":${exp}}"
+
+          signing_input="$(printf '%s' "$header" | b64url).$(printf '%s' "$payload" | b64url)"
+          signature="$(printf '%s' "$signing_input" | openssl dgst -sha256 -sign "$key_dir/private.pem" | b64url)"
+          rm -f "$key_dir/private.pem"
+          token="${signing_input}.${signature}"
+
+          echo "::add-mask::$token"
           {
-            echo "STAFF_JWT_PRIVATE_KEY=$staff_private"
-            echo "STAFF_JWT_REFRESH_PRIVATE_KEY=$refresh_private"
-            echo "STAFF_JWT_PUBLIC_KEY=$(pem_line /tmp/staff-jwt.pub)"
-            echo "STAFF_JWT_KEY_ID=staff-dast"
+            echo "STAFF_JWT_PUBLIC_KEY=$(awk 'NF {sub(/\r/, ""); printf "%s\\n", $0}' "$key_dir/public.pem")"
+            echo "ZAP_AUTH_HEADER_VALUE=Bearer $token"
           } >> "$GITHUB_ENV"
-          rm /tmp/staff-jwt.key /tmp/staff-refresh.key
 
       - name: Start the target stack and wait for it to become healthy
         run: |
@@ -68,38 +89,17 @@ jobs:
             exit 1
           fi
 
-      - name: Perform authentication for the internal scan pass
-        run: |
-          echo "::add-mask::$SEED_ADMIN_PASSWORD"
-          token="$(curl -fsS -X POST "$API_BASE_URL/api/auth/login" \
-            -H 'Content-Type: application/json' \
-            -d "{\"email\":\"${SEED_ADMIN_EMAIL}\",\"password\":\"${SEED_ADMIN_PASSWORD}\"}" \
-            | jq -r '.data.accessToken' || true)"
-          if [ -z "$token" ] || [ "$token" = "null" ]; then
-            echo "::error::Failed to authenticate against /api/auth/login."
-            exit 1
-          fi
-          echo "::add-mask::$token"
-          echo "ZAP_AUTH_HEADER_VALUE=Bearer $token" >> "$GITHUB_ENV"
-
       # The external Lambda is out of scope (see docs/testing.md). The job
       # signs its own customer token with the private key generated above,
-      # for an already seeded user — the same role the Lambda would play.
+      # for the seeded customer user — the same role the Lambda would play.
       - name: Sign an ephemeral customer JWT for the external scan pass
         run: |
-          user_id="$(docker compose exec -T postgres psql -U postgres -d work_order -tAc \
-            "SELECT id FROM users WHERE email = '${SEED_CUSTOMER_USER_EMAIL}';" | tr -d '[:space:]')"
-          if [ -z "$user_id" ]; then
-            echo "::error::Could not find the seeded customer user (${SEED_CUSTOMER_USER_EMAIL})."
-            exit 1
-          fi
-
           b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 
           now="$(date +%s)"
           exp="$((now + 3600))"
           header='{"alg":"RS256","typ":"JWT"}'
-          payload="{\"sub\":\"${user_id}\",\"iss\":\"oficina-customer-auth\",\"aud\":\"oficina-api\",\"iat\":${now},\"exp\":${exp}}"
+          payload="{\"sub\":\"${CUSTOMER_USER_ID}\",\"iss\":\"oficina-customer-auth\",\"aud\":\"oficina-api\",\"iat\":${now},\"exp\":${exp}}"
 
           header_b64="$(printf '%s' "$header" | b64url)"
           payload_b64="$(printf '%s' "$payload" | b64url)"

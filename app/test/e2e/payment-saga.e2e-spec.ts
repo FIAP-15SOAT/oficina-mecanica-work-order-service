@@ -4,13 +4,17 @@ import request from 'supertest';
 import { GetQueueUrlCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
-import { InternalServicesStub, startInternalServicesStub } from '../helpers/internal-services-stub';
-import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
-import { findEmails } from '../helpers/mailhog.helper';
+import {
+  InternalServicesStub,
+  startInternalServicesStub,
+  stubIdentityUser,
+} from '../helpers/internal-services-stub';
+import { StaffUser, createStaffUser } from '../helpers/auth.helper';
 import { receiveCommands } from '../helpers/sqs-commands.helper';
 import { waitFor } from '../helpers/wait-for.helper';
 
 const CUSTOMER_EMAIL = 'payment-saga@e2e.test';
+const LINKED_USER_EMAIL = 'acesso.pagamento@e2e.test';
 const APPROVED_AT = new Date('2026-11-10T12:00:00.000Z');
 const FINISHED_AT = new Date('2026-11-11T12:00:00.000Z');
 
@@ -18,16 +22,17 @@ const checkoutUrl = (paymentId: string): string =>
   `https://pagamento.e2e.test/checkout/${paymentId}`;
 
 // Every test runs on its own work order. The Billing events are written to this service's outbox,
-// which the work order queue filter delivers back to it; the commands are read from the billing
-// queue, which has no consumer here.
+// which the work order queue filter delivers back to it; the commands and the e-mails are read from
+// the billing and notification queues, which have no consumer here.
 describe('Payment saga (E2E)', () => {
   let stub: InternalServicesStub;
   let ctx: TestContext;
   let httpServer: Server;
-  let adminAuth: AuthTokens;
+  let adminAuth: StaffUser;
   let unitOfWork: IUnitOfWork;
   let sqs: SQSClient;
   let billingQueueUrl: string;
+  let notificationQueueUrl: string;
   let customerId: string;
   let vehicleId: string;
 
@@ -39,14 +44,14 @@ describe('Payment saga (E2E)', () => {
     sqs = ctx.app.get(SQSClient);
 
     const billingQueue = await sqs.send(new GetQueueUrlCommand({ QueueName: 'billing.fifo' }));
+    const notificationQueue = await sqs.send(
+      new GetQueueUrlCommand({ QueueName: 'notification.fifo' }),
+    );
 
     billingQueueUrl = billingQueue.QueueUrl as string;
+    notificationQueueUrl = notificationQueue.QueueUrl as string;
 
-    adminAuth = await registerAndLogin(
-      httpServer,
-      { name: 'Admin Pagamento', email: 'admin-payment-saga@e2e.test', role: 'ADMIN' },
-      ctx.prisma,
-    );
+    adminAuth = createStaffUser({ stub }, { name: 'Admin Pagamento' });
 
     const customer = await ctx.prisma.customer.create({
       data: {
@@ -59,6 +64,17 @@ describe('Payment saga (E2E)', () => {
 
     const vehicle = await ctx.prisma.vehicle.create({
       data: { customerId: customer.id, plate: 'PAG1A23', brand: 'Fiat', model: 'Uno', year: 2020 },
+    });
+
+    // The linked user served by the Identity is who the payment e-mail goes to.
+    const linkedUser = stubIdentityUser(stub, {
+      name: 'Acesso Pagamento',
+      email: LINKED_USER_EMAIL,
+      role: null,
+    });
+
+    await ctx.prisma.userCustomer.create({
+      data: { userId: linkedUser.id, customerId: customer.id },
     });
 
     customerId = customer.id;
@@ -77,7 +93,7 @@ describe('Payment saga (E2E)', () => {
   ): Promise<{ id: string; number: string }> {
     const res = await request(httpServer)
       .post('/api/work-orders')
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .send({ customerId, vehicleId, problemDescription: 'Revisão geral' })
       .expect(201);
 
@@ -143,14 +159,6 @@ describe('Payment saga (E2E)', () => {
     );
   }
 
-  // The subject is RFC 2047 encoded and may split the work order number, so the e-mail is found by
-  // its link, which is unique per payment.
-  async function countPaymentEmails(paymentId: string): Promise<number> {
-    const emails = await findEmails(ctx.mailhogContainer, CUSTOMER_EMAIL);
-
-    return emails.filter(({ body }) => body.includes(checkoutUrl(paymentId))).length;
-  }
-
   it('should hold an approved work order and release it to APPROVED when the payment is approved', async () => {
     const workOrder = await createWorkOrder('APPROVED');
     const paymentId = await requestPayment(workOrder.id);
@@ -172,7 +180,18 @@ describe('Payment saga (E2E)', () => {
 
     expect(heldWorkOrder.status).toBe('AWAITING_PAYMENT');
 
-    await waitFor(async () => (await countPaymentEmails(paymentId)) === 1, 10_000);
+    const emails = await receiveCommands(sqs, notificationQueueUrl, workOrder.id, 1);
+
+    expect(emails).toEqual([
+      expect.objectContaining({
+        type: 'notification.email.send',
+        payload: expect.objectContaining({
+          to: [LINKED_USER_EMAIL],
+          purpose: 'payment_link',
+          text: expect.stringContaining(checkoutUrl(paymentId)),
+        }),
+      }),
+    ]);
 
     await sendPaymentResult(workOrder.id, paymentId);
 
@@ -180,7 +199,7 @@ describe('Payment saga (E2E)', () => {
 
     const woRes = await request(httpServer)
       .get(`/api/work-orders/${workOrder.id}`)
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .expect(200);
 
     const releasedWorkOrder = await ctx.prisma.workOrder.findUniqueOrThrow({
@@ -233,7 +252,7 @@ describe('Payment saga (E2E)', () => {
 
     const deliveryRes = await request(httpServer)
       .patch(`/api/work-orders/${workOrder.id}`)
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .send({ status: 'DELIVERED' })
       .expect(200);
 
@@ -310,6 +329,6 @@ describe('Payment saga (E2E)', () => {
     expect(compensatedSaga.failureReason).toBe('WORK_ORDER_NOT_PAYABLE');
     expect(unchangedWorkOrder.status).toBe('IN_PROGRESS');
     expect(history.map(({ newStatus }) => newStatus)).toEqual(['RECEIVED']);
-    expect(await countPaymentEmails(paymentId)).toBe(0);
+    expect(await receiveCommands(sqs, notificationQueueUrl, workOrder.id, 0)).toEqual([]);
   });
 });

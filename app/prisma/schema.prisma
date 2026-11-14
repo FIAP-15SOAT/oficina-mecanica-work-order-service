@@ -76,10 +76,7 @@ model User {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @default(now()) @updatedAt @map("updated_at")
 
-  assignedWorkOrders WorkOrder[]        @relation("AssignedUser")
-  statusChanges      StatusHistory[]
-  customerAccesses   UserCustomer[]
-  passwordResetCode  PasswordResetCode?
+  passwordResetCode PasswordResetCode?
 
   @@map("users")
 }
@@ -164,7 +161,6 @@ model WorkOrder {
 
   customer       Customer              @relation(fields: [customerId], references: [id])
   vehicle        Vehicle               @relation(fields: [vehicleId], references: [id])
-  assignedUser   User?                 @relation("AssignedUser", fields: [assignedUserId], references: [id])
   statusInfo     WorkOrderStatusInfo   @relation(fields: [status], references: [code])
   services       WorkOrderService[]
   partSupplies   WorkOrderPartSupply[]
@@ -225,7 +221,6 @@ model StatusHistory {
   createdAt      DateTime         @default(now()) @map("created_at")
 
   workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
-  changedBy User?     @relation(fields: [changedById], references: [id])
 
   @@index([workOrderId])
   @@index([changedById])
@@ -255,7 +250,6 @@ model UserCustomer {
   customerId String   @map("customer_id") @db.Uuid
   createdAt  DateTime @default(now()) @map("created_at")
 
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 
   @@id([userId, customerId])

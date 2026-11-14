@@ -54,7 +54,7 @@ interface ErrorChainEntry {
 
 /**
  * Walks the `error.cause` chain (ES2022), in which an error wraps the previous
- * one. Without it, an error rethrown by a library (Prisma, nodemailer) would
+ * one. Without it, an error rethrown by a library (Prisma, for example) would
  * show up as `exception.type: "Error"` with the wrapper's stack — losing the
  * line that actually broke. Depth is bounded and seen errors are tracked
  * because `cause` can form a cycle.

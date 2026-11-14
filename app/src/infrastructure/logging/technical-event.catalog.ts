@@ -1,9 +1,5 @@
 import { defineLogEvent } from '@application/logging/log-event';
 
-export type MailOutcome = 'sent' | 'failed';
-
-export type MailErrorCategory = 'transport' | 'unknown';
-
 export type HealthFailureCategory =
   | 'timeout'
   | 'connection'
@@ -44,29 +40,6 @@ export const TECHNICAL_EVENTS = {
     name: 'db.disconnected',
     message: 'database connection pool closed',
     level: 'info',
-  }),
-  EMAIL_SENT: defineLogEvent<{
-    mailOperation: string;
-    mailDestinationSystem: string;
-    mailOutcome: MailOutcome;
-    mailRecipient: string;
-    mailDurationMs: number;
-  }>({
-    name: 'mail.send.succeeded',
-    message: 'email accepted by the smtp server',
-    level: 'info',
-  }),
-  EMAIL_SEND_FAILED: defineLogEvent<{
-    mailOperation: string;
-    mailDestinationSystem: string;
-    mailOutcome: MailOutcome;
-    mailRecipient: string;
-    mailDurationMs: number;
-    mailErrorCategory: MailErrorCategory;
-  }>({
-    name: 'mail.send.failed',
-    message: 'email rejected by the smtp server',
-    level: 'error',
   }),
   HEALTH_DEGRADED: defineLogEvent<{
     dependencyName: string;

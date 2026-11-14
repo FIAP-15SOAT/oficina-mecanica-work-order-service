@@ -1,46 +1,50 @@
-import type { Server } from 'http';
-import request from 'supertest';
-import * as bcrypt from 'bcrypt';
-import type { PrismaService } from '@infrastructure/persistence/prisma/prisma.service';
+import { randomUUID } from 'node:crypto';
 
-export interface AuthTokens {
-  accessToken: string;
-  refreshToken: string;
-  user: { id: string; name: string; email: string; role: string };
+import { UserRole } from '@domain/enums/user-role.enum';
+import type { IdentityUserGatewayResponse } from '@application/ports/output/gateways/identity/identity-users-gateway.response';
+
+import { readInternalUserFixture } from './identity-users-gateway-mock.factory';
+import type { InternalServicesStub } from './internal-services-stub';
+import { signTestStaffToken } from './staff-jwt.helper';
+
+/** `Authorization` header with a staff access token signed like the Identity signs it. */
+export function staffAuthHeader(
+  overrides: { sub?: string; email?: string; role?: UserRole } = {},
+): string {
+  const claims = {
+    sub: overrides.sub ?? randomUUID(),
+    email: overrides.email ?? `${randomUUID()}@e2e.test`,
+    role: overrides.role ?? UserRole.ADMIN,
+  };
+
+  return `Bearer ${signTestStaffToken(claims)}`;
 }
 
-export async function registerAndLogin(
-  app: Server,
-  overrides: {
-    name?: string;
-    email?: string;
-    password?: string;
-    role?: string;
-  } = {},
-  prisma?: PrismaService,
-): Promise<AuthTokens> {
-  const uid = Date.now();
-  const name = overrides.name ?? `Test User ${uid}`;
-  const email = overrides.email ?? `testuser${uid}@e2e.test`;
-  const password = overrides.password ?? 'Test@2026';
-  const role = overrides.role ?? 'ADMIN';
+export interface StaffUser {
+  authorization: string;
+  user: IdentityUserGatewayResponse;
+}
 
-  if (prisma) {
-    const hashedPassword = await bcrypt.hash(password, 10);
-    await prisma.user.create({
-      data: {
-        name,
-        email,
-        passwordHash: hashedPassword,
-        role: role as 'ADMIN' | 'MECHANIC' | 'ATTENDANT',
-      },
-    });
-  } else {
-    await request(app).post('/api/users').send({ name, email, password, role }).expect(201);
-  }
+/**
+ * Staff user known to the Identity stub, with its signed token.
+ */
+export function createStaffUser(
+  deps: { stub?: InternalServicesStub },
+  overrides: { name?: string; email?: string; role?: UserRole; isActive?: boolean } = {},
+): StaffUser {
+  const role = overrides.role ?? UserRole.ADMIN;
+  const user: IdentityUserGatewayResponse = {
+    ...readInternalUserFixture().data,
+    ...overrides,
+    role,
+    id: randomUUID(),
+    email: overrides.email ?? `${randomUUID()}@e2e.test`,
+  };
 
-  const loginRes = await request(app).post('/api/auth/login').send({ email, password }).expect(200);
-  const { accessToken, refreshToken, user } = loginRes.body.data;
+  deps.stub?.users.set(user.id, user);
 
-  return { accessToken, refreshToken, user };
+  return {
+    authorization: staffAuthHeader({ sub: user.id, email: user.email, role }),
+    user,
+  };
 }

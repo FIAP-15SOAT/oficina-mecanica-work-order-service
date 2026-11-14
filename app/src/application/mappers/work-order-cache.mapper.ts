@@ -65,7 +65,7 @@ interface CachedWorkOrderPartSupply {
   updatedAt: string;
 }
 
-// No assigned user: the password hash stays out of the cache and the name is read fresh.
+// Only the assigned user id is cached: the name and email are read fresh on every response.
 export interface CachedWorkOrder {
   cacheVersion: number;
   id: string;

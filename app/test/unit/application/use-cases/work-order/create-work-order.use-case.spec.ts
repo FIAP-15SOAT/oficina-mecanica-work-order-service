@@ -3,7 +3,6 @@ import { CreateWorkOrderUseCase } from '@application/use-cases/work-order/create
 import { WorkOrder } from '@domain/entities/work-order.entity';
 import { Customer } from '@domain/entities/customer.entity';
 import { Vehicle } from '@domain/entities/vehicle.entity';
-import { User } from '@domain/entities/user.entity';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { UserRole } from '@domain/enums/user-role.enum';
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
@@ -13,7 +12,9 @@ import { ServiceIntegrationException } from '@infrastructure/exceptions/service-
 import { IUnitOfWork, IRepositories } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { ICustomerRepository } from '@domain/interfaces/repositories/customer.repository.interface';
 import { IVehicleRepository } from '@domain/interfaces/repositories/vehicle.repository.interface';
-import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
+import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
+import { IdentityUserGatewayResponse } from '@application/ports/output/gateways/identity/identity-users-gateway.response';
+import { MechanicAssignmentPolicy } from '@application/policies/mechanic-assignment.policy';
 import { IBillingQuotesGateway } from '@application/ports/output/gateways/billing/billing-quotes-gateway.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
@@ -26,7 +27,10 @@ import {
   createMockVehicle,
   createMockVehicleRepository,
 } from '../../../../helpers/vehicle-mock.factory';
-import { createMockUser, createMockUserRepository } from '../../../../helpers/user-mock.factory';
+import {
+  createMockIdentityUserGatewayResponse,
+  createMockIdentityUsersGateway,
+} from '../../../../helpers/identity-users-gateway-mock.factory';
 import { createMockUnitOfWorkWithRepos } from '../../../../helpers/unit-of-work-mock.factory';
 import {
   createMockBillingQuotesGateway,
@@ -41,7 +45,7 @@ describe('CreateWorkOrderUseCase', () => {
   let repos: jest.Mocked<IRepositories>;
   let customerRepository: jest.Mocked<ICustomerRepository>;
   let vehicleRepository: jest.Mocked<IVehicleRepository>;
-  let userRepository: jest.Mocked<IUserRepository>;
+  let identityUsersGateway: jest.Mocked<IIdentityUsersGateway>;
   let billingQuotesGateway: jest.Mocked<IBillingQuotesGateway>;
   let logger: jest.Mocked<ILogger>;
   let metrics: jest.Mocked<IMetrics>;
@@ -57,7 +61,7 @@ describe('CreateWorkOrderUseCase', () => {
 
     vehicleRepository = createMockVehicleRepository();
 
-    userRepository = createMockUserRepository();
+    identityUsersGateway = createMockIdentityUsersGateway();
 
     billingQuotesGateway = createMockBillingQuotesGateway();
 
@@ -79,7 +83,7 @@ describe('CreateWorkOrderUseCase', () => {
       unitOfWork,
       customerRepository,
       vehicleRepository,
-      userRepository,
+      new MechanicAssignmentPolicy(identityUsersGateway),
       billingQuotesGateway,
       logger,
       metrics,
@@ -103,9 +107,9 @@ describe('CreateWorkOrderUseCase', () => {
   });
 
   it('should create a work order with assigned user (active mechanic)', async () => {
-    const mechanic = createMockUser({ role: UserRole.MECHANIC });
+    const mechanic = createMockIdentityUserGatewayResponse({ role: UserRole.MECHANIC });
 
-    userRepository.findById.mockResolvedValue(mechanic);
+    identityUsersGateway.findById.mockResolvedValue(mechanic);
 
     const result = await useCase.execute({
       customerId: customer.id,
@@ -114,7 +118,8 @@ describe('CreateWorkOrderUseCase', () => {
       userId: randomUUID(),
     });
 
-    expect(result.assignedUser).toBe(mechanic);
+    expect(result.assignedUserId).toBe(mechanic.id);
+    expect(identityUsersGateway.findById).toHaveBeenCalledWith(mechanic.id);
 
     expect(repos.workOrder.create).toHaveBeenCalledWith(
       expect.objectContaining({ assignedUserId: mechanic.id }),
@@ -203,12 +208,16 @@ describe('CreateWorkOrderUseCase', () => {
   describe('participants', () => {
     const owner = createMockCustomer();
     const ownVehicle = createMockVehicle({ customerId: owner.id });
-    const mechanic = createMockUser({ role: UserRole.MECHANIC });
+    const mechanic = createMockIdentityUserGatewayResponse({ role: UserRole.MECHANIC });
 
     it.each<{
       subject: string;
       scenario: string;
-      found: { customer: Customer | null; vehicle: Vehicle | null; user: User | null };
+      found: {
+        customer: Customer | null;
+        vehicle: Vehicle | null;
+        user: IdentityUserGatewayResponse | null;
+      };
       error: new (...args: never[]) => Error;
     }>([
       {
@@ -248,7 +257,11 @@ describe('CreateWorkOrderUseCase', () => {
       {
         subject: 'mechanic',
         scenario: 'not a mechanic',
-        found: { customer: owner, vehicle: ownVehicle, user: createMockUser() },
+        found: {
+          customer: owner,
+          vehicle: ownVehicle,
+          user: createMockIdentityUserGatewayResponse({ role: UserRole.ADMIN }),
+        },
         error: BusinessRuleViolationException,
       },
       {
@@ -257,7 +270,7 @@ describe('CreateWorkOrderUseCase', () => {
         found: {
           customer: owner,
           vehicle: ownVehicle,
-          user: createMockUser({ role: UserRole.MECHANIC, isActive: false }),
+          user: createMockIdentityUserGatewayResponse({ role: UserRole.MECHANIC, isActive: false }),
         },
         error: BusinessRuleViolationException,
       },
@@ -266,7 +279,7 @@ describe('CreateWorkOrderUseCase', () => {
       async ({ found, error }) => {
         customerRepository.findById.mockResolvedValue(found.customer);
         vehicleRepository.findById.mockResolvedValue(found.vehicle);
-        userRepository.findById.mockResolvedValue(found.user);
+        identityUsersGateway.findById.mockResolvedValue(found.user);
 
         await expect(
           useCase.execute({

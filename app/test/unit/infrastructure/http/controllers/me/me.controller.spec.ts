@@ -9,7 +9,6 @@ import { QuoteDecisionAction } from '@domain/enums/quote-decision-action.enum';
 import { AuthFlow } from '@domain/enums/auth-flow.enum';
 
 import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
-import { ChangeOwnPasswordRequestDto } from '@infrastructure/http/controllers/me/dto/requests/change-own-password-request.dto';
 import { DecideMyQuoteRequestDto } from '@infrastructure/http/controllers/me/dto/requests/decide-my-quote-request.dto';
 import { FindMyWorkOrdersQueryDto } from '@infrastructure/http/controllers/me/dto/requests/find-my-work-orders-query.dto';
 
@@ -25,7 +24,6 @@ describe('MeController', () => {
   const principal: AuthenticatedPrincipal = {
     sub: randomUUID(),
     authFlow: AuthFlow.CUSTOMER,
-    email: 'joao@example.com',
   };
 
   const workOrderStub = createMockWorkOrder({
@@ -43,45 +41,8 @@ describe('MeController', () => {
       { execute: jest.fn() },
       { execute: jest.fn() },
       { execute: jest.fn() },
-      { execute: jest.fn() },
-      { execute: jest.fn() },
     );
     httpController = new MeController(cleanController);
-  });
-
-  describe('getMe', () => {
-    it('should delegate the principal to the clean controller and return its result', async () => {
-      const response = MePresenter.toMeDataResponse({
-        id: principal.sub,
-        name: 'João da Silva',
-        email: principal.email,
-        role: null,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        customers: [],
-      });
-      jest.spyOn(cleanController, 'getMe').mockResolvedValue(response);
-
-      const result = await httpController.getMe(principal);
-
-      expect(result).toBe(response);
-      expect(cleanController.getMe).toHaveBeenCalledWith(principal);
-    });
-  });
-
-  describe('changePassword', () => {
-    it('should delegate the principal subject and the body to the clean controller', async () => {
-      const request: ChangeOwnPasswordRequestDto = {
-        currentPassword: 'Tech@2026',
-        newPassword: 'Tech@2027',
-      };
-      jest.spyOn(cleanController, 'changePassword').mockResolvedValue(undefined);
-
-      await httpController.changePassword(request, principal);
-
-      expect(cleanController.changePassword).toHaveBeenCalledWith(principal.sub, request);
-    });
   });
 
   describe('listWorkOrders', () => {

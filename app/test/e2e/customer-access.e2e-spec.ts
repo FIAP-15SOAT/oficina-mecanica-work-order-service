@@ -1,43 +1,45 @@
 // test/e2e/customer-access.e2e-spec.ts
 import type { Server } from 'http';
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { UserRole } from '@domain/enums/user-role.enum';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
-import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
+import { StaffUser, createStaffUser, staffAuthHeader } from '../helpers/auth.helper';
+import {
+  InternalServicesStub,
+  startInternalServicesStub,
+  stubCustomerUser,
+  stubIdentityUser,
+} from '../helpers/internal-services-stub';
 
 describe('Customer Access (E2E)', () => {
+  let stub: InternalServicesStub;
   let ctx: TestContext;
   let httpServer: Server;
-  let adminAuth: AuthTokens;
-  let attendantAuth: AuthTokens;
-  let mechanicAuth: AuthTokens;
+  let adminAuth: StaffUser;
+  let attendantAuth: StaffUser;
+  let mechanicAuth: StaffUser;
 
   beforeAll(async () => {
-    ctx = await setupTestApp();
+    stub = await startInternalServicesStub();
+    ctx = await setupTestApp({ internalServicesUrl: stub.url });
     httpServer = ctx.httpServer;
   });
 
   afterAll(async () => {
     await teardownTestApp(ctx);
+    await stub.close();
   });
 
   beforeEach(async () => {
     await cleanDatabase(ctx.prisma);
-    adminAuth = await registerAndLogin(
-      httpServer,
-      { name: 'Admin E2E', email: 'admin-access@e2e.test', role: 'ADMIN' },
-      ctx.prisma,
-    );
-    attendantAuth = await registerAndLogin(
-      httpServer,
-      { name: 'Atendente E2E', email: 'attendant-access@e2e.test', role: 'ATTENDANT' },
-      ctx.prisma,
-    );
-    mechanicAuth = await registerAndLogin(
-      httpServer,
-      { name: 'Mecânico E2E', email: 'mechanic-access@e2e.test', role: 'MECHANIC' },
-      ctx.prisma,
-    );
+    stub.customerUsers.calls.length = 0;
+    adminAuth = createStaffUser({ stub }, { name: 'Admin E2E' });
+
+    attendantAuth = createStaffUser({ stub }, { name: 'Atendente E2E', role: UserRole.ATTENDANT });
+
+    mechanicAuth = createStaffUser({ stub }, { name: 'Mecânico E2E', role: UserRole.MECHANIC });
   });
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -74,7 +76,7 @@ describe('Customer Access (E2E)', () => {
     const id = ++counter;
     const res = await request(httpServer)
       .post('/api/customers')
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .send({
         name: `Cliente Acesso ${id}`,
         document: generateCPF(id),
@@ -91,7 +93,7 @@ describe('Customer Access (E2E)', () => {
         ...overrides,
       })
       .expect(201);
-    return res.body.data as { id: string; document: string };
+    return res.body.data as { id: string; name: string; email: string; document: string };
   }
 
   function generatePlate(index: number) {
@@ -102,7 +104,7 @@ describe('Customer Access (E2E)', () => {
     const id = ++counter;
     const res = await request(httpServer)
       .post('/api/customers')
-      .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      .set('Authorization', adminAuth.authorization)
       .send({
         name: `Empresa Acesso ${id} LTDA`,
         document: generateCNPJ(id),
@@ -119,44 +121,64 @@ describe('Customer Access (E2E)', () => {
         ...overrides,
       })
       .expect(201);
-    return res.body.data as { id: string; document: string };
+    return res.body.data as { id: string; name: string; email: string; document: string };
+  }
+
+  async function grantAccess(customerId: string) {
+    const user = stubCustomerUser(stub);
+
+    await request(httpServer)
+      .post(`/api/customers/${customerId}/users`)
+      .set('Authorization', adminAuth.authorization)
+      .send({})
+      .expect(201);
+
+    return user;
+  }
+
+  function findLinks(customerId: string) {
+    return ctx.prisma.userCustomer.findMany({ where: { customerId }, select: { userId: true } });
   }
 
   // ─── POST /api/customers/:customerId/users ──────────────────────────
 
   describe('POST /api/customers/:customerId/users', () => {
-    it('should create a new user by CPF and grant access for an INDIVIDUAL customer', async () => {
+    it('should create the user in the identity and grant access for an INDIVIDUAL customer', async () => {
       const customer = await createCustomer();
+      const user = stubCustomerUser(stub);
 
       const res = await request(httpServer)
         .post(`/api/customers/${customer.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({})
         .expect(201);
 
-      expect(res.body.data).toEqual(
-        expect.objectContaining({
-          user: expect.objectContaining({ id: expect.any(String), email: expect.any(String) }),
-          customer: expect.objectContaining({ id: customer.id }),
-          initialPasswordSent: true,
-        }),
-      );
+      expect(res.body.data).toEqual({
+        user,
+        customer: {
+          id: customer.id,
+          name: expect.any(String),
+          type: 'INDIVIDUAL',
+          isActive: true,
+        },
+        initialPasswordSent: true,
+      });
 
-      const accessUsers = await request(httpServer)
-        .get(`/api/customers/${customer.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
+      expect(stub.customerUsers.calls).toEqual([
+        { name: customer.name, email: customer.email, cpf: customer.document },
+      ]);
 
-      expect(accessUsers.body.data).toHaveLength(1);
-      expect(accessUsers.body.data[0].id).toBe(res.body.data.user.id);
+      expect(await findLinks(customer.id)).toEqual([{ userId: user.id }]);
     });
 
     it('should allow ATTENDANT to grant access', async () => {
       const customer = await createCustomer();
 
+      stubCustomerUser(stub);
+
       await request(httpServer)
         .post(`/api/customers/${customer.id}/users`)
-        .set('Authorization', `Bearer ${attendantAuth.accessToken}`)
+        .set('Authorization', attendantAuth.authorization)
         .send({})
         .expect(201);
     });
@@ -166,7 +188,7 @@ describe('Customer Access (E2E)', () => {
 
       await request(httpServer)
         .post(`/api/customers/${customer.id}/users`)
-        .set('Authorization', `Bearer ${mechanicAuth.accessToken}`)
+        .set('Authorization', mechanicAuth.authorization)
         .send({})
         .expect(403);
     });
@@ -177,28 +199,32 @@ describe('Customer Access (E2E)', () => {
       await request(httpServer).post(`/api/customers/${customer.id}/users`).send({}).expect(401);
     });
 
-    it('should return 404 when the customer does not exist', async () => {
+    it('should return 404 without calling the identity when the customer does not exist', async () => {
       await request(httpServer)
         .post('/api/customers/00000000-0000-0000-0000-000000000000/users')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({})
         .expect(404);
+
+      expect(stub.customerUsers.calls).toEqual([]);
     });
 
-    it('should grant access to a COMPANY customer when name/email/cpf are provided', async () => {
+    it('should send the person of the body with the cpf in digits only for a COMPANY customer', async () => {
       const company = await createCompanyCustomer();
+
+      stubCustomerUser(stub);
 
       const res = await request(httpServer)
         .post(`/api/customers/${company.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          name: 'Operador da Empresa',
-          email: `operador-${Date.now()}@test.com`,
-          cpf: generateCPF(9001),
-        })
+        .set('Authorization', adminAuth.authorization)
+        .send({ name: 'Operador da Empresa', email: 'operador@test.com', cpf: '529.982.247-25' })
         .expect(201);
 
       expect(res.body.data.initialPasswordSent).toBe(true);
+
+      expect(stub.customerUsers.calls).toEqual([
+        { name: 'Operador da Empresa', email: 'operador@test.com', cpf: '52998224725' },
+      ]);
     });
 
     it('should refuse (business rule) granting access to a COMPANY customer without name/email/cpf', async () => {
@@ -206,138 +232,169 @@ describe('Customer Access (E2E)', () => {
 
       await request(httpServer)
         .post(`/api/customers/${company.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({})
         .expect(409);
+
+      expect(stub.customerUsers.calls).toEqual([]);
     });
 
-    it('should reuse the same user (not conflict) when granting access to two COMPANY customers with the same CPF', async () => {
-      const companyX = await createCompanyCustomer();
-      const companyY = await createCompanyCustomer();
-      const sharedCpf = generateCPF(9002);
+    it.each([
+      [
+        'a name shorter than 3 characters',
+        { name: 'Jo' },
+        'O nome deve ter no mínimo 3 caracteres',
+      ],
+      ['a cpf without digits', { cpf: 'abc' }, 'CPF inválido'],
+      ['a cpf with wrong check digits', { cpf: '529.982.247-26' }, 'CPF inválido'],
+    ])('should return 400 without calling the identity for %s', async (_label, field, message) => {
+      const company = await createCompanyCustomer();
 
-      const first = await request(httpServer)
-        .post(`/api/customers/${companyX.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+      const res = await request(httpServer)
+        .post(`/api/customers/${company.id}/users`)
+        .set('Authorization', adminAuth.authorization)
         .send({
-          name: 'Sócio Compartilhado',
-          email: `socio-x-${Date.now()}@test.com`,
-          cpf: sharedCpf,
+          name: 'Operador da Empresa',
+          email: 'operador@test.com',
+          cpf: '529.982.247-25',
+          ...field,
         })
-        .expect(201);
+        .expect(400);
 
-      const second = await request(httpServer)
-        .post(`/api/customers/${companyY.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({
-          name: 'Sócio Compartilhado',
-          email: `socio-y-${Date.now()}@test.com`,
-          cpf: sharedCpf,
-        })
-        .expect(201);
-
-      expect(second.body.data.user.id).toBe(first.body.data.user.id);
-      expect(second.body.data.initialPasswordSent).toBe(false);
-
-      const totalUsersWithCpf = await ctx.prisma.user.count({
-        where: { cpf: sharedCpf.replace(/\D/g, '') },
-      });
-      expect(totalUsersWithCpf).toBe(1);
-
-      const linkedCustomers = await request(httpServer)
-        .get(`/api/users/${first.body.data.user.id}/customers`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      expect(linkedCustomers.body.data).toHaveLength(2);
-      expect(linkedCustomers.body.data.map((c: { id: string }) => c.id).sort()).toEqual(
-        [companyX.id, companyY.id].sort(),
-      );
+      expect(res.body.message).toContain(message);
+      expect(stub.customerUsers.calls).toEqual([]);
     });
 
-    it('should conflict when the email already belongs to a different person than the one identified by cpf', async () => {
-      const companyX = await createCompanyCustomer();
-      const companyY = await createCompanyCustomer();
-      const sharedEmail = `pessoa-original-${Date.now()}@test.com`;
+    it('should link the same user again when the grant is repeated after the link was not written', async () => {
+      const customer = await createCustomer();
+      const user = stubCustomerUser(stub);
 
       await request(httpServer)
-        .post(`/api/customers/${companyX.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ name: 'Pessoa Original', email: sharedEmail, cpf: generateCPF(9003) })
+        .post(`/api/customers/${customer.id}/users`)
+        .set('Authorization', adminAuth.authorization)
+        .send({})
         .expect(201);
 
-      await request(httpServer)
-        .post(`/api/customers/${companyY.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({ name: 'Outra Pessoa', email: sharedEmail, cpf: generateCPF(9004) })
+      // The user exists in the identity, but the link is gone, as after a failed write.
+      await ctx.prisma.userCustomer.deleteMany({ where: { customerId: customer.id } });
+      stub.customerUsers.response = {
+        status: 200,
+        body: { data: { userId: user.id, created: false } },
+      };
+
+      const retry = await request(httpServer)
+        .post(`/api/customers/${customer.id}/users`)
+        .set('Authorization', adminAuth.authorization)
+        .send({})
+        .expect(201);
+
+      expect(retry.body.data.user.id).toBe(user.id);
+      expect(retry.body.data.initialPasswordSent).toBe(false);
+      expect(await findLinks(customer.id)).toEqual([{ userId: user.id }]);
+    });
+
+    it('should answer the 409 of the identity with its message and write no link', async () => {
+      const customer = await createCustomer();
+      const message =
+        'O e-mail informado já pertence a outro usuário. Verifique o cadastro do cliente';
+
+      stub.customerUsers.response = {
+        status: 409,
+        body: { statusCode: 409, error: 'Conflict', message },
+      };
+
+      const res = await request(httpServer)
+        .post(`/api/customers/${customer.id}/users`)
+        .set('Authorization', adminAuth.authorization)
+        .send({})
         .expect(409);
 
-      const totalUsersWithEmail = await ctx.prisma.user.count({ where: { email: sharedEmail } });
-      expect(totalUsersWithEmail).toBe(1);
+      expect(res.body.message).toBe(message);
+      expect(await findLinks(customer.id)).toEqual([]);
+    });
+
+    it('should return 503 and write no link when the identity is unavailable', async () => {
+      const customer = await createCustomer();
+
+      stub.customerUsers.response = {
+        status: 503,
+        body: { statusCode: 503, error: 'Service Unavailable', message: 'Indisponível' },
+      };
+
+      const res = await request(httpServer)
+        .post(`/api/customers/${customer.id}/users`)
+        .set('Authorization', adminAuth.authorization)
+        .send({})
+        .expect(503);
+
+      expect(res.body.message).toBe('Serviço de destino indisponível');
+      expect(await findLinks(customer.id)).toEqual([]);
     });
 
     it('should return 409 when granting access twice to the same user/customer pair', async () => {
       const customer = await createCustomer();
 
-      await request(httpServer)
-        .post(`/api/customers/${customer.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({})
-        .expect(201);
+      await grantAccess(customer.id);
 
       await request(httpServer)
         .post(`/api/customers/${customer.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({})
         .expect(409);
     });
 
-    it('should return 409 (business rule) when the customer is inactive', async () => {
+    it('should return 409 (business rule) without calling the identity when the customer is inactive', async () => {
       const customer = await createCustomer();
 
       await request(httpServer)
         .patch(`/api/customers/${customer.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ isActive: false })
         .expect(204);
 
       await request(httpServer)
         .post(`/api/customers/${customer.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({})
         .expect(409);
+
+      expect(stub.customerUsers.calls).toEqual([]);
     });
   });
 
   // ─── GET /api/customers/:customerId/users ───────────────────────────
 
   describe('GET /api/customers/:customerId/users', () => {
-    it('should list the users granted access to the customer', async () => {
+    it('should list the users granted access to the customer as the identity has them', async () => {
       const customer = await createCustomer();
-
-      const grant = await request(httpServer)
-        .post(`/api/customers/${customer.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({})
-        .expect(201);
+      const user = await grantAccess(customer.id);
 
       const response = await request(httpServer)
         .get(`/api/customers/${customer.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
-      expect(response.body.data).toHaveLength(1);
-      expect(response.body.data[0]).toMatchObject({
-        id: grant.body.data.user.id,
-        email: grant.body.data.user.email,
-      });
-      expect(response.body.data[0]).not.toHaveProperty('passwordHash');
+      expect(response.body.data).toEqual([user]);
+    });
+
+    it('should leave out a linked user the identity no longer has', async () => {
+      const customer = await createCustomer();
+      const user = await grantAccess(customer.id);
+
+      stub.users.delete(user.id);
+
+      const response = await request(httpServer)
+        .get(`/api/customers/${customer.id}/users`)
+        .set('Authorization', adminAuth.authorization)
+        .expect(200);
+
+      expect(response.body.data).toEqual([]);
     });
 
     it('should return 404 for a non-existent customer', async () => {
       await request(httpServer)
         .get('/api/customers/00000000-0000-0000-0000-000000000000/users')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(404);
     });
 
@@ -346,7 +403,7 @@ describe('Customer Access (E2E)', () => {
 
       await request(httpServer)
         .get(`/api/customers/${customer.id}/users`)
-        .set('Authorization', `Bearer ${mechanicAuth.accessToken}`)
+        .set('Authorization', mechanicAuth.authorization)
         .expect(403);
     });
   });
@@ -356,16 +413,11 @@ describe('Customer Access (E2E)', () => {
   describe('GET /api/users/:userId/customers', () => {
     it('should list the customers linked to the user', async () => {
       const customer = await createCustomer();
-
-      const grant = await request(httpServer)
-        .post(`/api/customers/${customer.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({})
-        .expect(201);
+      const user = await grantAccess(customer.id);
 
       const response = await request(httpServer)
-        .get(`/api/users/${grant.body.data.user.id}/customers`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .get(`/api/users/${user.id}/customers`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       expect(response.body.data).toEqual([
@@ -374,25 +426,31 @@ describe('Customer Access (E2E)', () => {
     });
 
     it('should return an empty list for a user with no linked customer', async () => {
+      const user = stubIdentityUser(stub);
+
       const response = await request(httpServer)
-        .get(`/api/users/${attendantAuth.user.id}/customers`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .get(`/api/users/${user.id}/customers`)
+        .set('Authorization', adminAuth.authorization)
         .expect(200);
 
       expect(response.body.data).toEqual([]);
     });
 
-    it('should return 404 for a non-existent user', async () => {
-      await request(httpServer)
-        .get('/api/users/00000000-0000-0000-0000-000000000000/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+    it('should return 404 for a user the identity does not find', async () => {
+      const userId = '00000000-0000-0000-0000-000000000000';
+
+      const response = await request(httpServer)
+        .get(`/api/users/${userId}/customers`)
+        .set('Authorization', adminAuth.authorization)
         .expect(404);
+
+      expect(response.body.message).toBe(`Usuário não encontrado(a) com identificador: ${userId}`);
     });
 
     it('should return 403 for MECHANIC role', async () => {
       await request(httpServer)
         .get(`/api/users/${attendantAuth.user.id}/customers`)
-        .set('Authorization', `Bearer ${mechanicAuth.accessToken}`)
+        .set('Authorization', mechanicAuth.authorization)
         .expect(403);
     });
   });
@@ -402,24 +460,14 @@ describe('Customer Access (E2E)', () => {
   describe('DELETE /api/customers/:customerId/users/:userId', () => {
     it('should revoke access and return 204', async () => {
       const customer = await createCustomer();
-
-      const grant = await request(httpServer)
-        .post(`/api/customers/${customer.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({})
-        .expect(201);
+      const user = await grantAccess(customer.id);
 
       await request(httpServer)
-        .delete(`/api/customers/${customer.id}/users/${grant.body.data.user.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .delete(`/api/customers/${customer.id}/users/${user.id}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(204);
 
-      const accessUsers = await request(httpServer)
-        .get(`/api/customers/${customer.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
-
-      expect(accessUsers.body.data).toHaveLength(0);
+      expect(await findLinks(customer.id)).toEqual([]);
     });
 
     it('should return 404 when the link does not exist', async () => {
@@ -427,27 +475,20 @@ describe('Customer Access (E2E)', () => {
 
       await request(httpServer)
         .delete(`/api/customers/${customer.id}/users/00000000-0000-0000-0000-000000000000`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .expect(404);
     });
 
     it('should return 403 for MECHANIC role', async () => {
       const customer = await createCustomer();
-
-      const grant = await request(httpServer)
-        .post(`/api/customers/${customer.id}/users`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .send({})
-        .expect(201);
+      const user = await grantAccess(customer.id);
 
       await request(httpServer)
-        .delete(`/api/customers/${customer.id}/users/${grant.body.data.user.id}`)
-        .set('Authorization', `Bearer ${mechanicAuth.accessToken}`)
+        .delete(`/api/customers/${customer.id}/users/${user.id}`)
+        .set('Authorization', mechanicAuth.authorization)
         .expect(403);
     });
   });
-
-  // ─── PATCH /api/customers/:customerId ────────────────────────────────
 
   describe('PATCH /api/customers/:customerId', () => {
     it('should deactivate an active customer and persist the change', async () => {
@@ -455,7 +496,7 @@ describe('Customer Access (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/customers/${customer.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ isActive: false })
         .expect(204);
 
@@ -469,13 +510,13 @@ describe('Customer Access (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/customers/${customer.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ isActive: false })
         .expect(204);
 
       await request(httpServer)
         .patch(`/api/customers/${customer.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ isActive: true })
         .expect(204);
 
@@ -487,7 +528,7 @@ describe('Customer Access (E2E)', () => {
     it('should return 404 for a non-existent customer', async () => {
       await request(httpServer)
         .patch('/api/customers/00000000-0000-0000-0000-000000000000')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ isActive: false })
         .expect(404);
     });
@@ -497,7 +538,7 @@ describe('Customer Access (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/customers/${customer.id}`)
-        .set('Authorization', `Bearer ${mechanicAuth.accessToken}`)
+        .set('Authorization', mechanicAuth.authorization)
         .send({ isActive: false })
         .expect(403);
     });
@@ -507,13 +548,13 @@ describe('Customer Access (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/customers/${customer.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ isActive: false })
         .expect(204);
 
       await request(httpServer)
         .post('/api/vehicles')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({
           customerId: customer.id,
           plate: generatePlate(++counter),
@@ -529,7 +570,7 @@ describe('Customer Access (E2E)', () => {
 
       const vehicle = await request(httpServer)
         .post('/api/vehicles')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({
           customerId: customer.id,
           plate: generatePlate(++counter),
@@ -541,19 +582,51 @@ describe('Customer Access (E2E)', () => {
 
       await request(httpServer)
         .patch(`/api/customers/${customer.id}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({ isActive: false })
         .expect(204);
 
       await request(httpServer)
         .post('/api/work-orders')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth.authorization)
         .send({
           customerId: customer.id,
           vehicleId: vehicle.body.data.id,
           problemDescription: 'Barulho no motor',
         })
         .expect(409);
+    });
+  });
+
+  // ─── Staff token and routes owned by the Identity ───────────────────
+
+  describe('staff token and routes owned by the Identity', () => {
+    it('should authorize a staff route by the role in the token without the user in any database', async () => {
+      const userId = randomUUID();
+
+      await request(httpServer)
+        .get('/api/customers')
+        .set('Authorization', staffAuthHeader({ sub: userId, role: UserRole.ATTENDANT }))
+        .expect(200);
+
+      await request(httpServer)
+        .get('/api/customers')
+        .set('Authorization', staffAuthHeader({ sub: userId, role: UserRole.MECHANIC }))
+        .expect(403);
+
+      expect(stub.users.has(userId)).toBe(false);
+    });
+
+    it.each([
+      ['post', '/api/auth/login'],
+      ['get', '/api/users'],
+      ['get', '/api/me'],
+      ['patch', '/api/me/password'],
+    ] as const)('should answer 404 to %s %s', async (method, path) => {
+      await request(httpServer)
+        [method](path)
+        .set('Authorization', adminAuth.authorization)
+        .expect(404);
     });
   });
 });

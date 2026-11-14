@@ -4,7 +4,9 @@ Modelo relacional (PostgreSQL) da API, definido em [`prisma/schema.prisma`](../a
 
 ## Diagrama entidade-relacionamento
 
-<p align="center"><img src="diagrams/database-er.png" alt="Diagrama entidade-relacionamento dos 13 modelos do schema Prisma: User, Customer, Address, Vehicle, WorkOrderStatusInfo, WorkOrder e seus itens de linha (WorkOrderService, WorkOrderPartSupply), StatusHistory, SagaInstance (tabela saga_instances), UserCustomer, PasswordResetCode e OutboxMessage (tabela outbox); com tipos reais do Postgres, chaves primárias, estrangeiras e únicas" width="100%"></p>
+<p align="center"><img src="diagrams/database-er.png" alt="Diagrama entidade-relacionamento dos 11 modelos em uso no schema Prisma: Customer, Address, Vehicle, WorkOrderStatusInfo, WorkOrder e seus itens de linha (WorkOrderService, WorkOrderPartSupply), StatusHistory, SagaInstance (tabela saga_instances), UserCustomer e OutboxMessage (tabela outbox); com tipos reais do Postgres, chaves primárias, estrangeiras e únicas; work_orders.assigned_user_id, status_history.changed_by_id e user_customers.user_id guardam o id de um usuário do Identity, sem chave estrangeira" width="100%"></p>
+
+O diagrama omite as duas tabelas legadas, `users` e `password_reset_codes`, que continuam no schema sem uso (ver [Tabelas legadas](#tabelas-legadas)). As colunas `work_orders.assigned_user_id`, `status_history.changed_by_id` e `user_customers.user_id` guardam o id de um usuário do Identity, o serviço da solução dono dos usuários, sem chave estrangeira.
 
 Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgres** (`VARCHAR(n)`, `TIMESTAMP(3)`, `DECIMAL(10,2)`, os enums nomeados, etc.), conferidos a partir das migrations — não os tipos abstratos do schema Prisma (`String`, `Int`, `DateTime`).
 
@@ -12,11 +14,15 @@ Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgr
 
 ### Identidade e acesso
 
-- **`users`** (`User`) — funcionários internos (`ADMIN`, `MECHANIC`, `ATTENDANT`) e também a conta-base de todo Cliente da Oficina que acessa via CPF (`role` nulo nesse caso — ver [ADR 0004](adr/0004-autenticacao-de-clientes.md)). `email` e `cpf` são únicos; `cpf` é opcional (só funcionários com acesso externo o possuem).
+Os usuários (funcionários e usuários de acesso dos clientes) são do Identity, o serviço da solução dono dos usuários e das credenciais, que os guarda no próprio banco. Este banco guarda só o id do usuário, sem chave estrangeira, em três colunas: `work_orders.assigned_user_id`, `status_history.changed_by_id` e `user_customers.user_id`. Nome, e-mail e papel são lidos no Identity a cada resposta que os mostra (ver [Chamadas internas](architecture.md#chamadas-internas)).
+
 - **`customers`** (`Customer`) — clientes da oficina (pessoa física ou jurídica, `type`). `document` (CPF/CNPJ) e `email` são únicos.
-- **`user_customers`** (`UserCustomer`) — vínculo N:N entre `users` e `customers` que autoriza o acesso externo por CPF: um `User` pode acessar os dados de um ou mais `Customer` (ex.: um contador que acessa vários clientes PJ). Chave primária composta `(user_id, customer_id)`.
+- **`user_customers`** (`UserCustomer`) — vínculo N:N entre um usuário do Identity e `customers` que autoriza o acesso externo por CPF: um usuário pode acessar os dados de um ou mais `Customer` (ex.: um contador que acessa vários clientes PJ). Chave primária composta `(user_id, customer_id)`; `user_id` não tem chave estrangeira, e `customer_id` é apagado em cascata com o cliente.
 - **`customer_addresses`** (`Address`) — endereço 1:1 de um `Customer`. Chave primária é o próprio `customer_id` (sem id/timestamps próprios); apagado em cascata com o cliente.
-- **`password_reset_codes`** (`PasswordResetCode`) — código de redefinição de senha em vigor por usuário (`user_id` como chave primária — no máximo um código ativo por vez), emitido por um Admin.
+
+### Tabelas legadas
+
+- **`users`** (`User`) e **`password_reset_codes`** (`PasswordResetCode`) — os usuários e os códigos de redefinição de senha de quando este serviço era o dono dos usuários. O código não lê nem grava mais nessas tabelas, o seed não as preenche e nenhuma outra tabela as referencia; elas ficam no schema até uma migration as remover, num deploy seguinte. Até lá, `email` e `cpf` continuam únicos em `users`, e `password_reset_codes` continua apagada em cascata com o usuário.
 
 ### Veículos
 
@@ -25,9 +31,9 @@ Os tipos de coluna mostrados no diagrama são os tipos **reais gerados no Postgr
 ### Ordem de Serviço (OS)
 
 - **`work_order_statuses`** (`WorkOrderStatusInfo`) — tabela de referência (lookup, populada pelo seed): associa cada `WorkOrderStatus` a uma `priority` numérica única, de 1 a 10, usada para ordenar a listagem de OS por status em ordem de negócio, não alfabética: `RECEIVED` 1, `IN_DIAGNOSIS` 2, `AWAITING_APPROVAL` 3, `REJECTED` 4, `APPROVED` 5, `AWAITING_PAYMENT` 6, `IN_PROGRESS` 7, `COMPLETED` 8, `DELIVERED` 9 e `CANCELLED` 10 (ver [Ciclo de vida da Ordem de Serviço](architecture.md#ciclo-de-vida-da-ordem-de-serviço)). A prioridade segue a posição no fluxo, e `AWAITING_PAYMENT` entrou entre `APPROVED` e `IN_PROGRESS` empurrando os seguintes uma posição, numa migration própria (`add_awaiting_payment_priority`): o PostgreSQL não usa um valor de enum na mesma transação que o cria, e o Prisma aplica cada arquivo de migration numa transação. Como o índice único de `priority` é conferido linha a linha, a renumeração passa por uma faixa livre (`+ 100` e depois `- 99`) antes de inserir o 6. O seed (`work-order-status-info.seed.ts`) grava os mesmos valores.
-- **`work_orders`** (`WorkOrder`) — a Ordem de Serviço, aggregate root do domínio. Referencia um `Customer`, um `Vehicle`, opcionalmente um `User` atribuído (mecânico), e seu `status` é FK para `work_order_statuses`. Concorrência otimista via `version`.
+- **`work_orders`** (`WorkOrder`) — a Ordem de Serviço, aggregate root do domínio. Referencia um `Customer` e um `Vehicle`, guarda opcionalmente o id do usuário atribuído (o mecânico, em `assigned_user_id`, sem chave estrangeira) e seu `status` é FK para `work_order_statuses`. Concorrência otimista via `version`.
 - **`work_order_services`** / **`work_order_part_supplies`** (`WorkOrderService` / `WorkOrderPartSupply`) — itens de linha da OS (serviços e peças/insumos aplicados), com chave primária composta `(work_order_id, service_id | part_supply_id)` em vez de surrogate key. Apagados em cascata com a OS. `service_id` e `part_supply_id` são referências simples, sem FK: o catálogo é do Inventory, e o item guarda só o id, a quantidade e o preço.
-- **`status_history`** (`StatusHistory`) — histórico de transições de status de uma OS, com o usuário que efetuou a mudança (`changed_by_id`, opcional). A confirmação da compensação da Saga de aprovação grava uma entrada que não muda o status (`AWAITING_APPROVAL → AWAITING_APPROVAL`, ou `CANCELLED → CANCELLED` quando a OS foi cancelada antes de a Saga começar), sem autor e com a nota do motivo. As entradas do bloqueio e da volta da Saga de cobrança também ficam sem autor, com a nota que identifica a cobrança e o desfecho.
+- **`status_history`** (`StatusHistory`) — histórico de transições de status de uma OS, com o id do usuário que efetuou a mudança (`changed_by_id`, opcional e sem chave estrangeira). A confirmação da compensação da Saga de aprovação grava uma entrada que não muda o status (`AWAITING_APPROVAL → AWAITING_APPROVAL`, ou `CANCELLED → CANCELLED` quando a OS foi cancelada antes de a Saga começar), sem autor e com a nota do motivo. As entradas do bloqueio e da volta da Saga de cobrança também ficam sem autor, com a nota que identifica a cobrança e o desfecho.
 
 ### Sagas
 
@@ -74,8 +80,8 @@ Sete enums:
 - **Timestamps**: `created_at` / `updated_at` em todas as entidades não-imutáveis (`Address` e `StatusHistory` guardam apenas `created_at`).
 - **Concorrência otimista**: coluna `version Int @default(1)` em `WorkOrder`.
 - **Cascade deletes** para itens dependentes (`WorkOrderService`, `WorkOrderPartSupply`, `StatusHistory`, `SagaInstance`, `Address`).
-- **Referências a outro serviço sem FK**: o id de um serviço ou peça do Inventory nos itens e o id do orçamento ou da cobrança do Billing em `saga_instances.correlation_id` ficam sem chave estrangeira, porque a linha está em outro banco.
-- **Unicidade**: `User.email`, `User.cpf`, `Customer.email`, `Customer.document`, `Vehicle.plate`, `WorkOrder.number`, `SagaInstance (type, correlation_id)`.
+- **Referências a outro serviço sem FK**: o id de um serviço ou peça do Inventory nos itens, o id do orçamento ou da cobrança do Billing em `saga_instances.correlation_id` e o id de um usuário do Identity na OS, no histórico e nos vínculos ficam sem chave estrangeira, porque a linha está em outro banco.
+- **Unicidade**: `Customer.email`, `Customer.document`, `Vehicle.plate`, `WorkOrder.number`, `SagaInstance (type, correlation_id)`.
 - **Identidades compostas**: `WorkOrderService` e `WorkOrderPartSupply` usam chave primária composta `(parentId, itemId)` em vez de surrogate key.
 - **Índices secundários** por colunas usadas em filtros (`status`, `customer_id`, `vehicle_id`, `assigned_user_id`, `part_supply_id`, `work_order_id`, etc.) e índice composto `(status, created_at)` em `work_orders` para listagens ordenadas.
 
@@ -105,4 +111,5 @@ descartáveis e uma URL própria. Detalhes e alternativas estão no
 - [ADR 0023 — Catálogo e estoque no Inventory, com reserva pela Saga de aprovação](adr/0023-catalogo-e-estoque-no-inventory-com-reserva-pela-saga.md)
 - [ADR 0024 — Saga de abertura com orçamento inicial no Billing](adr/0024-saga-de-abertura-com-orcamento-inicial-no-billing.md)
 - [ADR 0025 — Sagas orquestradas no work-order](adr/0025-sagas-orquestradas-no-work-order.md)
+- [ADR 0026 — Usuários lidos no Identity, sem réplica](adr/0026-usuarios-lidos-no-identity-sem-replica.md)
 - [`oficina-mecanica-infra-database-work-order` — ADRs de dados gerenciados (RDS e ElastiCache)](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/tree/main/docs/adr)

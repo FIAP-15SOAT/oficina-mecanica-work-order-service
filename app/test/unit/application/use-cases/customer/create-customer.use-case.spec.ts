@@ -1,6 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { CreateCustomerUseCase } from '@application/use-cases/customer/create-customer.use-case';
+import { CustomerAccessUserProvisioner } from '@application/services/customer-access-user-provisioner';
+import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { ResourceConflictException } from '@application/exceptions/resource-conflict.exception';
+import { ServiceRequestRejectedException } from '@application/exceptions/service-request-rejected.exception';
+import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { BusinessRuleViolationException } from '@domain/exceptions/business-rule-violation.exception';
 import { CustomerType } from '@domain/enums/customer-type.enum';
 import { IUnitOfWork, IRepositories } from '@domain/interfaces/repositories/unit-of-work.interface';
@@ -10,12 +14,14 @@ import { Email } from '@domain/value-objects/email.vo';
 import { Phone } from '@domain/value-objects/phone.vo';
 import { createMockUnitOfWorkWithRepos } from '../../../../helpers/unit-of-work-mock.factory';
 import { createMockCustomer } from '../../../../helpers/customer-mock.factory';
+import { createMockLogger } from '../../../../helpers/logger-mock.factory';
 
 describe('CreateCustomerUseCase', () => {
   let useCase: CreateCustomerUseCase;
   let unitOfWork: jest.Mocked<IUnitOfWork>;
   let repos: jest.Mocked<IRepositories>;
-  let grantCustomerAccessUseCase: { execute: jest.Mock };
+  let customerAccessUserProvisioner: jest.Mocked<CustomerAccessUserProvisioner>;
+  let logger: jest.Mocked<ILogger>;
 
   const validInput = {
     name: 'João da Silva',
@@ -27,17 +33,15 @@ describe('CreateCustomerUseCase', () => {
   };
 
   beforeEach(() => {
-    const mocks = createMockUnitOfWorkWithRepos();
-    unitOfWork = mocks.unitOfWork;
-    repos = mocks.repos;
-    grantCustomerAccessUseCase = {
-      execute: jest.fn().mockResolvedValue({
-        user: { id: randomUUID(), name: 'x', email: 'x@example.com', role: null, isActive: true },
-        customer: { id: randomUUID(), name: 'x', type: CustomerType.INDIVIDUAL, isActive: true },
-        initialPasswordSent: true,
-      }),
-    };
-    useCase = new CreateCustomerUseCase(unitOfWork, grantCustomerAccessUseCase as never);
+    ({ unitOfWork, repos } = createMockUnitOfWorkWithRepos());
+
+    customerAccessUserProvisioner = {
+      ensureUser: jest.fn(),
+    } as unknown as jest.Mocked<CustomerAccessUserProvisioner>;
+
+    logger = createMockLogger();
+
+    useCase = new CreateCustomerUseCase(unitOfWork, customerAccessUserProvisioner, logger);
   });
 
   it('should create customer when document and email are unique', async () => {
@@ -51,81 +55,80 @@ describe('CreateCustomerUseCase', () => {
       phone: Phone.create(validInput.phone),
     });
 
-    (repos.customer.findByDocument as jest.Mock).mockResolvedValue(null);
-    (repos.customer.findByEmail as jest.Mock).mockResolvedValue(null);
-    (repos.customer.create as jest.Mock).mockResolvedValue(saved);
+    jest.mocked(repos.customer.findByDocument).mockResolvedValue(null);
+    jest.mocked(repos.customer.findByEmail).mockResolvedValue(null);
+    jest.mocked(repos.customer.create).mockResolvedValue(saved);
 
-    const result = await useCase.execute(validInput, randomUUID());
+    const result = await useCase.execute({ ...validInput, createAccess: false }, randomUUID());
 
     expect(result).toEqual(saved);
     expect(repos.customer.findByDocument).toHaveBeenCalledWith(sanitizedDocument);
     expect(repos.customer.create).toHaveBeenCalledTimes(1);
   });
 
-  it('should throw ResourceConflictException if document already exists', async () => {
-    (repos.customer.findByDocument as jest.Mock).mockResolvedValue(createMockCustomer());
-    (repos.customer.findByEmail as jest.Mock).mockResolvedValue(null);
+  it.each([
+    ['document', { findByDocument: createMockCustomer(), findByEmail: null }],
+    ['email', { findByDocument: null, findByEmail: createMockCustomer() }],
+  ])(
+    'should answer 409 without calling the identity when the %s already exists',
+    async (_label, found) => {
+      jest.mocked(repos.customer.findByDocument).mockResolvedValue(found.findByDocument);
+      jest.mocked(repos.customer.findByEmail).mockResolvedValue(found.findByEmail);
 
-    await expect(useCase.execute(validInput, randomUUID())).rejects.toThrow(
-      ResourceConflictException,
+      await expect(useCase.execute(validInput, randomUUID())).rejects.toThrow(
+        ResourceConflictException,
+      );
+
+      expect(customerAccessUserProvisioner.ensureUser).not.toHaveBeenCalled();
+      expect(repos.customer.create).not.toHaveBeenCalled();
+    },
+  );
+
+  it('should ensure the access user outside the transaction that writes the customer and the link', async () => {
+    const actingUserId = randomUUID();
+    const userId = randomUUID();
+
+    jest.mocked(repos.customer.findByDocument).mockResolvedValue(null);
+    jest.mocked(repos.customer.findByEmail).mockResolvedValue(null);
+    jest
+      .mocked(repos.customer.create)
+      .mockImplementation((customer: Customer) => Promise.resolve(customer));
+    customerAccessUserProvisioner.ensureUser.mockResolvedValue({ userId, created: true });
+
+    const created = await useCase.execute(validInput, actingUserId);
+
+    expect(customerAccessUserProvisioner.ensureUser).toHaveBeenCalledWith(created);
+    expect(unitOfWork.executeTransaction).toHaveBeenCalledTimes(2);
+
+    expect(customerAccessUserProvisioner.ensureUser.mock.invocationCallOrder[0]).toBeLessThan(
+      unitOfWork.executeTransaction.mock.invocationCallOrder[1],
     );
-    expect(repos.customer.create).not.toHaveBeenCalled();
+
+    expect(repos.userCustomer.create).toHaveBeenCalledWith(
+      expect.objectContaining({ userId, customerId: created.id }),
+    );
+
+    expect(logger.event).toHaveBeenCalledWith(BUSINESS_EVENTS.CUSTOMER_ACCESS_GRANTED, {
+      subjectId: actingUserId,
+      targetUserId: userId,
+      customerId: created.id,
+      accessUserCreated: true,
+      initialPasswordSent: true,
+    });
   });
 
-  it('should throw ResourceConflictException if email already exists', async () => {
-    (repos.customer.findByDocument as jest.Mock).mockResolvedValue(null);
-    (repos.customer.findByEmail as jest.Mock).mockResolvedValue(createMockCustomer());
+  it('should skip the access user when createAccess is false', async () => {
+    jest.mocked(repos.customer.findByDocument).mockResolvedValue(null);
+    jest.mocked(repos.customer.findByEmail).mockResolvedValue(null);
+    jest
+      .mocked(repos.customer.create)
+      .mockImplementation((customer: Customer) => Promise.resolve(customer));
 
-    await expect(useCase.execute(validInput, randomUUID())).rejects.toThrow(
-      ResourceConflictException,
-    );
-    expect(repos.customer.create).not.toHaveBeenCalled();
-  });
+    await useCase.execute({ ...validInput, createAccess: false }, randomUUID());
 
-  it('should grant access within the same transaction when createAccess defaults true for INDIVIDUAL', async () => {
-    (repos.customer.findByDocument as jest.Mock).mockResolvedValue(null);
-    (repos.customer.findByEmail as jest.Mock).mockResolvedValue(null);
-    (repos.customer.create as jest.Mock).mockImplementation((c: Customer) => Promise.resolve(c));
-
-    const created = await useCase.execute(
-      {
-        name: 'João da Silva',
-        document: '12345678909',
-        type: CustomerType.INDIVIDUAL,
-        email: 'joao@example.com',
-        phone: '11999990000',
-        address: { street: 'Rua A', city: 'SP', state: 'SP', zipCode: '01001000' },
-      },
-      randomUUID(),
-    );
-
-    expect(grantCustomerAccessUseCase.execute).toHaveBeenCalledWith(
-      created.id,
-      expect.any(String),
-      undefined,
-      repos,
-    );
-  });
-
-  it('should skip GrantCustomerAccessUseCase when createAccess is false', async () => {
-    (repos.customer.findByDocument as jest.Mock).mockResolvedValue(null);
-    (repos.customer.findByEmail as jest.Mock).mockResolvedValue(null);
-    (repos.customer.create as jest.Mock).mockImplementation((c: Customer) => Promise.resolve(c));
-
-    await useCase.execute(
-      {
-        name: 'João da Silva',
-        document: '12345678909',
-        type: CustomerType.INDIVIDUAL,
-        email: 'joao@example.com',
-        phone: '11999990000',
-        address: { street: 'Rua A', city: 'SP', state: 'SP', zipCode: '01001000' },
-        createAccess: false,
-      },
-      randomUUID(),
-    );
-
-    expect(grantCustomerAccessUseCase.execute).not.toHaveBeenCalled();
+    expect(customerAccessUserProvisioner.ensureUser).not.toHaveBeenCalled();
+    expect(repos.userCustomer.create).not.toHaveBeenCalled();
+    expect(logger.event).not.toHaveBeenCalled();
   });
 
   it('should reject createAccess true combined with COMPANY', async () => {
@@ -143,31 +146,23 @@ describe('CreateCustomerUseCase', () => {
         randomUUID(),
       ),
     ).rejects.toThrow(BusinessRuleViolationException);
+
     expect(unitOfWork.executeTransaction).not.toHaveBeenCalled();
   });
 
-  it('should propagate a grant conflict out of the shared transaction', async () => {
-    (repos.customer.findByDocument as jest.Mock).mockResolvedValue(null);
-    (repos.customer.findByEmail as jest.Mock).mockResolvedValue(null);
-    (repos.customer.create as jest.Mock).mockImplementation((c: Customer) => Promise.resolve(c));
-    grantCustomerAccessUseCase.execute.mockRejectedValue(
-      new ResourceConflictException(
-        'O e-mail informado já pertence a outro usuário. Verifique o cadastro do cliente.',
-      ),
+  it('should let a refusal of the identity through without writing the customer', async () => {
+    const error = new ServiceRequestRejectedException(
+      409,
+      'O e-mail informado já pertence a outro usuário. Verifique o cadastro do cliente',
     );
 
-    await expect(
-      useCase.execute(
-        {
-          name: 'João da Silva',
-          document: '12345678909',
-          type: CustomerType.INDIVIDUAL,
-          email: 'joao@example.com',
-          phone: '11999990000',
-          address: { street: 'Rua A', city: 'SP', state: 'SP', zipCode: '01001000' },
-        },
-        randomUUID(),
-      ),
-    ).rejects.toThrow(ResourceConflictException);
+    jest.mocked(repos.customer.findByDocument).mockResolvedValue(null);
+    jest.mocked(repos.customer.findByEmail).mockResolvedValue(null);
+    customerAccessUserProvisioner.ensureUser.mockRejectedValue(error);
+
+    await expect(useCase.execute(validInput, randomUUID())).rejects.toBe(error);
+
+    expect(repos.customer.create).not.toHaveBeenCalled();
+    expect(repos.userCustomer.create).not.toHaveBeenCalled();
   });
 });

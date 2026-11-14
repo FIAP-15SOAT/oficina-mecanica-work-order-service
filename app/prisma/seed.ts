@@ -3,7 +3,6 @@ import 'dotenv/config';
 import { PrismaClient } from './generated/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
-import { seedUsers } from './seeds/user.seed';
 import { seedCustomers } from './seeds/customer.seed';
 import { seedVehicles } from './seeds/vehicle.seed';
 import { seedWorkOrders } from './seeds/work-order.seed';
@@ -17,7 +16,6 @@ async function main(): Promise<void> {
   console.log('🚀 Starting database seed...\n');
 
   await seedWorkOrderStatusInfos(prisma);
-  await seedUsers(prisma);
   const customerIds = await seedCustomers(prisma);
   await seedUserCustomers(prisma, customerIds);
   const vehicleIds = await seedVehicles(prisma, customerIds);

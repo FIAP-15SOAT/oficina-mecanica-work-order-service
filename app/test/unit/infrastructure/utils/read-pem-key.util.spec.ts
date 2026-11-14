@@ -12,26 +12,17 @@ describe('readPemKey', () => {
   it('should return the key with literal \\n turned into line breaks', () => {
     const singleLine = PUBLIC_PEM.replaceAll('\n', String.raw`\n`);
 
-    expect(readPemKey(configWith(singleLine), 'STAFF_JWT_PUBLIC_KEY', 'PUBLIC')).toBe(PUBLIC_PEM);
+    expect(readPemKey(configWith(singleLine), 'STAFF_JWT_PUBLIC_KEY')).toBe(PUBLIC_PEM);
   });
 
   it('should return a key that already has real line breaks unchanged', () => {
-    expect(readPemKey(configWith(PUBLIC_PEM), 'STAFF_JWT_PUBLIC_KEY', 'PUBLIC')).toBe(PUBLIC_PEM);
+    expect(readPemKey(configWith(PUBLIC_PEM), 'STAFF_JWT_PUBLIC_KEY')).toBe(PUBLIC_PEM);
   });
 
   it('should throw naming the variable when the public key is not PEM', () => {
-    expect(() => readPemKey(configWith('not-a-key'), 'CUSTOMER_JWT_PUBLIC_KEY', 'PUBLIC')).toThrow(
+    expect(() => readPemKey(configWith('not-a-key'), 'CUSTOMER_JWT_PUBLIC_KEY')).toThrow(
       'CUSTOMER_JWT_PUBLIC_KEY não é uma chave pública PEM válida ' +
         '(esperado um bloco "-----BEGIN PUBLIC KEY-----")',
-    );
-  });
-
-  it('should throw for a private key that is not PKCS#8 PEM', () => {
-    const pkcs1 = '-----BEGIN RSA PRIVATE KEY-----\nMIIE\n-----END RSA PRIVATE KEY-----';
-
-    expect(() => readPemKey(configWith(pkcs1), 'STAFF_JWT_PRIVATE_KEY', 'PRIVATE')).toThrow(
-      'STAFF_JWT_PRIVATE_KEY não é uma chave privada PEM válida ' +
-        '(esperado um bloco "-----BEGIN PRIVATE KEY-----")',
     );
   });
 });

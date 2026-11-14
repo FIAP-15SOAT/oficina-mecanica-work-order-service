@@ -1,5 +1,3 @@
-import { IChangeOwnPasswordUseCase } from '@application/ports/input/me/change-own-password.use-case.interface';
-import { IFindUserByIdUseCase } from '@application/ports/input/user/find-user-by-id.use-case.interface';
 import { IFindAllMyWorkOrdersUseCase } from '@application/ports/input/me/find-all-my-work-orders.use-case.interface';
 import { IFindMyWorkOrderByIdUseCase } from '@application/ports/input/me/find-my-work-order-by-id.use-case.interface';
 import { IFindMyWorkOrdersQuotesUseCase } from '@application/ports/input/me/find-my-work-orders-quotes.use-case.interface';
@@ -7,14 +5,11 @@ import { IFindMyQuoteByIdUseCase } from '@application/ports/input/me/find-my-quo
 import { IDecideMyQuoteUseCase } from '@application/ports/input/me/decide-my-quote.use-case.interface';
 import { IFindMyWorkOrderPaymentsUseCase } from '@application/ports/input/me/find-my-work-order-payments.use-case.interface';
 
-import { ChangeOwnPasswordDto } from '@application/ports/input/me/dto/change-own-password.dto';
 import { QuoteDecisionDto } from '@application/ports/input/me/dto/quote-decision.dto';
-import { AuthenticatedPrincipal } from '@application/auth/authenticated-principal';
 import { PaginationInput } from '@domain/interfaces/common/pagination.interface';
 
 import { MePresenter } from './me.presenter';
 import {
-  MeDataResponse,
   MyWorkOrderDataResponse,
   MyWorkOrderPaginatedResponse,
   MyQuoteDataResponse,
@@ -24,8 +19,6 @@ import {
 
 export class MeController {
   constructor(
-    private readonly changeOwnPasswordUseCase: IChangeOwnPasswordUseCase,
-    private readonly findUserByIdUseCase: IFindUserByIdUseCase,
     private readonly findAllMyWorkOrdersUseCase: IFindAllMyWorkOrdersUseCase,
     private readonly findMyWorkOrderByIdUseCase: IFindMyWorkOrderByIdUseCase,
     private readonly findMyWorkOrdersQuotesUseCase: IFindMyWorkOrdersQuotesUseCase,
@@ -33,15 +26,6 @@ export class MeController {
     private readonly decideMyQuoteUseCase: IDecideMyQuoteUseCase,
     private readonly findMyWorkOrderPaymentsUseCase: IFindMyWorkOrderPaymentsUseCase,
   ) {}
-
-  async changePassword(userId: string, input: ChangeOwnPasswordDto): Promise<void> {
-    await this.changeOwnPasswordUseCase.execute(userId, input);
-  }
-
-  async getMe(principal: AuthenticatedPrincipal): Promise<MeDataResponse> {
-    const result = await this.findUserByIdUseCase.execute(principal.sub);
-    return MePresenter.toMeDataResponse(result);
-  }
 
   async listWorkOrders(
     userId: string,

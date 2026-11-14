@@ -7,15 +7,17 @@ import { UpdateWorkOrderUseCase } from '@application/use-cases/work-order/update
 import { UpdateWorkOrderStatusUseCase } from '@application/use-cases/work-order/update-work-order-status.use-case';
 import { UpdateWorkOrderServiceStatusUseCase } from '@application/use-cases/work-order/update-work-order-service-status.use-case';
 import { FindWorkOrderStatusHistoryUseCase } from '@application/use-cases/work-order/find-work-order-status-history.use-case';
+import { FindUsersByIdsUseCase } from '@application/use-cases/identity/find-users-by-ids.use-case';
+import { IIdentityUsersGateway } from '@application/ports/output/gateways/identity/identity-users-gateway.interface';
 import { FindCatalogItemsUseCase } from '@application/use-cases/catalog/find-catalog-items.use-case';
 import { IInventoryCatalogGateway } from '@application/ports/output/gateways/inventory/inventory-catalog-gateway.interface';
 import { IBillingQuotesGateway } from '@application/ports/output/gateways/billing/billing-quotes-gateway.interface';
 import { IBillingPaymentsGateway } from '@application/ports/output/gateways/billing/billing-payments-gateway.interface';
+import { MechanicAssignmentPolicy } from '@application/policies/mechanic-assignment.policy';
 
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
 import { ICustomerRepository } from '@domain/interfaces/repositories/customer.repository.interface';
 import { IVehicleRepository } from '@domain/interfaces/repositories/vehicle.repository.interface';
-import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IStatusHistoryRepository } from '@domain/interfaces/repositories/status-history.repository.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
@@ -33,7 +35,6 @@ import { WorkOrderController } from './work-order.controller';
       useFactory: (
         unitOfWork: IUnitOfWork,
         workOrderRepository: IWorkOrderRepository,
-        userRepository: IUserRepository,
         statusHistoryRepository: IStatusHistoryRepository,
         logger: ILogger,
         metrics: IMetrics,
@@ -43,20 +44,23 @@ import { WorkOrderController } from './work-order.controller';
         vehicleRepository: IVehicleRepository,
         billingQuotesGateway: IBillingQuotesGateway,
         billingPaymentsGateway: IBillingPaymentsGateway,
-      ) =>
-        new WorkOrderCleanController(
+        identityUsersGateway: IIdentityUsersGateway,
+      ) => {
+        const mechanicAssignmentPolicy = new MechanicAssignmentPolicy(identityUsersGateway);
+
+        return new WorkOrderCleanController(
           new CreateWorkOrderUseCase(
             unitOfWork,
             customerRepository,
             vehicleRepository,
-            userRepository,
+            mechanicAssignmentPolicy,
             billingQuotesGateway,
             logger.forContext(CreateWorkOrderUseCase.name),
             metrics,
           ),
-          new FindWorkOrderByIdUseCase(workOrderRepository, userRepository, cache),
+          new FindWorkOrderByIdUseCase(workOrderRepository, cache),
           new FindAllWorkOrdersPaginatedUseCase(workOrderRepository),
-          new UpdateWorkOrderUseCase(workOrderRepository, userRepository, cache),
+          new UpdateWorkOrderUseCase(workOrderRepository, mechanicAssignmentPolicy, cache),
           new UpdateWorkOrderStatusUseCase(
             unitOfWork,
             logger.forContext(UpdateWorkOrderStatusUseCase.name),
@@ -75,11 +79,12 @@ import { WorkOrderController } from './work-order.controller';
           ),
           new FindWorkOrderStatusHistoryUseCase(statusHistoryRepository, workOrderRepository),
           new FindCatalogItemsUseCase(inventoryCatalogGateway),
-        ),
+          new FindUsersByIdsUseCase(identityUsersGateway),
+        );
+      },
       inject: [
         'IUnitOfWork',
         'IWorkOrderRepository',
-        'IUserRepository',
         'IStatusHistoryRepository',
         'ILogger',
         'IMetrics',
@@ -89,6 +94,7 @@ import { WorkOrderController } from './work-order.controller';
         'IVehicleRepository',
         'IBillingQuotesGateway',
         'IBillingPaymentsGateway',
+        'IIdentityUsersGateway',
       ],
     },
   ],

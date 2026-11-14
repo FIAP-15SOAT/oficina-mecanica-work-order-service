@@ -27,13 +27,11 @@ import { paginate } from '@infrastructure/persistence/prisma/helpers/prisma-pagi
 const WORK_ORDER_LIST_INCLUDE = {
   customer: true,
   vehicle: true,
-  assignedUser: true,
 } as const;
 
 const WORK_ORDER_DETAIL_INCLUDE = {
   customer: true,
   vehicle: true,
-  assignedUser: true,
   services: true,
   partSupplies: true,
 } as const;

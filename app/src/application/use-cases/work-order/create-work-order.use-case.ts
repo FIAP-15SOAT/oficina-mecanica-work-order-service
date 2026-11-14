@@ -4,18 +4,17 @@ import { WorkOrder } from '@domain/entities/work-order.entity';
 import { StatusHistory } from '@domain/entities/status-history.entity';
 import { Customer } from '@domain/entities/customer.entity';
 import { Vehicle } from '@domain/entities/vehicle.entity';
-import { User } from '@domain/entities/user.entity';
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 
 import { IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 import { ICustomerRepository } from '@domain/interfaces/repositories/customer.repository.interface';
 import { IVehicleRepository } from '@domain/interfaces/repositories/vehicle.repository.interface';
-import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IBillingQuotesGateway } from '@application/ports/output/gateways/billing/billing-quotes-gateway.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { BUSINESS_METRICS } from '@application/metrics/business-metric.catalog';
+import { MechanicAssignmentPolicy } from '@application/policies/mechanic-assignment.policy';
 import { CreateWorkOrderDto } from '@application/ports/input/work-order/dto/create-work-order.dto';
 
 import { ResourceNotFoundException } from '@application/exceptions/resource-not-found.exception';
@@ -24,7 +23,6 @@ import { BusinessRuleViolationException } from '@domain/exceptions/business-rule
 interface WorkOrderParticipants {
   customer: Customer;
   vehicle: Vehicle;
-  assignedUser: User | null;
 }
 
 export class CreateWorkOrderUseCase {
@@ -32,7 +30,7 @@ export class CreateWorkOrderUseCase {
     private readonly unitOfWork: IUnitOfWork,
     private readonly customerRepository: ICustomerRepository,
     private readonly vehicleRepository: IVehicleRepository,
-    private readonly userRepository: IUserRepository,
+    private readonly mechanicAssignmentPolicy: MechanicAssignmentPolicy,
     private readonly billingQuotesGateway: IBillingQuotesGateway,
     private readonly logger: ILogger,
     private readonly metrics: IMetrics,
@@ -57,7 +55,7 @@ export class CreateWorkOrderUseCase {
     let workOrder: WorkOrder;
 
     try {
-      workOrder = await this.openWorkOrder(workOrderId, dto, participants.assignedUser);
+      workOrder = await this.openWorkOrder(workOrderId, dto);
     } catch (error) {
       if (initialQuote) {
         await this.deleteInitialQuote(initialQuote.id, workOrderId);
@@ -68,7 +66,6 @@ export class CreateWorkOrderUseCase {
 
     workOrder.customer = participants.customer;
     workOrder.vehicle = participants.vehicle;
-    workOrder.assignedUser = participants.assignedUser;
 
     this.metrics.increment(BUSINESS_METRICS.WORK_ORDER_CREATED, {});
 
@@ -100,26 +97,14 @@ export class CreateWorkOrderUseCase {
       );
     }
 
-    let assignedUser: User | null = null;
-
     if (dto.assignedUserId) {
-      assignedUser = await this.userRepository.findById(dto.assignedUserId);
-
-      if (!assignedUser) {
-        throw new ResourceNotFoundException('Usuário', dto.assignedUserId);
-      }
-
-      WorkOrder.validateAssignedUser(assignedUser);
+      await this.mechanicAssignmentPolicy.ensureAssignable(dto.assignedUserId);
     }
 
-    return { customer, vehicle, assignedUser };
+    return { customer, vehicle };
   }
 
-  private openWorkOrder(
-    id: string,
-    dto: CreateWorkOrderDto,
-    assignedUser: User | null,
-  ): Promise<WorkOrder> {
+  private openWorkOrder(id: string, dto: CreateWorkOrderDto): Promise<WorkOrder> {
     return this.unitOfWork.executeTransaction(async (repos) => {
       const number = await repos.workOrder.generateNextNumber();
 
@@ -128,7 +113,7 @@ export class CreateWorkOrderUseCase {
           id,
           customerId: dto.customerId,
           vehicleId: dto.vehicleId,
-          assignedUser,
+          assignedUserId: dto.assignedUserId,
           problemDescription: dto.problemDescription,
           internalNotes: dto.internalNotes,
           mileageAtService: dto.mileageAtService,

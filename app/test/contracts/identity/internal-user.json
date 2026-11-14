@@ -1,0 +1,10 @@
+{
+  "$source": "oficina-mecanica-identity-service app/test/contracts/internal-user.json",
+  "data": {
+    "id": "5b0d7e2a-3c41-4f6b-8a19-7d2e9c1b4a30",
+    "name": "Carlos Mecânico",
+    "email": "carlos.mecanico@example.com",
+    "role": "MECHANIC",
+    "isActive": true
+  }
+}

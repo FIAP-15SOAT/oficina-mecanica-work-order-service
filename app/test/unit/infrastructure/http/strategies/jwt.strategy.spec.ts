@@ -1,18 +1,12 @@
 import { ConfigService } from '@nestjs/config';
 import { UnauthorizedException } from '@nestjs/common';
-import { generateKeyPairSync } from 'node:crypto';
-import { JwtHeader, sign } from 'jsonwebtoken';
+import { generateKeyPairSync, randomUUID } from 'node:crypto';
+import { sign } from 'jsonwebtoken';
 
 import { JwtStrategy } from '@infrastructure/http/strategies/jwt.strategy';
 
-import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { UserRole } from '@domain/enums/user-role.enum';
-import { User } from '@domain/entities/user.entity';
-
-import { TokenPayload } from '@application/ports/output/services/token.service.interface';
 import { AuthFlow } from '@domain/enums/auth-flow.enum';
-import { createMockUser, createMockUserRepository } from '../../../../helpers/user-mock.factory';
-import { Email } from '@domain/value-objects/email.vo';
 import {
   STAFF_JWT_TEST_AUDIENCE,
   STAFF_JWT_TEST_ISSUER,
@@ -30,19 +24,20 @@ const CONFIG: Record<string, string> = {
   STAFF_JWT_AUDIENCE: STAFF_JWT_TEST_AUDIENCE,
 };
 
-function asStaffJwt(
-  payload: TokenPayload,
-  header: JwtHeader = { alg: 'RS256', kid: STAFF_JWT_TEST_KEY_ID },
-) {
-  return {
-    header,
-    payload: { typ: 'access' as const, exp: Math.floor(Date.now() / 1000) + 600, ...payload },
-  };
-}
+const CLAIMS = { sub: randomUUID(), email: 'john@example.com', role: UserRole.ADMIN };
+
+const INVALID_TOKEN = { error: new UnauthorizedException('Token inválido') };
+
+type Outcome = { success: unknown } | { fail: unknown } | { error: unknown };
+
+const otherPrivateKey = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+}).privateKey;
 
 describe('JwtStrategy', () => {
   let strategy: JwtStrategy;
-  let userRepository: jest.Mocked<IUserRepository>;
   let configService: jest.Mocked<ConfigService>;
 
   beforeEach(() => {
@@ -50,356 +45,111 @@ describe('JwtStrategy', () => {
       getOrThrow: jest.fn((key: string) => CONFIG[key]),
     } as unknown as jest.Mocked<ConfigService>;
 
-    userRepository = createMockUserRepository();
-
-    strategy = new JwtStrategy(configService, userRepository);
+    strategy = new JwtStrategy(configService);
   });
 
-  it('should validate and return token payload for active user', async () => {
-    const mockUser = createMockUser({
-      id: 'user-uuid-123',
-      email: Email.create('john@example.com'),
-      role: UserRole.ADMIN,
-      isActive: true,
-    });
-
-    userRepository.findById.mockResolvedValue(mockUser);
-
-    const payload: TokenPayload = {
-      name: 'Test User',
-      sub: mockUser.id,
-      email: mockUser.email.value,
-      role: mockUser.role,
-      iat: Math.floor(Date.now() / 1000),
-    };
-
-    const result = await strategy.validate(asStaffJwt(payload));
-
-    expect(result).toEqual({
-      sub: mockUser.id,
-      authFlow: AuthFlow.INTERNAL,
-      email: mockUser.email.value,
-      role: mockUser.role,
-    });
-    expect(userRepository.findById).toHaveBeenCalledWith(mockUser.id);
-  });
-
-  it('should tag the returned principal with authFlow INTERNAL', async () => {
-    const user = User.create({
-      name: 'Ana',
-      email: 'ana@example.com',
-      passwordHash: 'hash',
-      role: UserRole.ADMIN,
-    });
-    userRepository.findById.mockResolvedValue(user);
-
-    const result = await strategy.validate(
-      asStaffJwt({
-        sub: user.id,
-        email: user.email.value,
-        name: user.name,
-        role: user.role!,
-        iat: Math.ceil(Date.now() / 1000) + 1,
-      }),
-    );
-
-    expect(result).toEqual({
-      sub: user.id,
-      authFlow: AuthFlow.INTERNAL,
-      email: user.email.value,
-      role: UserRole.ADMIN,
-    });
-  });
-
-  it('should throw UnauthorizedException when user does not exist', async () => {
-    userRepository.findById.mockResolvedValue(null);
-
-    const payload: TokenPayload = {
-      name: 'Test User',
-      sub: 'non-existent-user',
-      email: 'nonexistent@example.com',
-      role: UserRole.MECHANIC,
-    };
-
-    await expect(strategy.validate(asStaffJwt(payload))).rejects.toThrow(UnauthorizedException);
-    await expect(strategy.validate(asStaffJwt(payload))).rejects.toThrow(
-      'Usuário inválido ou desativado',
-    );
-  });
-
-  it('should throw UnauthorizedException when user is inactive', async () => {
-    const mockUser = createMockUser({
-      id: 'user-uuid-456',
-      email: Email.create('jane@example.com'),
-      role: UserRole.ATTENDANT,
-      isActive: false,
-    });
-
-    userRepository.findById.mockResolvedValue(mockUser);
-
-    const payload: TokenPayload = {
-      name: 'Test User',
-      sub: mockUser.id,
-      email: mockUser.email.value,
-      role: mockUser.role,
-    };
-
-    await expect(strategy.validate(asStaffJwt(payload))).rejects.toThrow(UnauthorizedException);
-    await expect(strategy.validate(asStaffJwt(payload))).rejects.toThrow(
-      'Usuário inválido ou desativado',
-    );
-  });
-
-  it('should throw UnauthorizedException when the user has no internal role (external-only account)', async () => {
-    const mockUser = createMockUser({
-      id: 'user-uuid-external',
-      email: Email.create('external@example.com'),
-      role: null,
-      isActive: true,
-    });
-
-    userRepository.findById.mockResolvedValue(mockUser);
-
-    const payload: TokenPayload = {
-      name: 'Test User',
-      sub: mockUser.id,
-      email: mockUser.email.value,
-      role: null,
-    };
-
-    await expect(strategy.validate(asStaffJwt(payload))).rejects.toThrow(UnauthorizedException);
-    await expect(strategy.validate(asStaffJwt(payload))).rejects.toThrow(
-      'Usuário inválido ou desativado',
-    );
-  });
-
-  it('should reject a token issued before the last password change', async () => {
-    const passwordChangedAt = new Date();
-    const mockUser = createMockUser({
-      id: 'user-uuid-password-changed',
-      email: Email.create('changed@example.com'),
-      role: UserRole.ADMIN,
-      isActive: true,
-      passwordChangedAt,
-    });
-
-    userRepository.findById.mockResolvedValue(mockUser);
-
-    const payload: TokenPayload = {
-      name: 'Test User',
-      sub: mockUser.id,
-      email: mockUser.email.value,
-      role: mockUser.role,
-      iat: Math.floor((passwordChangedAt.getTime() - 60_000) / 1000),
-    };
-
-    await expect(strategy.validate(asStaffJwt(payload))).rejects.toThrow(UnauthorizedException);
-    await expect(strategy.validate(asStaffJwt(payload))).rejects.toThrow(
-      'Sessão expirada. Autentique-se novamente.',
-    );
-  });
-
-  it('should accept a token issued after the last password change', async () => {
-    const passwordChangedAt = new Date();
-    const mockUser = createMockUser({
-      id: 'user-uuid-password-changed-ok',
-      email: Email.create('changed-ok@example.com'),
-      role: UserRole.ADMIN,
-      isActive: true,
-      passwordChangedAt,
-    });
-
-    userRepository.findById.mockResolvedValue(mockUser);
-
-    const payload: TokenPayload = {
-      name: 'Test User',
-      sub: mockUser.id,
-      email: mockUser.email.value,
-      role: mockUser.role,
-      iat: Math.ceil((passwordChangedAt.getTime() + 60_000) / 1000),
-    };
-
-    const result = await strategy.validate(asStaffJwt(payload));
-
-    expect(result.sub).toBe(mockUser.id);
-  });
-
-  it('should reject a token with no iat claim', async () => {
-    const mockUser = createMockUser({
-      id: 'user-uuid-no-iat',
-      email: Email.create('no-iat@example.com'),
-      role: UserRole.ADMIN,
-      isActive: true,
-    });
-
-    userRepository.findById.mockResolvedValue(mockUser);
-
-    const payload: TokenPayload = {
-      name: 'Test User',
-      sub: mockUser.id,
-      email: mockUser.email.value,
-      role: mockUser.role,
-    };
-
-    await expect(strategy.validate(asStaffJwt(payload))).rejects.toThrow(UnauthorizedException);
-  });
-
-  it('should return payload with user data from database', async () => {
-    const mockUser = createMockUser({
-      id: 'user-uuid-789',
-      email: Email.create('bob@example.com'),
-      role: UserRole.MECHANIC,
-      isActive: true,
-    });
-
-    userRepository.findById.mockResolvedValue(mockUser);
-
-    const payload: TokenPayload = {
-      name: 'Test User',
-      sub: mockUser.id,
-      email: 'old@example.com', // Different email in token
-      role: UserRole.ADMIN, // Different role in token
-      iat: Math.floor(Date.now() / 1000),
-    };
-
-    const result = await strategy.validate(asStaffJwt(payload));
-
-    // Should return data from database, not from token
-    expect(result.authFlow).toBe(AuthFlow.INTERNAL);
-    expect(result.email).toBe(mockUser.email.value);
-    if (result.authFlow === AuthFlow.INTERNAL) {
-      expect(result.role).toBe(mockUser.role);
-    }
-    expect(result.sub).toBe(mockUser.id);
-  });
-
-  describe('token header and type', () => {
-    const payload: TokenPayload = {
-      sub: 'user-uuid-123',
-      email: 'john@example.com',
-      name: 'John',
-      role: UserRole.ADMIN,
-      iat: Math.floor(Date.now() / 1000),
-    };
-
-    it('should reject a token whose kid differs from the configured one', async () => {
-      await expect(
-        strategy.validate(asStaffJwt(payload, { alg: 'RS256', kid: 'other-kid' })),
-      ).rejects.toThrow(new UnauthorizedException('Token inválido'));
-      expect(userRepository.findById).not.toHaveBeenCalled();
-    });
-
-    it('should reject a token without kid', async () => {
-      await expect(strategy.validate(asStaffJwt(payload, { alg: 'RS256' }))).rejects.toThrow(
-        new UnauthorizedException('Token inválido'),
-      );
-    });
-
-    it('should reject a token whose typ is not access', async () => {
-      await expect(strategy.validate(asStaffJwt({ ...payload, typ: 'refresh' }))).rejects.toThrow(
-        new UnauthorizedException('Token inválido'),
-      );
-    });
-  });
-
-  describe('authenticate', () => {
-    type Outcome = { success: unknown } | { fail: unknown } | { error: unknown };
-
-    const claims = { sub: 'user-uuid-123', email: 'john@example.com', name: 'John', role: 'ADMIN' };
-
-    function authenticate(token: string): Promise<Outcome> {
-      return new Promise((resolve) => {
-        Object.assign(strategy, {
-          success: (user: unknown) => resolve({ success: user }),
-          fail: (info: unknown) => resolve({ fail: info }),
-          error: (error: unknown) => resolve({ error }),
-        });
-        strategy.authenticate({ headers: { authorization: `Bearer ${token}` } } as never);
+  /** Runs the full passport-jwt flow: signature, alg, iss, aud and exp, then validate(). */
+  function authenticate(token: string): Promise<Outcome> {
+    return new Promise((resolve) => {
+      Object.assign(strategy, {
+        success: (user: unknown) => resolve({ success: user }),
+        fail: (info: unknown) => resolve({ fail: info }),
+        error: (error: unknown) => resolve({ error }),
       });
-    }
+      strategy.authenticate({ headers: { authorization: `Bearer ${token}` } } as never);
+    });
+  }
 
+  it('should build the principal from the claims without reading any user', async () => {
+    const outcome = await authenticate(signTestStaffToken({ ...CLAIMS, role: UserRole.MECHANIC }));
+
+    expect(outcome).toEqual({
+      success: {
+        sub: CLAIMS.sub,
+        authFlow: AuthFlow.INTERNAL,
+        email: CLAIMS.email,
+        role: UserRole.MECHANIC,
+      },
+    });
+  });
+
+  describe('with a custom issuer and audience', () => {
     beforeEach(() => {
-      userRepository.findById.mockResolvedValue(
-        createMockUser({
-          id: claims.sub,
-          email: Email.create(claims.email),
-          role: UserRole.ADMIN,
-          isActive: true,
-          passwordChangedAt: new Date(Date.now() - 60_000),
-        }),
-      );
-    });
-
-    it('should authenticate a valid access token', async () => {
-      await expect(authenticate(signTestStaffToken(claims))).resolves.toEqual({
-        success: {
-          sub: claims.sub,
-          authFlow: AuthFlow.INTERNAL,
-          email: claims.email,
-          role: UserRole.ADMIN,
-        },
-      });
-    });
-
-    it('should authenticate with the configured issuer and audience', async () => {
       const custom: Record<string, string> = {
         ...CONFIG,
         STAFF_JWT_ISSUER: 'custom-issuer',
         STAFF_JWT_AUDIENCE: 'custom-audience',
       };
-      strategy = new JwtStrategy(
-        { getOrThrow: jest.fn((key: string) => custom[key]) } as unknown as ConfigService,
-        userRepository,
-      );
-      const token = signTestStaffToken(claims, {
+
+      strategy = new JwtStrategy({
+        getOrThrow: jest.fn((key: string) => custom[key]),
+      } as unknown as ConfigService);
+    });
+
+    it('should authenticate a token with the configured issuer and audience', async () => {
+      const token = signTestStaffToken(CLAIMS, {
         issuer: 'custom-issuer',
         audience: 'custom-audience',
       });
 
-      await expect(authenticate(token)).resolves.toHaveProperty('success');
-      await expect(authenticate(signTestStaffToken(claims))).resolves.toHaveProperty('fail');
+      const outcome = await authenticate(token);
+
+      expect(outcome).toHaveProperty('success');
     });
 
-    const otherKey = generateKeyPairSync('rsa', {
-      modulusLength: 2048,
-      privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
-      publicKeyEncoding: { type: 'spki', format: 'pem' },
-    }).privateKey;
+    it('should fail a token with the default issuer and audience', async () => {
+      const outcome = await authenticate(signTestStaffToken(CLAIMS));
 
-    it.each([
-      ['HS256', () => sign({ ...claims, typ: 'access' }, 'secret', { algorithm: 'HS256' })],
-      [
-        'unsigned (alg none)',
-        () => sign({ ...claims, typ: 'access' }, null as never, { algorithm: 'none' }),
-      ],
-      ['signed by another RS256 key', () => signTestStaffToken(claims, {}, otherKey)],
-      ['with another issuer', () => signTestStaffToken(claims, { issuer: 'other' })],
-      ['with another audience', () => signTestStaffToken(claims, { audience: 'oficina-api' })],
-      ['refresh sent as access', () => signTestRefreshToken(claims)],
-      ['expired', () => signTestStaffToken(claims, { expiresIn: -10 })],
-    ])('should fail a token %s', async (_case, token) => {
-      await expect(authenticate(token())).resolves.toHaveProperty('fail');
-      expect(userRepository.findById).not.toHaveBeenCalled();
+      expect(outcome).toHaveProperty('fail');
     });
+  });
 
-    it('should error with 401 a token without exp', async () => {
-      const token = sign({ ...claims, typ: 'access' }, STAFF_JWT_TEST_PRIVATE_KEY, {
-        algorithm: 'RS256',
-        keyid: STAFF_JWT_TEST_KEY_ID,
-        issuer: 'oficina-identity',
-        audience: 'oficina-services',
-      });
+  it.each([
+    ['HS256', () => sign({ ...CLAIMS, typ: 'access' }, 'secret', { algorithm: 'HS256' })],
+    [
+      'unsigned (alg none)',
+      () => sign({ ...CLAIMS, typ: 'access' }, null as never, { algorithm: 'none' }),
+    ],
+    ['signed by another RS256 key', () => signTestStaffToken(CLAIMS, {}, otherPrivateKey)],
+    ['with another issuer', () => signTestStaffToken(CLAIMS, { issuer: 'other' })],
+    ['with another audience', () => signTestStaffToken(CLAIMS, { audience: 'oficina-api' })],
+    ['refresh sent as access', () => signTestRefreshToken(CLAIMS)],
+    ['expired', () => signTestStaffToken(CLAIMS, { expiresIn: -10 })],
+  ])('should fail a token %s', async (_case, token) => {
+    await expect(authenticate(token())).resolves.toHaveProperty('fail');
+  });
 
-      await expect(authenticate(token)).resolves.toEqual({
-        error: new UnauthorizedException('Token inválido'),
-      });
-      expect(userRepository.findById).not.toHaveBeenCalled();
-    });
-
-    it('should error with 401 a token whose kid differs from the configured one', async () => {
-      const outcome = await authenticate(signTestStaffToken(claims, { keyid: 'other-kid' }));
-
-      expect(outcome).toEqual({ error: new UnauthorizedException('Token inválido') });
-    });
+  it.each([
+    ['a different kid', () => signTestStaffToken(CLAIMS, { keyid: 'other-kid' })],
+    [
+      'no kid',
+      () =>
+        sign({ ...CLAIMS, typ: 'access' }, STAFF_JWT_TEST_PRIVATE_KEY, {
+          algorithm: 'RS256',
+          issuer: STAFF_JWT_TEST_ISSUER,
+          audience: STAFF_JWT_TEST_AUDIENCE,
+          expiresIn: 600,
+        }),
+    ],
+    ['typ refresh', () => signTestStaffToken({ ...CLAIMS, typ: 'refresh' })],
+    [
+      'no exp',
+      () =>
+        sign({ ...CLAIMS, typ: 'access' }, STAFF_JWT_TEST_PRIVATE_KEY, {
+          algorithm: 'RS256',
+          keyid: STAFF_JWT_TEST_KEY_ID,
+          issuer: STAFF_JWT_TEST_ISSUER,
+          audience: STAFF_JWT_TEST_AUDIENCE,
+        }),
+    ],
+    ['a role outside UserRole', () => signTestStaffToken({ ...CLAIMS, role: 'CUSTOMER' })],
+    ['no role', () => signTestStaffToken({ sub: CLAIMS.sub, email: CLAIMS.email })],
+    ['no sub', () => signTestStaffToken({ email: CLAIMS.email, role: CLAIMS.role })],
+    ['an empty sub', () => signTestStaffToken({ ...CLAIMS, sub: '' })],
+    ['a numeric sub', () => signTestStaffToken({ ...CLAIMS, sub: 42 })],
+    ['a sub that is not a UUID', () => signTestStaffToken({ ...CLAIMS, sub: 'user-uuid-123' })],
+    ['a non-string email', () => signTestStaffToken({ ...CLAIMS, email: 42 })],
+  ])('should answer 401 to a token with %s', async (_case, token) => {
+    await expect(authenticate(token())).resolves.toEqual(INVALID_TOKEN);
   });
 });

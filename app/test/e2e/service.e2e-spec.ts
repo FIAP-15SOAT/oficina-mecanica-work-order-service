@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'http';
 import request from 'supertest';
+import { UserRole } from '@domain/enums/user-role.enum';
 import { TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
-import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
+import { staffAuthHeader } from '../helpers/auth.helper';
 import {
   InternalServicesStub,
   startInternalServicesStub,
@@ -14,7 +15,7 @@ describe('Service (E2E)', () => {
   let ctx: TestContext;
   let stub: InternalServicesStub;
   let httpServer: Server;
-  let adminAuth: AuthTokens;
+  let adminAuth: string;
 
   beforeAll(async () => {
     stub = await startInternalServicesStub();
@@ -29,15 +30,7 @@ describe('Service (E2E)', () => {
 
   beforeEach(async () => {
     await cleanDatabase(ctx.prisma);
-    adminAuth = await registerAndLogin(
-      httpServer,
-      {
-        name: 'Admin E2E',
-        email: 'admin@e2e.test',
-        role: 'ADMIN',
-      },
-      ctx.prisma,
-    );
+    adminAuth = staffAuthHeader();
   });
 
   describe('Service Metrics', () => {
@@ -107,11 +100,11 @@ describe('Service (E2E)', () => {
 
       const firstPage = await request(httpServer)
         .get('/api/services-metrics')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .expect(200);
       const secondPage = await request(httpServer)
         .get('/api/services-metrics?page=2&limit=1')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .expect(200);
 
       expect(firstPage.body).toEqual({
@@ -156,7 +149,7 @@ describe('Service (E2E)', () => {
 
       const res = await request(httpServer)
         .get('/api/services-metrics')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .expect(200);
 
       expect(res.body.data).toEqual([
@@ -184,7 +177,7 @@ describe('Service (E2E)', () => {
 
       const res = await request(httpServer)
         .get(`/api/services/${alignment.id}/metrics`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .expect(200);
 
       expect(res.body.data).toEqual({
@@ -204,7 +197,7 @@ describe('Service (E2E)', () => {
 
       const res = await request(httpServer)
         .get(`/api/services/${alignment.id}/metrics`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .expect(200);
 
       expect(res.body.data).toEqual({
@@ -218,14 +211,14 @@ describe('Service (E2E)', () => {
     it('should answer 404 when the Inventory does not know the service', async () => {
       await request(httpServer)
         .get(`/api/services/${randomUUID()}/metrics`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .expect(404);
     });
 
     it('should use default pagination (page=1, limit=10) for metrics when not provided', async () => {
       const res = await request(httpServer)
         .get('/api/services-metrics')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .expect(200);
 
       expect(res.body).toEqual({
@@ -235,19 +228,11 @@ describe('Service (E2E)', () => {
     });
 
     it('should return 403 for metrics when user is not ADMIN', async () => {
-      const mechanicAuth = await registerAndLogin(
-        httpServer,
-        {
-          name: 'Mecânico Teste',
-          email: 'mechanic-metrics@test.com',
-          role: 'MECHANIC',
-        },
-        ctx.prisma,
-      );
+      const mechanicAuth = staffAuthHeader({ role: UserRole.MECHANIC });
 
       await request(httpServer)
         .get('/api/services-metrics')
-        .set('Authorization', `Bearer ${mechanicAuth.accessToken}`)
+        .set('Authorization', mechanicAuth)
         .expect(403);
     });
   });

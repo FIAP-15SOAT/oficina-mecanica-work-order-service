@@ -6,6 +6,8 @@ Aceito — 2026-08-28
 
 Supera parcialmente o [ADR 0002](0002-logging-estruturado.md) na parte de supressão de ruído das probes.
 
+Emendado pelo [ADR 0026](0026-usuarios-lidos-no-identity-sem-replica.md): o envio de e-mail citado abaixo como operação sem prazo no caminho de requisição saiu deste serviço; o e-mail passou a ser uma mensagem gravada no outbox e enviada pela função de notificação.
+
 ## Contexto
 
 As probes do Kubernetes apontavam para `/api/docs` — a UI do Swagger — porque essa era, na época, a rota pública que retornava `200` sem autenticação. Isso tinha três consequências, e todas pioram com o tempo.

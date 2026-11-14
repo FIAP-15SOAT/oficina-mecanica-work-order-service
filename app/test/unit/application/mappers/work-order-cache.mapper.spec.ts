@@ -12,7 +12,6 @@ import { Address } from '@domain/value-objects/address.vo';
 import { Document } from '@domain/value-objects/document.vo';
 
 import { createMockCustomer } from '../../../helpers/customer-mock.factory';
-import { createMockUser } from '../../../helpers/user-mock.factory';
 import { createMockVehicle } from '../../../helpers/vehicle-mock.factory';
 import { createMockWorkOrder } from '../../../helpers/work-order-mock.factory';
 import { createMockWorkOrderService } from '../../../helpers/work-order-service-mock.factory';
@@ -89,14 +88,12 @@ describe('WorkOrderCacheMapper', () => {
     expect(restored.createdAt).toBeInstanceOf(Date);
   });
 
-  it('should not carry the assigned user in the cached value', () => {
+  it('should cache only the assigned user id', () => {
     const workOrder = createDetailedWorkOrder();
-    workOrder.assignedUser = createMockUser({ id: workOrder.assignedUserId! });
 
     const cached = WorkOrderCacheMapper.toCache(workOrder);
 
     expect(cached).not.toHaveProperty('assignedUser');
-    expect(JSON.stringify(cached)).not.toContain(workOrder.assignedUser.passwordHash);
     expect(cached.assignedUserId).toBe(workOrder.assignedUserId);
   });
 

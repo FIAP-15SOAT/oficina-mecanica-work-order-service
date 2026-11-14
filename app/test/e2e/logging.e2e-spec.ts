@@ -1,13 +1,16 @@
 import type { AddressInfo } from 'net';
 import { request as httpRequest, type Server } from 'http';
+import { randomUUID } from 'node:crypto';
 import request from 'supertest';
+
+import { UserRole } from '@domain/enums/user-role.enum';
 
 import * as payloadSanitizer from '@infrastructure/logging/redaction/payload-sanitizer';
 
 import { DECLARED_FIELD_NAMES, FIELD_DICTIONARY } from '@infrastructure/logging/field-registry';
 import { CLIENT_ABORTED_ERROR_TYPE } from '@infrastructure/logging/access-log.builder';
 
-import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
+import { staffAuthHeader } from '../helpers/auth.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import { LogCapture, TestContext, setupTestApp, teardownTestApp } from '../helpers/test-app.helper';
 
@@ -21,8 +24,9 @@ describe('Structured logging (E2E)', () => {
   let ctx: TestContext;
   let httpServer: Server;
   let capture: LogCapture;
-  let adminAuth: AuthTokens;
-  let mechanicAuth: AuthTokens;
+  let adminAuth: string;
+  let mechanicAuth: string;
+  let mechanicId: string;
 
   beforeAll(async () => {
     ctx = await setupTestApp({ captureBootstrap: true, withSwagger: true });
@@ -36,34 +40,23 @@ describe('Structured logging (E2E)', () => {
 
   beforeEach(async () => {
     await cleanDatabase(ctx.prisma);
-    adminAuth = await registerAndLogin(
-      httpServer,
-      { name: 'Admin Log', email: 'admin.log@e2e.test', role: 'ADMIN' },
-      ctx.prisma,
-    );
-    mechanicAuth = await registerAndLogin(
-      httpServer,
-      { name: 'Mecanico Log', email: 'mecanico.log@e2e.test', role: 'MECHANIC' },
-      ctx.prisma,
-    );
+    adminAuth = staffAuthHeader();
+
+    mechanicId = randomUUID();
+
+    mechanicAuth = staffAuthHeader({ sub: mechanicId, role: UserRole.MECHANIC });
     capture.clear();
   });
 
   describe('envelope, resource attributes and correlation', () => {
     it('should emit exactly one access log line per request', async () => {
-      await request(httpServer)
-        .get('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
+      await request(httpServer).get('/api/customers').set('Authorization', adminAuth).expect(200);
 
       expect(accessLines(capture)).toHaveLength(1);
     });
 
     it('should carry the envelope and the resource attributes on every line', async () => {
-      await request(httpServer)
-        .get('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
+      await request(httpServer).get('/api/customers').set('Authorization', adminAuth).expect(200);
 
       const [line] = accessLines(capture);
 
@@ -81,7 +74,7 @@ describe('Structured logging (E2E)', () => {
     it('should echo the correlation identifier in the response header', async () => {
       const response = await request(httpServer)
         .get('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .expect(200);
 
       expect(response.headers['x-request-id']).toBeDefined();
@@ -92,7 +85,7 @@ describe('Structured logging (E2E)', () => {
       const response = await request(httpServer)
         .get('/api/customers')
         .set('Origin', 'http://localhost:3000')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .expect(200);
 
       expect(response.headers['access-control-expose-headers']).toContain('x-request-id');
@@ -102,7 +95,7 @@ describe('Structured logging (E2E)', () => {
       const response = await request(httpServer)
         .get('/api/customers')
         .set('x-request-id', 'inbound-request-id-1')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .expect(200);
 
       expect(response.headers['x-request-id']).toBe('inbound-request-id-1');
@@ -115,7 +108,7 @@ describe('Structured logging (E2E)', () => {
       const response = await request(httpServer)
         .get('/api/customers')
         .set('x-request-id', malformed)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .expect(200);
 
       expect(response.headers['x-request-id']).not.toBe(malformed);
@@ -123,48 +116,47 @@ describe('Structured logging (E2E)', () => {
     });
 
     it('should correlate a business event with the access log of the same request', async () => {
+      const created = await request(httpServer)
+        .post('/api/customers')
+        .set('Authorization', adminAuth)
+        .send({
+          name: 'Maria Silva',
+          document: '52998224725',
+          type: 'INDIVIDUAL',
+          createAccess: false,
+          email: 'maria.silva@test.com',
+          phone: '11999999999',
+          address: {
+            street: 'Rua Teste, 123',
+            city: 'São Paulo',
+            state: 'SP',
+            zipCode: '01310-100',
+          },
+        })
+        .expect(201);
+
       capture.clear();
 
       await request(httpServer)
-        .post('/api/auth/login')
-        .send({ email: 'admin.log@e2e.test', password: 'Test@2026' })
-        .expect(200);
+        .patch(`/api/customers/${created.body.data.id}`)
+        .set('Authorization', adminAuth)
+        .send({ isActive: false })
+        .expect(204);
 
       const [access] = accessLines(capture);
       const businessEvent = capture
         .lines()
-        .find((line) => line['oficina.event.name'] === 'auth.authentication.succeeded');
+        .find((line) => line['oficina.event.name'] === 'customer.status.updated');
 
       expect(businessEvent).toBeDefined();
       expect(businessEvent!['request.id']).toBe(access['request.id']);
-      expect(businessEvent!['otel.scope.name']).toBe('AuthenticateUserUseCase');
-    });
-
-    it('should mask the subject identity the business event carries', async () => {
-      capture.clear();
-
-      await request(httpServer)
-        .post('/api/auth/login')
-        .send({ email: 'admin.log@e2e.test', password: 'Test@2026' })
-        .expect(200);
-
-      const businessEvent = capture
-        .lines()
-        .find((line) => line['oficina.event.name'] === 'auth.authentication.succeeded')!;
-
-      expect(businessEvent['oficina.auth.subject.email']).not.toBe('admin.log@e2e.test');
-      expect(businessEvent['oficina.auth.subject.email']).toContain('***');
-      expect(businessEvent['oficina.auth.subject.name']).toContain('***');
-      expect(JSON.stringify(capture.lines())).not.toContain('admin.log@e2e.test');
+      expect(businessEvent!['otel.scope.name']).toBe('UpdateCustomerStatusUseCase');
     });
   });
 
   describe('field dictionary', () => {
     it('should emit no key outside the declared field dictionary', async () => {
-      await request(httpServer)
-        .get('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
+      await request(httpServer).get('/api/customers').set('Authorization', adminAuth).expect(200);
 
       await request(httpServer).get('/api/customers').expect(401);
 
@@ -198,7 +190,7 @@ describe('Structured logging (E2E)', () => {
     it('should type every emitted attribute as the dictionary declares', async () => {
       await request(httpServer)
         .post('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .send({ name: 'Maria Silva', document: '000', type: 'INDIVIDUAL' })
         .expect(400);
 
@@ -222,10 +214,7 @@ describe('Structured logging (E2E)', () => {
     });
 
     it('should never emit the library default request, response or error representations', async () => {
-      await request(httpServer)
-        .get('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
+      await request(httpServer).get('/api/customers').set('Authorization', adminAuth).expect(200);
 
       for (const line of capture.lines()) {
         expect(line).not.toHaveProperty('req');
@@ -244,7 +233,7 @@ describe('Structured logging (E2E)', () => {
     it('should never emit a header outside the allowlist', async () => {
       await request(httpServer)
         .get('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .set('Cookie', 'session=abc123')
         .expect(200);
 
@@ -252,7 +241,7 @@ describe('Structured logging (E2E)', () => {
 
       expect(serialized).not.toContain('authorization');
       expect(serialized).not.toContain('session=abc123');
-      expect(serialized).not.toContain(adminAuth.accessToken);
+      expect(serialized).not.toContain(adminAuth.slice('Bearer '.length));
     });
   });
 
@@ -300,75 +289,36 @@ describe('Structured logging (E2E)', () => {
 
     it('should keep the actor on a request rejected by the authorization guard', async () => {
       await request(httpServer)
-        .post('/api/users')
-        .set('Authorization', `Bearer ${mechanicAuth.accessToken}`)
-        .send({
-          name: 'Novo Usuario',
-          email: 'novo.usuario@e2e.test',
-          password: 'Test@2026',
-          role: 'ADMIN',
-        })
+        .post('/api/customers')
+        .set('Authorization', mechanicAuth)
+        .send({ name: 'Maria Silva', document: '000', type: 'INDIVIDUAL' })
         .expect(403);
 
       const [line] = accessLines(capture);
 
       expect(line['http.response.status_code']).toBe(403);
-      expect(line['user.id']).toBe(mechanicAuth.user.id);
+      expect(line['user.id']).toBe(mechanicId);
       expect(line['user.roles']).toEqual(['MECHANIC']);
     });
 
     it('should carry the handler name resolved by the interceptor', async () => {
-      await request(httpServer)
-        .get('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(200);
+      await request(httpServer).get('/api/customers').set('Authorization', adminAuth).expect(200);
 
       expect(accessLines(capture)[0]['code.function.name']).toBe('CustomerController.findAll');
     });
 
     it('should not attribute an actor to an anonymous request', async () => {
-      await request(httpServer)
-        .post('/api/auth/login')
-        .send({ email: 'admin.log@e2e.test', password: 'Test@2026' })
-        .expect(200);
+      await request(httpServer).get('/api/customers').expect(401);
 
       expect(accessLines(capture)[0]).not.toHaveProperty('user.id');
     });
   });
 
   describe('payload protection', () => {
-    it('should never log the password submitted on a failed login', async () => {
-      await request(httpServer)
-        .post('/api/auth/login')
-        .send({ email: 'admin.log@e2e.test', password: 'SenhaErrada@2026' })
-        .expect(401);
-
-      expect(JSON.stringify(capture.lines())).not.toContain('SenhaErrada@2026');
-    });
-
-    /**
-     * The body of any /api/auth route is never captured, even on statuses that
-     * normally trigger capture (400/409/422) — the reset code is a credential
-     * valid for 10 minutes, and no field can be isolated by name-based
-     * redaction without also erasing zipCode/statusCode from the rest of the log.
-     */
-    it('should never log the password reset code, even on a 400 that would otherwise capture the body', async () => {
-      await request(httpServer)
-        .post('/api/auth/password-reset-confirmations')
-        .send({ email: 'alguem@e2e.test', code: '123456', newPassword: 'fraca' })
-        .expect(400);
-
-      const [line] = accessLines(capture);
-
-      expect(line['http.response.status_code']).toBe(400);
-      expect(line).not.toHaveProperty('oficina.http.request.body_json');
-      expect(JSON.stringify(capture.lines())).not.toContain('123456');
-    });
-
     it('should capture the sanitized body on a 4xx of a mutating route', async () => {
       await request(httpServer)
         .post('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .send({ name: 'Maria Silva', document: '000', type: 'INDIVIDUAL' })
         .expect(400);
 
@@ -400,14 +350,9 @@ describe('Structured logging (E2E)', () => {
 
     it('should not capture the body of a request rejected by the authorization guard', async () => {
       await request(httpServer)
-        .post('/api/users')
-        .set('Authorization', `Bearer ${mechanicAuth.accessToken}`)
-        .send({
-          name: 'Novo Usuario',
-          email: 'novo.usuario@e2e.test',
-          password: 'Test@2026',
-          role: 'ADMIN',
-        })
+        .post('/api/customers')
+        .set('Authorization', mechanicAuth)
+        .send({ name: 'Maria Silva', document: '000', type: 'INDIVIDUAL' })
         .expect(403);
 
       const [line] = accessLines(capture);
@@ -419,11 +364,12 @@ describe('Structured logging (E2E)', () => {
     it('should not capture the body of a successful request', async () => {
       await request(httpServer)
         .post('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .send({
           name: 'Maria Silva',
           document: '52998224725',
           type: 'INDIVIDUAL',
+          createAccess: false,
           email: 'maria.silva@test.com',
           phone: '11999999999',
           address: {
@@ -441,7 +387,7 @@ describe('Structured logging (E2E)', () => {
     it('should mask a person name', async () => {
       await request(httpServer)
         .post('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .send({ name: 'Maria Silva', document: '000', type: 'INDIVIDUAL' })
         .expect(400);
 
@@ -456,7 +402,7 @@ describe('Structured logging (E2E)', () => {
     it('should sanitize a personal identifier sent as a property name', async () => {
       await request(httpServer)
         .post('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .send({ 'maria.silva@gmail.com': 'x', name: 'Maria Silva' })
         .expect(400);
 
@@ -471,7 +417,7 @@ describe('Structured logging (E2E)', () => {
     it('should keep an ordinary misspelled key readable, which is why the body is captured', async () => {
       await request(httpServer)
         .post('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .send({ nome: 'Maria Silva', documento: '123' })
         .expect(400);
 
@@ -488,7 +434,7 @@ describe('Structured logging (E2E)', () => {
     it('should catch a percent-encoded personal identifier in the path', async () => {
       await request(httpServer)
         .get('/api/customers/maria.silva%40gmail.com')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .expect(400);
 
       const serialized = JSON.stringify(capture.lines());
@@ -508,7 +454,7 @@ describe('Structured logging (E2E)', () => {
       // same path resolved to `500` and also emitted an `ERROR` line with a stack.
       await request(httpServer)
         .get('/api/%ZZ/maria.silva%40gmail.com')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .expect(400);
 
       const serialized = JSON.stringify(capture.lines());
@@ -540,12 +486,12 @@ describe('Structured logging (E2E)', () => {
 
       await request(httpServer)
         .get(`/api/customers/${first}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .expect(404);
 
       await request(httpServer)
         .get(`/api/customers/${second}`)
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .expect(404);
 
       const routes = accessLines(capture).map((line) => line['http.route']);
@@ -594,7 +540,7 @@ describe('Structured logging (E2E)', () => {
     it('should keep the business message of a 404 raised by a real handler', async () => {
       await request(httpServer)
         .get('/api/customers/00000000-0000-4000-8000-000000000000')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .expect(404);
 
       expect(accessLines(capture)[0]['oficina.error.message']).toContain('não encontrado');
@@ -608,7 +554,7 @@ describe('Structured logging (E2E)', () => {
     it('should carry the real validation messages on a rejected payload', async () => {
       await request(httpServer)
         .post('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .send({ name: 'Maria Silva', document: '000', type: 'INDIVIDUAL' })
         .expect(400);
 
@@ -621,7 +567,7 @@ describe('Structured logging (E2E)', () => {
     it('should not log a request rejected by the body parser', async () => {
       await request(httpServer)
         .post('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .set('Content-Type', 'application/json')
         .send('{ malformed json')
         .expect(400);
@@ -640,7 +586,7 @@ describe('Structured logging (E2E)', () => {
     it('should answer 413 for an oversized body without emitting an error line', async () => {
       await request(httpServer)
         .post('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
+        .set('Authorization', adminAuth)
         .set('Content-Type', 'application/json')
         .send(JSON.stringify({ name: 'x'.repeat(200_000) }))
         .expect(413);
@@ -686,10 +632,7 @@ describe('Structured logging (E2E)', () => {
         .spyOn(ctx.prisma.customer, 'findMany')
         .mockRejectedValue(new Error('conexão perdida com o banco'));
 
-      await request(httpServer)
-        .get('/api/customers')
-        .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-        .expect(500);
+      await request(httpServer).get('/api/customers').set('Authorization', adminAuth).expect(500);
 
       const dedicated = capture
         .lines()
@@ -710,6 +653,24 @@ describe('Structured logging (E2E)', () => {
     });
 
     it('should keep a committed operation and its response intact when the sanitizer throws', async () => {
+      const created = await request(httpServer)
+        .post('/api/customers')
+        .set('Authorization', adminAuth)
+        .send({
+          name: 'Maria Silva',
+          document: '52998224725',
+          type: 'INDIVIDUAL',
+          createAccess: false,
+          email: 'maria.silva@test.com',
+          phone: '11999999999',
+          address: {
+            street: 'Rua Teste, 123',
+            city: 'São Paulo',
+            state: 'SP',
+            zipCode: '01310-100',
+          },
+        })
+        .expect(201);
       const stderr = jest.spyOn(process.stderr, 'write').mockReturnValue(true);
       const sanitizer = jest.spyOn(payloadSanitizer, 'sanitizePayload').mockImplementation(() => {
         throw new Error('sanitizer failure');
@@ -719,17 +680,18 @@ describe('Structured logging (E2E)', () => {
 
       try {
         response = await request(httpServer)
-          .patch(`/api/users/${mechanicAuth.user.id}`)
-          .set('Authorization', `Bearer ${adminAuth.accessToken}`)
-          .send({ active: false });
+          .patch(`/api/customers/${created.body.data.id}`)
+          .set('Authorization', adminAuth)
+          .send({ isActive: false });
       } finally {
         sanitizer.mockRestore();
       }
 
-      expect(response.status).toBe(200);
-      expect(response.body.data.isActive).toBe(false);
+      expect(response.status).toBe(204);
 
-      const persisted = await ctx.prisma.user.findUnique({ where: { id: mechanicAuth.user.id } });
+      const persisted = await ctx.prisma.customer.findUnique({
+        where: { id: created.body.data.id },
+      });
 
       expect(persisted?.isActive).toBe(false);
       expect(String(stderr.mock.calls.map((call) => call[0]).join(''))).toContain(
@@ -761,7 +723,7 @@ describe('Structured logging (E2E)', () => {
           port,
           path: '/api/customers',
           method: 'GET',
-          headers: { Authorization: `Bearer ${adminAuth.accessToken}` },
+          headers: { Authorization: adminAuth },
         });
 
         clientRequest.on('error', () => resolve());

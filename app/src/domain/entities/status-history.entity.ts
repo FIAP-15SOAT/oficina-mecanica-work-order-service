@@ -2,7 +2,6 @@ import { validate as isUuid } from 'uuid';
 import { randomUUID } from 'node:crypto';
 import { WorkOrderStatus } from '../enums/work-order-status.enum';
 import { DomainValidationException } from '../exceptions/domain-validation.exception';
-import { User } from './user.entity';
 
 import { MAX_STATUS_NOTES_LENGTH as MAX_NOTES_LENGTH } from '../constants/validation/work-order.constants';
 
@@ -32,8 +31,6 @@ export class StatusHistory {
   readonly newStatus: WorkOrderStatus;
   readonly notes: string | null;
   readonly createdAt: Date;
-
-  changedBy?: User | null;
 
   private constructor(props: StatusHistoryProps) {
     this.id = props.id;

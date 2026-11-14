@@ -53,6 +53,7 @@ describe('WorkOrderController', () => {
       { execute: jest.fn() },
       { execute: jest.fn() },
       { execute: jest.fn() },
+      { execute: jest.fn() },
     );
     httpController = new WorkOrderController(cleanController);
   });
@@ -62,6 +63,7 @@ describe('WorkOrderController', () => {
       const response = WorkOrderPresenter.toDataResponse(
         createMockWorkOrder({ customer, vehicle }),
         emptyCatalog,
+        [],
       );
 
       jest.spyOn(cleanController, 'create').mockResolvedValue(response);
@@ -77,10 +79,13 @@ describe('WorkOrderController', () => {
     it('should pass the query straight to the clean controller and return its result', async () => {
       const query: FindAllWorkOrdersPaginatedQueryDto = { page: 1, limit: 10 };
 
-      const response = WorkOrderPresenter.toPaginatedResponse({
-        items: [createMockWorkOrder({ customer, vehicle })],
-        pagination: { totalRecords: 1, totalPages: 1, page: 1, limit: 10 },
-      });
+      const response = WorkOrderPresenter.toPaginatedResponse(
+        {
+          items: [createMockWorkOrder({ customer, vehicle })],
+          pagination: { totalRecords: 1, totalPages: 1, page: 1, limit: 10 },
+        },
+        [],
+      );
 
       jest.spyOn(cleanController, 'findAll').mockResolvedValue(response);
 
@@ -94,7 +99,7 @@ describe('WorkOrderController', () => {
   describe('findOne', () => {
     it('should delegate to the clean controller and return its result', async () => {
       const workOrder = createMockWorkOrder({ customer, vehicle });
-      const response = WorkOrderPresenter.toDataResponse(workOrder, emptyCatalog);
+      const response = WorkOrderPresenter.toDataResponse(workOrder, emptyCatalog, []);
 
       jest.spyOn(cleanController, 'findOne').mockResolvedValue(response);
 
@@ -114,6 +119,7 @@ describe('WorkOrderController', () => {
       const response = WorkOrderPresenter.toDataResponse(
         createMockWorkOrder({ customer, vehicle }),
         emptyCatalog,
+        [],
       );
 
       jest.spyOn(cleanController, 'update').mockResolvedValue(response);
@@ -135,6 +141,7 @@ describe('WorkOrderController', () => {
       const response = WorkOrderPresenter.toDataResponse(
         createMockWorkOrder({ customer, vehicle, status: WorkOrderStatus.IN_DIAGNOSIS }),
         emptyCatalog,
+        [],
       );
 
       jest.spyOn(cleanController, 'updateStatus').mockResolvedValue(response);
@@ -184,7 +191,7 @@ describe('WorkOrderController', () => {
     it('should delegate to the clean controller and return its result', async () => {
       const id = randomUUID();
 
-      const response = WorkOrderPresenter.toStatusHistoryListResponse([]);
+      const response = WorkOrderPresenter.toStatusHistoryListResponse([], []);
 
       jest.spyOn(cleanController, 'getStatusHistory').mockResolvedValue(response);
 

@@ -2,9 +2,11 @@ import { Logger as NestLogger, PinoLogger } from 'nestjs-pino';
 
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
 import { defineLogEvent } from '@application/logging/log-event';
+import * as fieldRegistry from '@infrastructure/logging/field-registry';
 import { buildLoggerParams } from '@infrastructure/logging/logging.module';
 import * as payloadSanitizer from '@infrastructure/logging/redaction/payload-sanitizer';
 import { PinoLoggerAdapter } from '@infrastructure/logging/pino-logger.adapter';
+import { TECHNICAL_EVENTS } from '@infrastructure/logging/technical-event.catalog';
 import { REDACTED } from '@infrastructure/logging/redaction/text-sanitizer';
 import { captureDiagnostics } from '../../../helpers/diagnostics-capture';
 
@@ -101,33 +103,43 @@ describe('PinoLoggerAdapter', () => {
   });
 
   it('should mask a field the registry classifies as personal data', () => {
-    adapter.event(BUSINESS_EVENTS.AUTHENTICATION_SUCCEEDED, {
-      subjectId: 'user-1',
-      subjectName: 'Maria Silva',
-      subjectEmail: 'maria.silva@gmail.com',
+    // The work order vocabulary declares no personal data, so one declared key is reclassified.
+    const resolve = jest.spyOn(fieldRegistry, 'resolveLogicalField').mockReturnValueOnce({
+      key: 'oficina.dependency.name',
+      type: 'string',
+      cardinality: 'fixed',
+      owner: 'infrastructure-service',
+      sensitivity: 'pii',
     });
 
-    expect(lines[0]).toMatchObject({
-      'oficina.auth.subject.id': 'user-1',
-      'oficina.auth.subject.name': 'Ma***va',
-      'oficina.auth.subject.email': 'ma***va@gmail.com',
+    adapter.event(TECHNICAL_EVENTS.HEALTH_DEGRADED, {
+      dependencyName: 'maria.silva@gmail.com',
+      healthFailureCategory: 'timeout',
     });
+    resolve.mockRestore();
+
+    expect(lines[0]['oficina.dependency.name']).toBe('ma***va@gmail.com');
+    expect(lines[0]['oficina.health.failure.category']).toBe('timeout');
   });
 
   it('should omit optional event fields that are not provided', () => {
-    adapter.event(BUSINESS_EVENTS.AUTHENTICATION_FAILED, { failureReason: 'unknown_user' });
+    adapter.event(BUSINESS_EVENTS.SAGA_STEP_SKIPPED, {
+      sagaType: 'QUOTE_APPROVAL',
+      quoteId: 'quote-1',
+    });
 
-    expect(lines[0]['oficina.auth.failure.reason']).toBe('unknown_user');
-    expect(lines[0]).not.toHaveProperty('oficina.auth.subject.id');
+    expect(lines[0]['oficina.quote.id']).toBe('quote-1');
+    expect(lines[0]).not.toHaveProperty('oficina.saga.status');
   });
 
   it('should omit an optional event field explicitly passed as undefined', () => {
-    adapter.event(BUSINESS_EVENTS.AUTHENTICATION_FAILED, {
-      failureReason: 'unknown_user',
-      subjectId: undefined,
+    adapter.event(BUSINESS_EVENTS.SAGA_STEP_SKIPPED, {
+      sagaType: 'QUOTE_APPROVAL',
+      quoteId: 'quote-1',
+      sagaStatus: undefined,
     });
 
-    expect(lines[0]).not.toHaveProperty('oficina.auth.subject.id');
+    expect(lines[0]).not.toHaveProperty('oficina.saga.status');
   });
 
   it('should drop a field the registry does not know', () => {
@@ -207,9 +219,10 @@ describe('PinoLoggerAdapter', () => {
     });
 
     expect(() =>
-      adapter.event(BUSINESS_EVENTS.USER_STATUS_UPDATED, {
-        targetUserId: 'user-1',
-        targetUserActive: false,
+      adapter.event(BUSINESS_EVENTS.CUSTOMER_STATUS_UPDATED, {
+        subjectId: 'user-1',
+        customerId: 'customer-1',
+        customerActive: false,
       }),
     ).not.toThrow();
 
@@ -223,13 +236,14 @@ describe('PinoLoggerAdapter', () => {
   it('should report the field and drop it when the registry does not know the logical name', () => {
     const stderr = captureDiagnostics();
 
-    adapter.event(BUSINESS_EVENTS.USER_STATUS_UPDATED, {
-      targetUserId: 'user-1',
-      targetUserActive: true,
+    adapter.event(BUSINESS_EVENTS.CUSTOMER_STATUS_UPDATED, {
+      subjectId: 'user-1',
+      customerId: 'customer-1',
+      customerActive: true,
     });
 
     expect(stderr.spy).not.toHaveBeenCalled();
-    expect(lines[0]['oficina.target.user.active']).toBe(true);
+    expect(lines[0]['oficina.customer.active']).toBe(true);
 
     stderr.restore();
   });
@@ -241,14 +255,14 @@ describe('PinoLoggerAdapter — event with an attached exception', () => {
     const adapter = new PinoLoggerAdapter(new PinoLogger(params));
 
     adapter.event(
-      BUSINESS_EVENTS.USER_STATUS_UPDATED,
-      { targetUserId: 'user-1', targetUserActive: false },
+      BUSINESS_EVENTS.CUSTOMER_STATUS_UPDATED,
+      { subjectId: 'user-1', customerId: 'customer-1', customerActive: false },
       new TypeError('falhou'),
     );
 
     expect(lines[0]).toMatchObject({
-      'oficina.event.name': 'user.status.updated',
-      'oficina.target.user.id': 'user-1',
+      'oficina.event.name': 'customer.status.updated',
+      'oficina.customer.id': 'customer-1',
       'exception.type': 'TypeError',
       'exception.message': 'falhou',
     });

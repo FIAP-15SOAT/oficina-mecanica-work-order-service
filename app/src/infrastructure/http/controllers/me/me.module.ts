@@ -1,9 +1,5 @@
 import { Module } from '@nestjs/common';
 
-import { InfrastructureServicesModule } from '@infrastructure/services/infrastructure-services.module';
-
-import { ChangeOwnPasswordUseCase } from '@application/use-cases/me/change-own-password.use-case';
-import { FindUserByIdUseCase } from '@application/use-cases/user/find-user-by-id.use-case';
 import { FindAllMyWorkOrdersUseCase } from '@application/use-cases/me/find-all-my-work-orders.use-case';
 import { FindMyWorkOrderByIdUseCase } from '@application/use-cases/me/find-my-work-order-by-id.use-case';
 import { FindMyWorkOrdersQuotesUseCase } from '@application/use-cases/me/find-my-work-orders-quotes.use-case';
@@ -14,25 +10,20 @@ import { CustomerAccessPolicy } from '@application/policies/customer-access.poli
 import { IBillingQuotesGateway } from '@application/ports/output/gateways/billing/billing-quotes-gateway.interface';
 import { IBillingPaymentsGateway } from '@application/ports/output/gateways/billing/billing-payments-gateway.interface';
 
-import { IUserRepository } from '@domain/interfaces/repositories/user.repository.interface';
 import { IUserCustomerRepository } from '@domain/interfaces/repositories/user-customer.repository.interface';
 import { IWorkOrderRepository } from '@domain/interfaces/repositories/work-order.repository.interface';
 import { ISagaInstanceRepository } from '@domain/interfaces/repositories/saga-instance.repository.interface';
-import { IHashService } from '@application/ports/output/services/hash.service.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 
 import { MeController as MeCleanController } from '@interface-adapters/me/me.controller';
 import { MeController } from './me.controller';
 
 @Module({
-  imports: [InfrastructureServicesModule],
   controllers: [MeController],
   providers: [
     {
       provide: MeCleanController,
       useFactory: (
-        userRepository: IUserRepository,
-        hashService: IHashService,
         userCustomerRepository: IUserCustomerRepository,
         workOrderRepository: IWorkOrderRepository,
         sagaInstanceRepository: ISagaInstanceRepository,
@@ -46,12 +37,6 @@ import { MeController } from './me.controller';
         );
 
         return new MeCleanController(
-          new ChangeOwnPasswordUseCase(
-            userRepository,
-            hashService,
-            logger.forContext(ChangeOwnPasswordUseCase.name),
-          ),
-          new FindUserByIdUseCase(userRepository, userCustomerRepository),
           new FindAllMyWorkOrdersUseCase(customerAccessPolicy, workOrderRepository),
           new FindMyWorkOrderByIdUseCase(workOrderRepository, customerAccessPolicy),
           new FindMyWorkOrdersQuotesUseCase(
@@ -78,8 +63,6 @@ import { MeController } from './me.controller';
         );
       },
       inject: [
-        'IUserRepository',
-        'IHashService',
         'IUserCustomerRepository',
         'IWorkOrderRepository',
         'ISagaInstanceRepository',

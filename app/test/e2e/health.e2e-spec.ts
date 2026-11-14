@@ -14,7 +14,7 @@ import { OutboxRelayService } from '../../src/infrastructure/messaging/outbox-re
 import { SqsConsumerService } from '../../src/infrastructure/messaging/sqs-consumer.service';
 import { configureApp } from '../../src/infrastructure/config/app-bootstrap';
 
-import { AuthTokens, registerAndLogin } from '../helpers/auth.helper';
+import { staffAuthHeader } from '../helpers/auth.helper';
 import { cleanDatabase } from '../helpers/db-cleanup.helper';
 import { LogCapture, TestContext, setupTestApp } from '../helpers/test-app.helper';
 
@@ -134,7 +134,6 @@ describe('Health endpoints (E2E)', () => {
    */
   afterAll(async () => {
     await ctx.postgresContainer.stop();
-    await ctx.mailhogContainer.stop();
   });
 
   beforeEach(() => {
@@ -236,7 +235,6 @@ describe('Health endpoints with the database unreachable (E2E)', () => {
    */
   afterAll(async () => {
     await ctx.app.close();
-    await ctx.mailhogContainer.stop();
     await ctx.postgresContainer.stop();
   });
 
@@ -349,7 +347,6 @@ describe('Health endpoints during graceful shutdown (E2E)', () => {
     process.env.NODE_ENV = previousEnvironment;
 
     await ctx.postgresContainer.stop();
-    await ctx.mailhogContainer.stop();
   });
 
   it('should report unavailable readiness and successful liveness during the window', async () => {
@@ -370,19 +367,16 @@ describe('Health endpoints during graceful shutdown (E2E)', () => {
    * before the window.
    */
   it('should let an in-flight business request reach the database during the window', async () => {
-    const auth: AuthTokens = await registerAndLogin(
-      httpServer,
-      { name: 'Admin Drain', email: 'admin.drain@e2e.test', role: 'ADMIN' },
-      ctx.prisma,
-    );
+    const auth = staffAuthHeader();
 
     const created = await request(httpServer)
       .post('/api/customers')
-      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .set('Authorization', auth)
       .send({
         name: 'Cliente Drain',
         document: '52998224725',
         type: 'INDIVIDUAL',
+        createAccess: false,
         email: 'cliente.drain@test.com',
         phone: '11999999999',
         address: { street: 'Rua Teste, 123', city: 'São Paulo', state: 'SP', zipCode: '01310-100' },
@@ -417,7 +411,7 @@ describe('Health endpoints during graceful shutdown (E2E)', () => {
 
     const inFlight = request(httpServer)
       .get(`/api/customers/${customerId}`)
-      .set('Authorization', `Bearer ${auth.accessToken}`)
+      .set('Authorization', auth)
       .then((response) => response);
 
     await reached;

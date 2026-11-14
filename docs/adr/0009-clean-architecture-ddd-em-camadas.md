@@ -13,9 +13,9 @@ O enunciado da Fase 1 exige um "back-end monolítico em arquitetura em camadas" 
 Adotar **Clean Architecture** com quatro camadas concêntricas e regra de dependência única (o código aponta só para dentro):
 
 - **`domain/`** — entidades ricas, value objects, agregados (`WorkOrder` e `Quote` são Aggregate Roots), invariantes e regras de negócio. Livre de framework e ORM.
-- **`application/`** — orquestração de casos de uso, portas de entrada (`I<Nome>UseCase`) e saída (`IEmailSenderService`, `IHashService`, `ITokenService`, `ILogger`), políticas de autorização reutilizáveis. Livre de framework e ORM.
+- **`application/`** — orquestração de casos de uso, portas de entrada (`I<Nome>UseCase`) e saída (`ILogger`, `IMetrics`, `ICache` e os gateways de outros serviços), políticas de autorização reutilizáveis. Livre de framework e ORM.
 - **`interface-adapters/`** — Clean Controllers e Presenters, POJOs puros que traduzem entre casos de uso e formatos de request/response, sem decorators do NestJS.
-- **`infrastructure/`** — implementações concretas: a borda HTTP do NestJS (`@Controller`, guards, DTOs com `@ApiProperty`, filtros de exceção), os repositórios Prisma, os serviços externos (bcrypt, JWT, e-mail) e logging.
+- **`infrastructure/`** — implementações concretas: a borda HTTP do NestJS (`@Controller`, guards, DTOs com `@ApiProperty`, filtros de exceção), os repositórios Prisma, os serviços externos (mensageria, cache e os clientes HTTP de outros serviços) e logging.
 
 A regra é **imposta por ferramenta, não só por convenção**: uma cerca de ESLint proíbe imports de `@nestjs/*` e `@generated/client` (o Prisma Client) dentro de `domain/` e `application/`, quebrando a build se violada. Cada caso de uso depende de **interfaces** de repositório (`domain/interfaces/repositories/`), nunca da implementação Prisma concreta — a inversão de dependência é a peça que permite testar regra de negócio com mocks, sem banco.
 

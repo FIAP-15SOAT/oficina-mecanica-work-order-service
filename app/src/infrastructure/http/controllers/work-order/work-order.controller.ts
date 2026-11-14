@@ -66,12 +66,15 @@ export class WorkOrderController {
   })
   @ApiUnauthorizedResponse({ description: 'Não autenticado' })
   @ApiForbiddenResponse({ description: 'Acesso negado' })
-  @ApiNotFoundResponse({ description: 'Serviço ou peça/insumo não encontrado' })
+  @ApiNotFoundResponse({
+    description: 'Serviço, peça/insumo ou usuário atribuído como mecânico não encontrado',
+  })
   @ApiConflictResponse({
-    description: 'Regra de negócio violada',
+    description: 'Regra de negócio violada, como atribuir quem não é um mecânico ativo',
   })
   @ApiServiceUnavailableResponse({
-    description: 'Billing ou Inventory indisponível ao criar o orçamento inicial',
+    description:
+      'Identity indisponível ao conferir o mecânico, ou Billing ou Inventory indisponível ao criar o orçamento inicial; nada é gravado',
   })
   create(
     @Body() request: CreateWorkOrderRequestDto,
@@ -84,6 +87,7 @@ export class WorkOrderController {
   @Roles(UserRole.ADMIN, UserRole.MECHANIC, UserRole.ATTENDANT)
   @ApiOperation({ summary: 'Listar Ordens de Serviço paginado' })
   @ApiOkResponse({ type: WorkOrderPaginatedResponseDto })
+  @ApiServiceUnavailableResponse({ description: 'Identity ou Inventory indisponível' })
   findAll(
     @Query() query: FindAllWorkOrdersPaginatedQueryDto,
   ): Promise<WorkOrderPaginatedResponseDto> {
@@ -95,6 +99,7 @@ export class WorkOrderController {
   @ApiOperation({ summary: 'Buscar Ordem de Serviço por ID' })
   @ApiOkResponse({ type: WorkOrderDataResponseDto })
   @ApiNotFoundResponse()
+  @ApiServiceUnavailableResponse({ description: 'Identity ou Inventory indisponível' })
   @ApiParam({ name: 'id', format: 'uuid' })
   findOne(@Param('id', ParseUUIDPipe) id: string): Promise<WorkOrderDataResponseDto> {
     return this.controller.findOne(id);
@@ -104,8 +109,14 @@ export class WorkOrderController {
   @Roles(UserRole.ADMIN, UserRole.MECHANIC, UserRole.ATTENDANT)
   @ApiOperation({ summary: 'Atualizar Ordem de Serviço' })
   @ApiOkResponse({ type: WorkOrderDataResponseDto })
-  @ApiNotFoundResponse()
+  @ApiNotFoundResponse({
+    description: 'Ordem de Serviço ou usuário atribuído como mecânico não encontrado',
+  })
+  @ApiConflictResponse({
+    description: 'Regra de negócio violada, como atribuir quem não é um mecânico ativo',
+  })
   @ApiUnprocessableEntityResponse()
+  @ApiServiceUnavailableResponse({ description: 'Identity indisponível; nada é gravado' })
   @ApiParam({ name: 'id', format: 'uuid' })
   update(
     @Param('id', ParseUUIDPipe) id: string,
@@ -126,7 +137,8 @@ export class WorkOrderController {
       'Saldo a pagar na entrega, ordem de serviço aguardando pagamento ou modificação concorrente detectada',
   })
   @ApiServiceUnavailableResponse({
-    description: 'Billing indisponível ao conferir o saldo da entrega',
+    description:
+      'Billing, Inventory ou Identity indisponível ao conferir o saldo da entrega, o catálogo ou o responsável; nada é gravado',
   })
   @ApiBadRequestResponse({ description: 'Dados inválidos ou ID inválido' })
   @ApiUnauthorizedResponse({ description: 'Não autenticado' })
@@ -170,6 +182,7 @@ export class WorkOrderController {
   @ApiOperation({ summary: 'Histórico de status da Ordem de Serviço' })
   @ApiOkResponse({ type: StatusHistoryListResponseDto })
   @ApiNotFoundResponse()
+  @ApiServiceUnavailableResponse({ description: 'Identity indisponível' })
   @ApiParam({ name: 'id', format: 'uuid' })
   getStatusHistory(@Param('id', ParseUUIDPipe) id: string): Promise<StatusHistoryListResponseDto> {
     return this.controller.getStatusHistory(id);

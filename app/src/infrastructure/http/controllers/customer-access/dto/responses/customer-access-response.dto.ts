@@ -5,10 +5,11 @@ import {
   CustomerAccessResponse,
   LinkedCustomerListResponse,
 } from '@interface-adapters/customer-access/responses/customer-access.response';
+import { AccessUserOutputDto } from '@application/ports/input/customer-access/dto/grant-customer-access.dto';
 import { UserRole } from '@domain/enums/user-role.enum';
 import { CustomerType } from '@domain/enums/customer-type.enum';
 
-export class AccessUserResponseDto {
+export class AccessUserResponseDto implements AccessUserOutputDto {
   @ApiProperty({
     format: 'uuid',
     example: '550e8400-e29b-41d4-a716-446655440000',
@@ -32,20 +33,6 @@ export class AccessUserResponseDto {
 
   @ApiProperty({ example: true, description: 'Indica se o usuário está ativo' })
   isActive!: boolean;
-
-  @ApiProperty({
-    example: '2026-04-20T12:00:00.000Z',
-    format: 'date-time',
-    description: 'Data de criação do usuário',
-  })
-  createdAt!: Date;
-
-  @ApiProperty({
-    example: '2026-04-20T12:00:00.000Z',
-    format: 'date-time',
-    description: 'Data da última atualização do usuário',
-  })
-  updatedAt!: Date;
 }
 
 export class AccessUserListResponseDto implements AccessUserListResponse {
@@ -98,7 +85,8 @@ export class CustomerAccessResponseDto implements CustomerAccessResponse {
 
   @ApiProperty({
     example: true,
-    description: 'Indica se o e-mail com a senha inicial foi enviado com sucesso',
+    description:
+      'Indica se o usuário foi criado nesta concessão; nesse caso, ele recebe a senha inicial por e-mail',
   })
   initialPasswordSent!: boolean;
 }

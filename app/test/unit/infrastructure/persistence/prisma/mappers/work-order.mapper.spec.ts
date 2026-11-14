@@ -6,7 +6,6 @@ import { WorkOrderMapper } from '@infrastructure/persistence/prisma/mappers/work
 import { WorkOrderStatus } from '@domain/enums/work-order-status.enum';
 import { WorkOrderServiceStatus } from '@domain/enums/work-order-service-status.enum';
 import { CustomerType } from '@domain/enums/customer-type.enum';
-import { UserRole } from '@domain/enums/user-role.enum';
 
 describe('WorkOrderMapper', () => {
   describe('toDomain', () => {
@@ -139,18 +138,6 @@ describe('WorkOrderMapper', () => {
           createdAt: now,
           updatedAt: now,
         },
-        assignedUser: {
-          id: userId,
-          name: 'Mecânico João',
-          email: 'joao@workshop.com',
-          cpf: null,
-          passwordHash: 'hash',
-          role: UserRole.MECHANIC,
-          isActive: true,
-          passwordChangedAt: now,
-          createdAt: now,
-          updatedAt: now,
-        },
         services: [
           {
             workOrderId: randomUUID(),
@@ -184,8 +171,7 @@ describe('WorkOrderMapper', () => {
       expect(domainEntity.customer!.id).toBe(customerId);
       expect(domainEntity.vehicle).toBeDefined();
       expect(domainEntity.vehicle!.id).toBe(vehicleId);
-      expect(domainEntity.assignedUser).toBeDefined();
-      expect(domainEntity.assignedUser!.id).toBe(userId);
+      expect(domainEntity.assignedUserId).toBe(userId);
       expect(domainEntity.services).toHaveLength(1);
       expect(domainEntity.services[0].serviceId).toBe(serviceId);
       expect(domainEntity.partSupplies).toHaveLength(1);

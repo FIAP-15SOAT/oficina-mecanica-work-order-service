@@ -1,10 +1,8 @@
 import { WorkOrder } from '@domain/entities/work-order.entity';
-import { CustomerType } from '@domain/enums/customer-type.enum';
 import {
   PaginatedRepositoryResult,
   PaginationInput,
 } from '@domain/interfaces/common/pagination.interface';
-import { FindUserByIdOutput } from '@application/ports/input/user/dto/find-user-by-id.dto';
 import {
   BillingQuoteGatewayResponse,
   BillingQuoteWithItemsGatewayResponse,
@@ -13,7 +11,6 @@ import { BillingPaymentGatewayResponse } from '@application/ports/output/gateway
 import { buildPaginationMeta } from '@application/utils/pagination.util';
 
 import {
-  MeDataResponse,
   MyWorkOrderResponse,
   MyWorkOrderDataResponse,
   MyWorkOrderPaginatedResponse,
@@ -26,20 +23,6 @@ import {
 } from './responses/me.response';
 
 export class MePresenter {
-  static toMeDataResponse(user: FindUserByIdOutput): MeDataResponse {
-    return {
-      data: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        customers: user.customers
-          .filter((customer) => customer.type === CustomerType.COMPANY)
-          .map((customer) => ({ id: customer.id, name: customer.name, type: customer.type })),
-      },
-    };
-  }
-
   static toWorkOrderResponse(workOrder: WorkOrder): MyWorkOrderResponse {
     return {
       id: workOrder.id,

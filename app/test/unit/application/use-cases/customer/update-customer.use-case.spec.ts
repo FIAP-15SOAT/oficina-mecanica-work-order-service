@@ -10,7 +10,6 @@ import {
   createMockCustomer,
   createMockCustomerRepository,
 } from '../../../../helpers/customer-mock.factory';
-import { createMockUser } from '../../../../helpers/user-mock.factory';
 import { Document } from '@domain/value-objects/document.vo';
 import { Email } from '@domain/value-objects/email.vo';
 import { ICache } from '@application/ports/output/services/cache.service.interface';
@@ -40,7 +39,9 @@ describe('UpdateCustomerUseCase', () => {
 
   beforeEach(() => {
     customerRepository = createMockCustomerRepository();
-    userCustomerRepository = { findUsersByCustomerId: jest.fn().mockResolvedValue([]) } as never;
+
+    userCustomerRepository = { findUserIdsByCustomerId: jest.fn().mockResolvedValue([]) } as never;
+
     cache = createMockCache();
     workOrderRepository = createMockWorkOrderRepository();
     useCase = new UpdateCustomerUseCase(
@@ -150,9 +151,7 @@ describe('UpdateCustomerUseCase', () => {
     });
     customerRepository.findById.mockResolvedValue(existing);
     customerRepository.findByDocument.mockResolvedValue(null);
-    userCustomerRepository.findUsersByCustomerId.mockResolvedValue([
-      createMockUser({ id: 'user-1' }),
-    ]);
+    userCustomerRepository.findUserIdsByCustomerId.mockResolvedValue(['user-1']);
 
     await expect(
       useCase.execute('cust-1', { ...validInput, document: '123.456.789-09' }),
@@ -163,9 +162,7 @@ describe('UpdateCustomerUseCase', () => {
   it('should reject changing the type when the customer has active access links', async () => {
     const existing = createMockCustomer({ id: 'cust-1', type: CustomerType.INDIVIDUAL });
     customerRepository.findById.mockResolvedValue(existing);
-    userCustomerRepository.findUsersByCustomerId.mockResolvedValue([
-      createMockUser({ id: 'user-1' }),
-    ]);
+    userCustomerRepository.findUserIdsByCustomerId.mockResolvedValue(['user-1']);
 
     await expect(
       useCase.execute('cust-1', {
@@ -187,9 +184,7 @@ describe('UpdateCustomerUseCase', () => {
     customerRepository.findById.mockResolvedValue(existing);
     customerRepository.findByDocument.mockResolvedValue(null);
     customerRepository.update.mockResolvedValue(updated);
-    userCustomerRepository.findUsersByCustomerId.mockResolvedValue([
-      createMockUser({ id: 'user-1' }),
-    ]);
+    userCustomerRepository.findUserIdsByCustomerId.mockResolvedValue(['user-1']);
 
     const result = await useCase.execute('cust-1', {
       ...validInput,
@@ -198,7 +193,7 @@ describe('UpdateCustomerUseCase', () => {
     });
 
     expect(result).toEqual(updated);
-    expect(userCustomerRepository.findUsersByCustomerId).not.toHaveBeenCalled();
+    expect(userCustomerRepository.findUserIdsByCustomerId).not.toHaveBeenCalled();
   });
 
   it('should allow updating other fields when the customer has active access links', async () => {
@@ -206,9 +201,7 @@ describe('UpdateCustomerUseCase', () => {
     const updated = createMockCustomer({ id: 'cust-1', name: 'Novo Nome' });
     customerRepository.findById.mockResolvedValue(existing);
     customerRepository.update.mockResolvedValue(updated);
-    userCustomerRepository.findUsersByCustomerId.mockResolvedValue([
-      createMockUser({ id: 'user-1' }),
-    ]);
+    userCustomerRepository.findUserIdsByCustomerId.mockResolvedValue(['user-1']);
 
     const result = await useCase.execute('cust-1', { ...validInput, name: 'Novo Nome' });
 

@@ -1,30 +1,26 @@
-import { Customer } from '@domain/entities/customer.entity';
 import { SagaInstance } from '@domain/entities/saga-instance.entity';
 import { StatusHistory } from '@domain/entities/status-history.entity';
 import { WorkOrder } from '@domain/entities/work-order.entity';
 import { SagaFailureReason } from '@domain/enums/saga-failure-reason.enum';
 import { SagaStatus } from '@domain/enums/saga-status.enum';
 import { SagaType } from '@domain/enums/saga-type.enum';
+import { ISagaInstanceRepository } from '@domain/interfaces/repositories/saga-instance.repository.interface';
 import { IRepositories, IUnitOfWork } from '@domain/interfaces/repositories/unit-of-work.interface';
 
 import { BUSINESS_EVENTS } from '@application/logging/business-event.catalog';
+import { recordSagaTransition } from '@application/metrics/saga-metrics';
+import { WorkOrderEmailComposer } from '@application/notifications/work-order-email.composer';
 import { IConfirmQuoteApprovalReversalUseCase } from '@application/ports/input/quote-approval/confirm-quote-approval-reversal.use-case.interface';
-import {
-  IEmailSenderService,
-  SendEmailInput,
-} from '@application/ports/output/services/email-sender.service.interface';
 import { ILogger } from '@application/ports/output/services/logger.service.interface';
 import { IMetrics } from '@application/ports/output/services/metrics.service.interface';
-import { recordSagaTransition } from '@application/metrics/saga-metrics';
+import {
+  CustomerEmailRecipient,
+  CustomerEmailRecipientsResolver,
+} from '@application/services/customer-email-recipients';
 
 type ApprovalReversalConfirmation =
   | { confirmed: false; sagaStatus?: SagaStatus }
-  | {
-      confirmed: true;
-      saga: SagaInstance;
-      failureReason: SagaFailureReason;
-      workOrder: WorkOrder;
-    };
+  | { confirmed: true; saga: SagaInstance; workOrder: WorkOrder };
 
 type QuoteApprovalFailureReason =
   | SagaFailureReason.INSUFFICIENT_STOCK
@@ -40,14 +36,17 @@ const REVERSAL_NOTES: Record<QuoteApprovalFailureReason, (quoteId: string) => st
 export class ConfirmQuoteApprovalReversalUseCase implements IConfirmQuoteApprovalReversalUseCase {
   constructor(
     private readonly unitOfWork: IUnitOfWork,
+    private readonly sagaInstanceRepository: ISagaInstanceRepository,
+    private readonly customerEmailRecipientsResolver: CustomerEmailRecipientsResolver,
     private readonly logger: ILogger,
-    private readonly emailSender: IEmailSenderService,
     private readonly metrics: IMetrics,
   ) {}
 
   async execute(quoteId: string): Promise<void> {
+    const recipients = await this.resolveMissingStockRecipients(quoteId);
+
     const confirmation = await this.unitOfWork.executeTransaction((repos) =>
-      this.confirm(repos, quoteId),
+      this.confirm(repos, quoteId, recipients),
     );
 
     if (!confirmation.confirmed) {
@@ -60,22 +59,36 @@ export class ConfirmQuoteApprovalReversalUseCase implements IConfirmQuoteApprova
       return;
     }
 
-    const { saga, failureReason, workOrder } = confirmation;
+    const { saga, workOrder } = confirmation;
 
     recordSagaTransition(this.logger, this.metrics, saga, {
       started: false,
       workOrderNumber: workOrder.number.toString(),
     });
+  }
 
-    // A work order that left AWAITING_APPROVAL had nothing for the customer to approve again.
-    if (failureReason === SagaFailureReason.INSUFFICIENT_STOCK) {
-      await this.notifyCustomer(workOrder);
+  // A work order that left AWAITING_APPROVAL had nothing for the customer to approve again,
+  // so only a reversal for missing stock reads the recipients in the Identity.
+  private async resolveMissingStockRecipients(quoteId: string): Promise<CustomerEmailRecipient[]> {
+    const saga = await this.sagaInstanceRepository.findByTypeAndCorrelationId(
+      SagaType.QUOTE_APPROVAL,
+      quoteId,
+    );
+
+    if (
+      saga?.status !== SagaStatus.COMPENSATING ||
+      saga.failureReason !== SagaFailureReason.INSUFFICIENT_STOCK
+    ) {
+      return [];
     }
+
+    return this.customerEmailRecipientsResolver.resolveForWorkOrder(saga.workOrderId);
   }
 
   private async confirm(
     repos: IRepositories,
     quoteId: string,
+    recipients: CustomerEmailRecipient[],
   ): Promise<ApprovalReversalConfirmation> {
     const saga = await repos.sagaInstance.findByTypeAndCorrelationId(
       SagaType.QUOTE_APPROVAL,
@@ -87,7 +100,7 @@ export class ConfirmQuoteApprovalReversalUseCase implements IConfirmQuoteApprova
       return { confirmed: false, sagaStatus: saga?.status };
     }
 
-    const workOrder = (await repos.workOrder.findByIdWithDetails(saga.workOrderId))!;
+    const workOrder = (await repos.workOrder.findById(saga.workOrderId))!;
 
     const failureReason = saga.failureReason as QuoteApprovalFailureReason;
 
@@ -104,36 +117,29 @@ export class ConfirmQuoteApprovalReversalUseCase implements IConfirmQuoteApprova
       }),
     );
 
-    return { confirmed: true, saga: updatedSaga, failureReason, workOrder };
-  }
-
-  private async notifyCustomer(workOrder: WorkOrder): Promise<void> {
-    try {
-      await this.emailSender.send(
-        this.buildEmailContent(workOrder.customer!, workOrder.number.toString()),
-      );
-    } catch {
-      // The mailer adapter already logs the failure; the compensation stays committed.
+    if (failureReason === SagaFailureReason.INSUFFICIENT_STOCK) {
+      await this.addMissingStockEmails(repos, workOrder, recipients);
     }
+
+    return { confirmed: true, saga: updatedSaga, workOrder };
   }
 
-  private buildEmailContent(customer: Customer, workOrderNumber: string): SendEmailInput {
-    return {
-      toEmail: customer.email.value,
-      toName: customer.name,
-      subject: `Orçamento da Ordem de Serviço ${workOrderNumber} - Estoque insuficiente`,
-      message: {
-        text:
-          `Olá ${customer.name},\n\n` +
-          `A aprovação do orçamento da Ordem de Serviço ${workOrderNumber} não foi concluída por falta de estoque de uma ou mais peças.\n` +
-          `O orçamento voltou a aguardar sua aprovação e pode ser aprovado de novo quando o estoque for reposto.\n\n` +
-          `Atenciosamente,\nEquipe da Oficina Mecânica`,
-        html:
-          `<p>Olá <strong>${customer.name}</strong>,</p>` +
-          `<p>A aprovação do orçamento da Ordem de Serviço <strong>${workOrderNumber}</strong> não foi concluída por falta de estoque de uma ou mais peças.</p>` +
-          `<p>O orçamento voltou a aguardar sua aprovação e pode ser aprovado de novo quando o estoque for reposto.</p>` +
-          `<p>Atenciosamente,<br/>Equipe da Oficina Mecânica</p>`,
-      },
-    };
+  private async addMissingStockEmails(
+    repos: IRepositories,
+    workOrder: WorkOrder,
+    recipients: CustomerEmailRecipient[],
+  ): Promise<void> {
+    // Updating the work order with its version orders its outbox rows against concurrent writers.
+    await repos.workOrder.update(workOrder);
+
+    for (const recipient of recipients) {
+      await repos.outbox.add(
+        WorkOrderEmailComposer.quoteApprovalReverted({
+          recipient,
+          workOrderId: workOrder.id,
+          workOrderNumber: workOrder.number.toString(),
+        }),
+      );
+    }
   }
 }

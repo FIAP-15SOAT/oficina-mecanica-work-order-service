@@ -25,6 +25,7 @@ import {
   ApiOperation,
   ApiParam,
   ApiProduces,
+  ApiServiceUnavailableResponse,
   ApiTags,
   ApiUnauthorizedResponse,
   ApiUnprocessableEntityResponse,
@@ -67,6 +68,10 @@ export class CustomerController {
     description: 'Erro de validação de domínio (documento inválido)',
   })
   @ApiConflictResponse({ description: 'Documento ou e-mail já cadastrado' })
+  @ApiServiceUnavailableResponse({
+    description:
+      'Identity, o serviço dono dos usuários, indisponível ao criar o acesso; nada é gravado',
+  })
   create(
     @Body() request: CreateCustomerRequestDto,
     @CurrentPrincipal() principal: AuthenticatedPrincipal,

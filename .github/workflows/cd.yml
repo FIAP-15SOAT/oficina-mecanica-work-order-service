@@ -117,8 +117,6 @@ jobs:
       - name: Validate required secrets
         env:
           CUSTOMER_JWT_PUBLIC_KEY: ${{ secrets.CUSTOMER_JWT_PUBLIC_KEY }}
-          STAFF_JWT_PRIVATE_KEY: ${{ secrets.STAFF_JWT_PRIVATE_KEY }}
-          STAFF_JWT_REFRESH_PRIVATE_KEY: ${{ secrets.STAFF_JWT_REFRESH_PRIVATE_KEY }}
           STAFF_JWT_PUBLIC_KEY: ${{ secrets.STAFF_JWT_PUBLIC_KEY }}
           STAFF_JWT_KEY_ID: ${{ secrets.STAFF_JWT_KEY_ID }}
         run: |
@@ -134,8 +132,6 @@ jobs:
             esac
           }
           require_pem CUSTOMER_JWT_PUBLIC_KEY 'PUBLIC KEY' 'secrets do repositório'
-          require_pem STAFF_JWT_PRIVATE_KEY 'PRIVATE KEY' 'secrets do environment production'
-          require_pem STAFF_JWT_REFRESH_PRIVATE_KEY 'PRIVATE KEY' 'secrets do environment production'
           require_pem STAFF_JWT_PUBLIC_KEY 'PUBLIC KEY' 'secrets da organização'
           if [ -z "${STAFF_JWT_KEY_ID}" ]; then
             echo "::error::STAFF_JWT_KEY_ID não está configurado nos secrets da organização."
@@ -255,8 +251,6 @@ jobs:
 
       - name: Render and apply application secrets and ConfigMap
         env:
-          STAFF_JWT_PRIVATE_KEY: ${{ secrets.STAFF_JWT_PRIVATE_KEY }}
-          STAFF_JWT_REFRESH_PRIVATE_KEY: ${{ secrets.STAFF_JWT_REFRESH_PRIVATE_KEY }}
           CUSTOMER_JWT_PUBLIC_KEY: ${{ secrets.CUSTOMER_JWT_PUBLIC_KEY }}
           STAFF_JWT_PUBLIC_KEY: ${{ secrets.STAFF_JWT_PUBLIC_KEY }}
           STAFF_JWT_KEY_ID: ${{ secrets.STAFF_JWT_KEY_ID }}
@@ -265,18 +259,13 @@ jobs:
         run: |
           set -euo pipefail
           b64() { printf '%s' "$1" | base64 -w0; }
-          STAFF_JWT_PRIVATE_KEY_B64="$(b64 "${STAFF_JWT_PRIVATE_KEY}")"
-          STAFF_JWT_REFRESH_PRIVATE_KEY_B64="$(b64 "${STAFF_JWT_REFRESH_PRIVATE_KEY}")"
           CUSTOMER_JWT_PUBLIC_KEY_B64="$(b64 "${CUSTOMER_JWT_PUBLIC_KEY}")"
           STAFF_JWT_PUBLIC_KEY_B64="$(b64 "${STAFF_JWT_PUBLIC_KEY}")"
           STAFF_JWT_KEY_ID_B64="$(b64 "${STAFF_JWT_KEY_ID}")"
-          echo "::add-mask::${STAFF_JWT_PRIVATE_KEY_B64}"
-          echo "::add-mask::${STAFF_JWT_REFRESH_PRIVATE_KEY_B64}"
-          export STAFF_JWT_PRIVATE_KEY_B64 STAFF_JWT_REFRESH_PRIVATE_KEY_B64 CUSTOMER_JWT_PUBLIC_KEY_B64 \
-            STAFF_JWT_PUBLIC_KEY_B64 STAFF_JWT_KEY_ID_B64
+          export CUSTOMER_JWT_PUBLIC_KEY_B64 STAFF_JWT_PUBLIC_KEY_B64 STAFF_JWT_KEY_ID_B64
           # shellcheck disable=SC2016 # envsubst receives the variable names literally
-          yq 'select(.metadata.name == "jwt-private-keys" or .metadata.name == "jwt-public-keys")' k8s/01-secrets.yaml \
-            | envsubst '${STAFF_JWT_PRIVATE_KEY_B64} ${STAFF_JWT_REFRESH_PRIVATE_KEY_B64} ${CUSTOMER_JWT_PUBLIC_KEY_B64} ${STAFF_JWT_PUBLIC_KEY_B64} ${STAFF_JWT_KEY_ID_B64}' \
+          yq 'select(.metadata.name == "jwt-public-keys")' k8s/01-secrets.yaml \
+            | envsubst '${CUSTOMER_JWT_PUBLIC_KEY_B64} ${STAFF_JWT_PUBLIC_KEY_B64} ${STAFF_JWT_KEY_ID_B64}' \
             | kubectl apply -f -
 
           AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"

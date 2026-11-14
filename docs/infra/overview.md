@@ -31,7 +31,7 @@ A solução é criada em **sete camadas** com ciclos de vida distintos — seis 
 | # | Camada / Repositório | Ferramenta | O que provisiona | Estado |
 |---|---|---|---|---|
 | 1 | **`oficina-mecanica-infra-base`** | Terraform | Rede AWS (VPC, subnets públicas/privadas, IGW, NAT Gateway, Route Tables) e Security Group de identidade dos nós do EKS (`secgrp-eks-nodes-oficina-mecanica`) | S3 `infra/prod-simulated/infra-base/terraform.tfstate` |
-| 2 | **`oficina-mecanica-infra-k8s`** | Terraform + Helm + CD (`kubectl`) | EKS (cluster + Launch Template IMDSv2 + node group com 2 nós `t3.medium` e `LabRole`), ECRs por serviço (`force_delete`), NLB interno multi-listener + SMTP, CloudWatch, Security Group, Namespaces por serviço + `platform` + `metrics-server` e manifests do `platform` (Datadog Agent e MailHog) | S3 `infra/prod-simulated/infra-k8s/terraform.tfstate` (e `k8s/platform/` via `platform-apply`) |
+| 2 | **`oficina-mecanica-infra-k8s`** | Terraform + Helm + CD (`kubectl`) | EKS (cluster + Launch Template IMDSv2 + node group com 2 nós `t3.medium` e `LabRole`), ECRs por serviço (`force_delete`), NLB interno multi-listener + SMTP, CloudWatch, Security Group, Namespaces por serviço + `platform` + `metrics-server` e manifests do `platform` (Datadog Agent e MailHog, o servidor SMTP de teste que recebe os e-mails da solução) | S3 `infra/prod-simulated/infra-k8s/terraform.tfstate` (e `k8s/platform/` via `platform-apply`) |
 | 3 | **`oficina-mecanica-infra-database-work-order`** | Terraform | **Amazon RDS (PostgreSQL 18)** e **Amazon ElastiCache (Valkey 9.1)** dedicados ao `work-order`, fora do cluster, nas subnets privadas da VPC | S3 `infra/prod-simulated/infra-database-work-order/terraform.tfstate` |
 | 4 | **`oficina-mecanica-work-order-service` (`k8s/*.yaml`)** | **CD (`kubectl`)** | API (Deployment/Service/HPA), ConfigMap, Secrets e Job de migração, no namespace `work-order`; MailHog e Agent são do `infra-k8s`, no namespace `platform` | Sem state — reaplicado a cada deploy |
 | 5 | **`oficina-mecanica-api-gateway`** | Terraform | **AWS API Gateway (HTTP API)**, stage, VPC Link, security group e log de acesso — a **API Gateway** da solução | S3 `infra/prod-simulated/api-gateway/terraform.tfstate` |
@@ -67,9 +67,9 @@ O mapa **"quem provisiona o quê / para que serve"**, agrupado pelas sete camada
 | **ECRs por serviço** (`ecr-oficina-mecanica-<contexto>`) | `ecr.tf` | Quatro repositórios (`work-order`, `identity`, `billing`, `inventory`) gerados via `for_each`; `scan_on_push`; criptografia `AES256`; `force_delete = true`; **mantém as últimas 20 imagens** por serviço |
 | **Namespaces** (`work-order`, `identity`, `billing`, `inventory` e `platform`) | `k8s_namespace.tf` | Isolamento por bounded context e namespace compartilhado `platform` |
 | **metrics-server** (Helm `3.13.0`) | `k8s_metrics_server.tf` | Métricas de CPU/memória em `kube-system`; **habilita o HPA** |
-| **NLB interno** `nlb-oficina-mecanica` | `nlb.tf` | Fronteia os microsserviços para o API Gateway e o SMTP do MailHog para a VPC; nas **subnets privadas**, sem IP público, com **cross-zone habilitado** |
+| **NLB interno** `nlb-oficina-mecanica` | `nlb.tf` | Fronteia os microsserviços para o API Gateway e o SMTP do MailHog para a VPC, por onde a função Lambda de notificação, fora do cluster, entrega os e-mails; nas **subnets privadas**, sem IP público, com **cross-zone habilitado** |
 | **Target Groups e Listeners por serviço** (`tg-oficina-mecanica-<contexto>`) | `nlb.tf` | Alvos `instance` nos **NodePorts `30080` (`work-order`, listener `80`), `30081` (`identity`, listener `8081`), `30082` (`billing`, listener `8082`) e `30083` (`inventory`, listener `8083`)**; health check **HTTP em `/api/health/ready`** e attachment ao ASG do node group |
-| **Target Group e Listener SMTP** (`tg-oficina-mecanica-smtp`) | `nlb.tf` | Listener `1025/TCP` → NodePort `31025` (`instance` mode, health check TCP) expondo o MailHog do namespace `platform` na VPC |
+| **Target Group e Listener SMTP** (`tg-oficina-mecanica-smtp`) | `nlb.tf` | Listener `1025/TCP` → NodePort `31025` (`instance` mode, health check TCP) expondo o MailHog do namespace `platform` na VPC para a função Lambda de notificação |
 | **Regras de ingress** dos NodePorts | `nlb.tf` | Liberam `30080`–`30083` e `31025` no SG gerenciado do cluster **apenas para a CIDR da VPC** |
 | **Datadog Agent e MailHog** (`k8s/platform/`) | `.github/workflows/cd.yml` (`platform-apply`) | `datadog-secret` criado via stdin a partir de `DD_API_KEY`, DaemonSet `datadog-agent` (`gcr.io/datadoghq/agent:7.83.1`, OTLP HTTP `:4318`) e `mailhog` (`mailhog/mailhog:v1.0.1`, ClusterIP `1025`/`8025` + NodePort `31025`) no namespace `platform` |
 
@@ -79,7 +79,7 @@ O mapa **"quem provisiona o quê / para que serve"**, agrupado pelas sete camada
 |---|---|---|
 | **Instância RDS** PostgreSQL 18 (`rds-oficina-mecanica-work-order`, `db.t4g.micro`, Single-AZ, 20 GiB GP3) | [`oficina-mecanica-infra-database-work-order`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order) (`rds.tf`) | Persistência relacional do `work-order`, **fora do cluster**; credencial gerenciada pelo RDS no Secrets Manager |
 | **ElastiCache Valkey 9.1** (`cache-oficina-mecanica-work-order`, `cache.t4g.micro`, single-node) | `elasticache.tf` | Cache distribuído do `work-order` com TLS obrigatório, repouso criptografado e AUTH token gerado via `ephemeral` + `secret_string_wo` no Secrets Manager (`cache-oficina-mecanica-work-order-auth-token`) |
-| **Subnet groups + Security Groups** (`secgrp-rds-…` e `secgrp-cache-…`) | `rds.tf`, `elasticache.tf`, `security_group.tf` | Alocam RDS e Valkey nas subnets privadas da VPC, com ingress restrito a `secgrp-eks-nodes-oficina-mecanica` (e CIDRs privadas da VPC no RDS de forma transitória até a C-20) e sem regras de egress |
+| **Subnet groups + Security Groups** (`secgrp-rds-…` e `secgrp-cache-…`) | `rds.tf`, `elasticache.tf`, `security_group.tf` | Alocam RDS e Valkey nas subnets privadas da VPC, com ingress restrito a `secgrp-eks-nodes-oficina-mecanica` (e CIDRs privadas da VPC no RDS de forma transitória, enquanto a customer-auth, a função Lambda de login do cliente, lê este banco) e sem regras de egress |
 
 ### Camada 6 — `oficina-mecanica-lambda-customer-auth` (Terraform)
 
@@ -99,8 +99,8 @@ O par de chaves é o mesmo dos dois lados: a metade **pública** vive no secret 
 | Recurso | Manifesto | Finalidade |
 |---|---|---|
 | **Job** `db-migrate` (one-shot) | `00-db-migrate-job.yaml` | `prisma migrate deploy` + `db seed`; renderizado por run; TTL de 14 dias; `backoffLimit: 0` |
-| **Secrets** `jwt-private-keys`, `jwt-public-keys`, `database-credentials` e `cache-credentials` | `01-secrets.yaml` (placeholders base64 preenchidos pelo CD e aplicados por stdin) | `STAFF_JWT_PRIVATE_KEY` / `STAFF_JWT_REFRESH_PRIVATE_KEY`, `CUSTOMER_JWT_PUBLIC_KEY` / `STAFF_JWT_PUBLIC_KEY` / `STAFF_JWT_KEY_ID`, `DATABASE_URL` (RDS) e `CACHE_URL` (`rediss://`, ElastiCache) |
-| **ConfigMap** `work-order-config` | `02-work-order-configmap.yaml` | Envs não-sensíveis (`NODE_ENV`, `PORT`, expirações JWT, `BCRYPT_SALT_ROUNDS`, `MAIL_HOST/PORT`, `TZ`, `CUSTOMER_JWT_ISSUER`/`CUSTOMER_JWT_AUDIENCE`, `LOG_LEVEL`, `OTEL_SERVICE_*`, `TRUSTED_PROXY_CIDRS`, `AWS_REGION`, `WORK_ORDER_QUEUE_NAME`, `MESSAGING_TOPIC_ARN`, `CACHE_TTL_SECONDS` e as três chaves de telemetria). O CD renderiza `OTEL_EXPORTER_OTLP_ENDPOINT` a partir da variável homônima do GitHub Actions (valor vazio desliga o SDK por completo) e `MESSAGING_TOPIC_ARN` com a conta da sessão AWS |
+| **Secrets** `jwt-public-keys`, `database-credentials` e `cache-credentials` | `01-secrets.yaml` (placeholders base64 preenchidos pelo CD e aplicados por stdin) | `CUSTOMER_JWT_PUBLIC_KEY` / `STAFF_JWT_PUBLIC_KEY` / `STAFF_JWT_KEY_ID`, `DATABASE_URL` (RDS) e `CACHE_URL` (`rediss://`, ElastiCache) |
+| **ConfigMap** `work-order-config` | `02-work-order-configmap.yaml` | Envs não-sensíveis (`NODE_ENV`, `PORT`, emissor e audiência do token de funcionário, `TZ`, `CUSTOMER_JWT_ISSUER`/`CUSTOMER_JWT_AUDIENCE`, `LOG_LEVEL`, `OTEL_SERVICE_*`, `TRUSTED_PROXY_CIDRS`, `AWS_REGION`, `WORK_ORDER_QUEUE_NAME`, `MESSAGING_TOPIC_ARN`, `CACHE_TTL_SECONDS`, `INVENTORY_SERVICE_URL`, `BILLING_SERVICE_URL`, `IDENTITY_SERVICE_URL` e as três chaves de telemetria). O CD renderiza `OTEL_EXPORTER_OTLP_ENDPOINT` a partir da variável homônima do GitHub Actions (valor vazio desliga o SDK por completo) e `MESSAGING_TOPIC_ARN` com a conta da sessão AWS |
 | **Deployment** `work-order-service` | `03-work-order-deployment.yaml` | A API NestJS; sem `replicas` (o HPA é o dono); `:sha` imutável; labels UST com `version`; três probes HTTP em `/api/health/live` (startup + liveness) e `/api/health/ready` (readiness) |
 | **Service** `work-order-service` (**NodePort** `3000` → `30080`) | `04-work-order-service.yaml` | Expõe a API dentro do cluster **e** na porta `30080` dos nós, que é o destino do target group do NLB interno. `NodePort` é um superconjunto de `ClusterIP`: o DNS interno e o `port-forward` seguem iguais |
 | **HPA** `work-order-service-hpa` (`1`→`2`) | `05-api-hpa.yaml` | Autoscaling da API por CPU (70%) e memória (80%) |
@@ -151,7 +151,7 @@ Fiel ao repositório [`oficina-mecanica-infra-base`](https://github.com/FIAP-15S
 
 ## Fluxo em tempo de execução (quem chama quem)
 
-Há **dois** caminhos de entrada: o público, pelo API Gateway, e o de diagnóstico, por túnel. A API alcança o MailHog do namespace `platform` por DNS de Service, o PostgreSQL e o Valkey pelos endpoints privados do RDS e do ElastiCache, fora do cluster, e o SNS/SQS pela API da AWS:
+Há **dois** caminhos de entrada: o público, pelo API Gateway, e o de diagnóstico, por túnel. A API alcança o PostgreSQL e o Valkey pelos endpoints privados do RDS e do ElastiCache, fora do cluster, e o SNS/SQS pela API da AWS; os e-mails saem pela mensageria, e quem fala SMTP é a função Lambda de notificação:
 
 ```
 Cliente (internet) ──HTTPS──▶ API Gateway (HTTP API)
@@ -165,11 +165,14 @@ Dev/QA ──┤ kubectl port-forward 3000:3000 ├──▶ Service work-order-
                                                         │
                                                         ▼
                                      Pod work-order-service (:3000), ns work-order
-                     DATABASE_URL │   CACHE_URL │   SNS/SQS │   MAIL_HOST │
-                                  ▼             ▼           ▼             ▼
-                   Amazon RDS (:5432)  ElastiCache   Amazon SNS e   Service mailhog (:1025)
-                   fora do cluster     Valkey        SQS FIFO       ns platform
+                     DATABASE_URL │   CACHE_URL │   SNS/SQS │
+                                  ▼             ▼           ▼
+                   Amazon RDS (:5432)  ElastiCache   Amazon SNS e
+                   fora do cluster     Valkey        SQS FIFO
                                        (:6379, TLS)  (via NAT)
+
+Amazon SNS ──▶ SQS notification.fifo ──▶ Lambda de notificação ──SMTP──▶ NLB interno :1025
+                                         (repositório próprio)            ──▶ Node :31025 ──▶ MailHog, ns platform
 
 Cliente (internet) ──HTTPS POST /customer-auth/login──▶ API Gateway ──▶ Lambda de
                                                        autenticação de clientes
@@ -185,7 +188,7 @@ Node (subnet privada) ──pull da imagem :sha──▶ Amazon ECR (via NAT)
 - **API → PostgreSQL**: via `DATABASE_URL` (`database-credentials`) apontando para o endpoint do **Amazon RDS**, fora do cluster, alcançado pela rede a partir das subnets privadas. Quem reporta se esse caminho está de pé é a `readinessProbe` da API em `/api/health/ready` — não existe pod de banco para inspecionar.
 - **API → Valkey**: via `CACHE_URL` (`cache-credentials`), `rediss://` com o auth token, apontando para o endpoint primário do **ElastiCache**, fora do cluster.
 - **API → SNS/SQS**: publica no tópico `oficina-events.fifo` e consome a fila `work-order.fifo` com o papel do nó, sem credencial AWS em Secret.
-- **API → MailHog**: SMTP em `mailhog.platform.svc.cluster.local:1025` (do `work-order-config`), para os e-mails de orçamento enviado e de aprovação desfeita por falta de estoque, entre outros.
+- **E-mails**: a API grava os e-mails ao cliente (orçamento enviado, link de pagamento e falta de estoque) como mensagens `notification.email.send` no outbox (a tabela das mensagens a publicar, gravada na mesma transação da OS) e as publica no tópico `oficina-events.fifo`; a fila `notification.fifo` as entrega à função Lambda de notificação ([`oficina-mecanica-lambda-notification`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-notification)), que envia por SMTP ao MailHog do namespace `platform`, pelo listener `1025` do NLB interno. A API não fala SMTP.
 - **Egresso**: pods e nodes nas subnets privadas saem para a internet **pelo NAT Gateway** (inclusive o `pull` das imagens do ECR — não há VPC endpoints).
 
 ## Fluxo de provisionamento e deploy
@@ -206,7 +209,7 @@ A entrega segue a separação entre os sete repositórios:
 3. **`oficina-mecanica-infra-database-work-order`**: Consome a VPC, as subnets privadas e `eks_nodes_security_group_id` e provisiona o RDS PostgreSQL 18 (`rds-oficina-mecanica-work-order`), o ElastiCache Valkey 9.1 (`cache-oficina-mecanica-work-order`), subnet groups e security groups dedicados ao contexto `work-order`. O RDS mantém seu Secret no Secrets Manager e o token do Valkey é gravado via atributos write-only (`secret_string_wo`).
 4. **`oficina-mecanica-work-order-service` (CD)**:
    - **`build-push-image`**: Constrói a imagem Docker multi-stage da aplicação NestJS e publica no Amazon ECR a tag por commit (`:sha`) e a tag móvel `:latest`; com o input `image_tag` do `workflow_dispatch`, pula o build e a migração e reusa a imagem publicada (rollback manual).
-   - **`prepare-deploy`**: Descobre metadados/ARN pelo RDS, espera `available`/`active`, lê `AWSCURRENT` e materializa `DATABASE_URL` com percent-encoding e TLS em `database-credentials` usando Node.js inline e stdin. Também espera o ElastiCache, lê o endpoint e o secret do auth token e materializa `CACHE_URL` em `cache-credentials` por stdin. Em outro step, aplica as chaves privadas do token de funcionário em `jwt-private-keys`, as chaves públicas e o `kid` em `jwt-public-keys` e o ConfigMap, sem publicar outputs.
+   - **`prepare-deploy`**: Descobre metadados/ARN pelo RDS, espera `available`/`active`, lê `AWSCURRENT` e materializa `DATABASE_URL` com percent-encoding e TLS em `database-credentials` usando Node.js inline e stdin. Também espera o ElastiCache, lê o endpoint e o secret do auth token e materializa `CACHE_URL` em `cache-credentials` por stdin. Em outro step, aplica as chaves públicas e o `kid` em `jwt-public-keys` e o ConfigMap, sem publicar outputs.
    - **`db-migrate`**: Após build e preparação, executa somente o Job descartável de `prisma migrate deploy` + `prisma db seed` e aguarda sucesso, bloqueando o deploy em falha/timeout. Não roda no rollback manual por `image_tag`.
    - **`app-deploy`**: Após sucesso da preparação e da migration, recebe a imagem do build, renderiza o pod template, aplica os manifests Kubernetes (Deployment, Service, HPA), valida o rollout e faz o smoke `GET /health/work-order` pelo API Gateway; falha do rollout ou do smoke executa `kubectl rollout undo`. O deploy greenfield não usa annotation/output de versão da credencial nem renova Pods automaticamente por mudança isolada do Secret.
 
@@ -226,7 +229,7 @@ Ao desfazer o caminho público, respeite a ordem inversa das dependências: reve
 - **Consequência aceita: a autorização é aplicada por controller, não por guard global.** Hoje todos os controllers de negócio declaram `@UseGuards` e `auth`/`health` são exceções deliberadas — não há buraco atual. O que muda com `ANY /api/{proxy+}` é o **custo de um esquecimento futuro**: um controller novo sem `@UseGuards` fica público na internet sem passar por nenhum outro repositório.
 - **Endpoint do EKS é público (mas autenticado).** O control plane tem `endpoint_public_access = true` **e** `endpoint_private_access = true`: o servidor de API do Kubernetes é alcançável pela internet, porém protegido por autenticação/autorização IAM+RBAC. O Security Group do control plane só aceita `443` **da CIDR da VPC**.
 - **Nodes em subnets privadas.** Sem IP público; todo egresso passa pelo NAT Gateway.
-- **Fluxo de segredos.** O CD usa apenas `RDS_INSTANCE_IDENTIFIER`, `CACHE_REPLICATION_GROUP_ID` e `K8S_NAMESPACE` como Variables, descobre o restante na AWS e materializa `DATABASE_URL` em `database-credentials` e `CACHE_URL` em `cache-credentials`. `jwt-private-keys` fica restrito às chaves privadas `STAFF_JWT_PRIVATE_KEY`/`STAFF_JWT_REFRESH_PRIVATE_KEY`, vindas dos secrets do environment `production`, e `jwt-public-keys` a material público: `CUSTOMER_JWT_PUBLIC_KEY` (secret do repositório) e `STAFF_JWT_PUBLIC_KEY`/`STAFF_JWT_KEY_ID` (secrets da organização, lidos também pelos outros serviços). Pods e Jobs não leem segredos da AWS, e nenhum ESO/CSI/ASCP foi introduzido. Detalhes em [ci-cd.md › Injeção de secrets](ci-cd.md#injeção-de-secrets-da-aplicação).
+- **Fluxo de segredos.** O CD usa apenas `RDS_INSTANCE_IDENTIFIER`, `CACHE_REPLICATION_GROUP_ID` e `K8S_NAMESPACE` como Variables, descobre o restante na AWS e materializa `DATABASE_URL` em `database-credentials` e `CACHE_URL` em `cache-credentials`. O serviço não guarda chave privada de token (quem assina o token de funcionário é o Identity, o serviço dono dos usuários), e `jwt-public-keys` fica restrito a material público: `CUSTOMER_JWT_PUBLIC_KEY` (secret do repositório) e `STAFF_JWT_PUBLIC_KEY`/`STAFF_JWT_KEY_ID` (secrets da organização, lidos também pelos outros serviços). Pods e Jobs não leem segredos da AWS, e nenhum ESO/CSI/ASCP foi introduzido. Detalhes em [ci-cd.md › Injeção de secrets](ci-cd.md#injeção-de-secrets-da-aplicação).
 - **ECR com `scan_on_push`** e imagens criptografadas (`AES256`); análise SAST/DAST cobre o código e a API em execução — ver [Segurança](../security.md).
 
 ## Limitações e o que produção exigiria

@@ -1,13 +1,14 @@
 import { SNSClient } from '@aws-sdk/client-sns';
 import { GetQueueUrlCommand, SQSClient } from '@aws-sdk/client-sqs';
 import { AfterAll, BeforeAll, setDefaultTimeout } from '@cucumber/cucumber';
-import * as bcrypt from 'bcrypt';
 
-import { registerAndLogin } from '../../helpers/auth.helper';
+import { UserRole } from '@domain/enums/user-role.enum';
 import {
   InternalServicesStub,
   startInternalServicesStub,
+  stubIdentityUser,
 } from '../../helpers/internal-services-stub';
+import { signTestStaffToken } from '../../helpers/staff-jwt.helper';
 import { TestContext, setupTestApp, teardownTestApp } from '../../helpers/test-app.helper';
 import { bdd } from './world';
 
@@ -31,11 +32,11 @@ BeforeAll({ timeout: 300_000 }, async function () {
   const queueUrl = async (QueueName: string): Promise<string> =>
     (await sqs.send(new GetQueueUrlCommand({ QueueName }))).QueueUrl as string;
 
-  const admin = await registerAndLogin(
-    ctx.httpServer,
-    { name: 'Admin BDD', email: 'admin@bdd.test', role: 'ADMIN' },
-    ctx.prisma,
-  );
+  const admin = stubIdentityUser(stub, {
+    name: 'Admin BDD',
+    email: 'admin@bdd.test',
+    role: UserRole.ADMIN,
+  });
 
   const customer = await ctx.prisma.customer.create({
     data: {
@@ -51,14 +52,10 @@ BeforeAll({ timeout: 300_000 }, async function () {
   });
 
   // The linked access user is who the work order e-mails go to.
-  const accessUser = await ctx.prisma.user.create({
-    data: {
-      name: 'Acesso BDD',
-      email: 'acesso@bdd.test',
-      cpf: '52998224725',
-      passwordHash: await bcrypt.hash('Acesso@2026', 10),
-      role: null,
-    },
+  const accessUser = stubIdentityUser(stub, {
+    name: 'Acesso BDD',
+    email: 'acesso@bdd.test',
+    role: null,
   });
 
   await ctx.prisma.userCustomer.create({
@@ -73,9 +70,10 @@ BeforeAll({ timeout: 300_000 }, async function () {
     queueUrls: {
       billing: await queueUrl('billing.fifo'),
       inventory: await queueUrl('inventory.fifo'),
+      notification: await queueUrl('notification.fifo'),
     },
-    staffToken: admin.accessToken,
-    staffUserId: admin.user.id,
+    staffToken: signTestStaffToken({ sub: admin.id, email: admin.email, role: UserRole.ADMIN }),
+    staffUserId: admin.id,
     customerId: customer.id,
     vehicleId: vehicle.id,
   };

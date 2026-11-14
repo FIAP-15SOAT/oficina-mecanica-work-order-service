@@ -1,8 +1,9 @@
 /* eslint-disable no-console */
 import { PrismaClient } from '../generated/client';
+import { SEED_IDS } from './seed-ids';
 
 interface UserCustomerSeed {
-  userEmail: string;
+  userEmail: string; // the user lives in the Identity; only its id is stored here
   customerDocument: string;
 }
 
@@ -18,18 +19,18 @@ export async function seedUserCustomers(
   console.log('🌱 Seeding customer access links...');
 
   for (const link of links) {
-    const user = await prisma.user.findUnique({ where: { email: link.userEmail } });
+    const userId = SEED_IDS.users[link.userEmail];
     const customerId = customerIds[link.customerDocument];
 
-    if (!user || !customerId) {
+    if (!userId || !customerId) {
       console.log(`  ⚠ Skipping link ${link.userEmail} → ${link.customerDocument} (not found)`);
       continue;
     }
 
     await prisma.userCustomer.upsert({
-      where: { userId_customerId: { userId: user.id, customerId } },
+      where: { userId_customerId: { userId, customerId } },
       update: {},
-      create: { userId: user.id, customerId },
+      create: { userId, customerId },
     });
 
     console.log(`  ✔ ${link.userEmail} → ${link.customerDocument}`);
