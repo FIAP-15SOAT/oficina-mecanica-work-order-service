@@ -3,7 +3,7 @@
 A infraestrutura é provisionada em seis repositórios Terraform independentes:
 - [`oficina-mecanica-infra-base`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base): Fundação de rede AWS (VPC, subnets públicas/privadas, IGW, NAT Gateway e Security Group de identidade dos nós do EKS).
 - [`oficina-mecanica-infra-database-work-order`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order): Banco de dados relacional Amazon RDS (PostgreSQL 18) e cache distribuído Amazon ElastiCache (Valkey 9.1) dedicados ao `work-order`.
-- [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s): Cluster Amazon EKS, Launch Template e Node Group gerenciado (2 nós `t3.medium`), ECRs por microsserviço, NLB interno multi-listener + SMTP, namespaces por serviço e `platform` (Datadog Agent e MailHog).
+- [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s): Cluster Amazon EKS, Launch Template e Node Group gerenciado (2 nós `t3.medium`), ECRs por microsserviço, NLB interno multi-listener + SMTP, namespaces por serviço e `platform` (Datadog Agent e MailHog, o servidor SMTP de teste que recebe os e-mails da solução).
 - [`oficina-mecanica-api-gateway`](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway): HTTP API, VPC Link, integrações, rotas e logs de acesso.
 - [`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth): Função de autenticação externa, rede, segredo de assinatura e permissão do Gateway.
 - [`oficina-mecanica-custom-monitoring`](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring): Dashboards, monitores, teste sintético e configuração de tags no Datadog.
@@ -140,7 +140,7 @@ O control plane do cluster utiliza a role IAM gerenciada pelo laboratório (`Lab
   - `identity`: listener `8081/TCP` → `tg-oficina-mecanica-identity` → NodePort `30081`
   - `billing`: listener `8082/TCP` → `tg-oficina-mecanica-billing` → NodePort `30082`
   - `inventory`: listener `8083/TCP` → `tg-oficina-mecanica-inventory` → NodePort `30083`
-- **Listener e Target Group TCP para SMTP**: listener `1025/TCP` encaminhando ao target group `tg-oficina-mecanica-smtp` (`instance` mode, health check TCP) no NodePort `31025` (exposto pelo Service `mailhog-smtp` no namespace `platform`), com attachment ao ASG e regra de ingress da CIDR da VPC.
+- **Listener e Target Group TCP para SMTP**: listener `1025/TCP` encaminhando ao target group `tg-oficina-mecanica-smtp` (`instance` mode, health check TCP) no NodePort `31025` (exposto pelo Service `mailhog-smtp` no namespace `platform`), com attachment ao ASG e regra de ingress da CIDR da VPC. É por ele que a função Lambda de notificação ([`oficina-mecanica-lambda-notification`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-notification)), fora do cluster, entrega os e-mails ao MailHog.
 
 ## Variáveis e saídas
 
@@ -196,7 +196,7 @@ Outputs exportados pelo `infra-base`: `vpc_id`, `vpc_cidr`, `public_subnet_ids`,
 | `service_listener_arns` | Mapa `contexto → ARN` dos listeners TCP do NLB interno (`work-order`, `identity`, `billing`, `inventory`) |
 | `service_listener_ports` | Mapa `contexto → porta TCP` dos listeners do NLB interno (`80`, `8081`, `8082`, `8083`) |
 | `nlb_dns_name` | Nome DNS interno do NLB (`nlb-oficina-mecanica`) |
-| `smtp_listener_port` | Porta TCP do listener SMTP no NLB interno (`1025`) |
+| `smtp_listener_port` | Porta TCP do listener SMTP no NLB interno (`1025`), lida com `nlb_dns_name` pela função Lambda de notificação |
 | `api_nlb_listener_arn` | Alias de transição para `service_listener_arns["work-order"]` até a C-08 |
 | `zz_next_steps` | Guia rápido pós-deploy para configurar `kubeconfig` e validar acesso |
 

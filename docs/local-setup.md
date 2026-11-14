@@ -10,19 +10,7 @@ Setup local (API na máquina, infra no Docker), variáveis de ambiente e dados d
 
 ## Setup local
 
-Neste modo a API roda diretamente na sua máquina com `npm run start:dev`, enquanto apenas a infraestrutura (PostgreSQL 18, MailHog, Valkey e LocalStack) é provida via Docker. Pré-requisitos: **Node.js 24.9+** (24.15+ para os comandos de geração do CLI, como `nest generate`, mínimo do `@nestjs/schematics` 12) e Docker com Docker Compose.
-
-### MailHog
-
-O MailHog é um servidor SMTP de desenvolvimento que captura todos os e-mails enviados pela aplicação (ex.: o aviso de orçamento enviado ao cliente) sem entregá-los de verdade. Acesse a caixa de entrada em `http://localhost:8025` após subir os serviços de infraestrutura.
-
-As variáveis de ambiente necessárias para integração com o MailHog já estão pré-configuradas no `.env.example`:
-
-```env
-MAIL_HOST=localhost
-MAIL_PORT=1025
-MAIL_FROM="Oficina Mecânica <noreply@oficina.local>"
-```
+Neste modo a API roda diretamente na sua máquina com `npm run start:dev`, enquanto apenas a infraestrutura (PostgreSQL 18, Valkey e LocalStack) é provida via Docker. Pré-requisitos: **Node.js 24.9+** (24.15+ para os comandos de geração do CLI, como `nest generate`, mínimo do `@nestjs/schematics` 12) e Docker com Docker Compose.
 
 ### Valkey (cache)
 
@@ -30,9 +18,20 @@ O Valkey 9.1 do compose faz o papel do ElastiCache: guarda o detalhe das ordens 
 
 ### LocalStack (SNS e SQS)
 
-O LocalStack 4.14.0 emula o SNS e o SQS em `http://localhost:4566`. Ao subir, o script `app/localstack/init-topology.sh` cria o tópico `oficina-events.fifo`, as filas FIFO de cada serviço com as DLQs (`maxReceiveCount` 5) e as assinaturas com as filter policies por `type`. O container só fica saudável depois que o script termina. O script é cópia do repositório de mensageria da oficina e não é editado aqui.
+O LocalStack 4.14.0 emula o SNS e o SQS em `http://localhost:4566`. Ao subir, o script `app/localstack/init-topology.sh` cria o tópico `oficina-events.fifo`, as filas FIFO de cada serviço com as DLQs (filas das mensagens que falharam; a mensagem vai para lá depois de cinco recebimentos, `maxReceiveCount` 5) e as assinaturas com as filter policies por `type`. O container só fica saudável depois que o script termina. O script é cópia do repositório de mensageria da oficina e não é editado aqui.
 
 A API acha o LocalStack por `AWS_ENDPOINT_URL`, variável que o próprio SDK da AWS lê; `AWS_ACCESS_KEY_ID` e `AWS_SECRET_ACCESS_KEY` aceitam qualquer valor (`test`). No cluster, `AWS_ENDPOINT_URL` não existe e o SDK usa os endpoints reais da região.
+
+### E-mails (fila `notification.fifo`)
+
+A API não envia e-mail. Os e-mails ao cliente (orçamento enviado, link de pagamento e aviso de falta de estoque) saem como mensagens `notification.email.send`, publicadas no tópico SNS `oficina-events.fifo` e entregues à fila SQS `notification.fifo`, que no cluster alimenta a função serverless de notificação ([`oficina-mecanica-lambda-notification`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-notification)), a responsável pelo envio. Localmente essa função não roda, e as mensagens ficam na `notification.fifo` do LocalStack. Para lê-las:
+
+```bash
+docker compose exec localstack sh -c 'awslocal sqs receive-message --max-number-of-messages 10 \
+  --queue-url "$(awslocal sqs get-queue-url --queue-name notification.fifo --query QueueUrl --output text)"'
+```
+
+Cada mensagem traz no `payload` o destinatário (`to`), o assunto, o texto, o HTML e o `purpose` (`quote_sent`, `payment_link` ou `quote_approval_reverted`). Ler não apaga a mensagem: ela some por 30 s e volta; depois de cinco leituras, vai para a DLQ `notification-dlq.fifo`.
 
 ### Passo a passo
 
@@ -48,8 +47,8 @@ npm install
 cp .env.example .env
 grep '^STAFF_JWT_PUBLIC_KEY=' ../../oficina-mecanica-identity-service/app/.env >> .env
 
-# 3. Subir a infraestrutura (PostgreSQL, MailHog, Valkey e LocalStack), sem o container da API
-docker compose up postgres mailhog valkey localstack -d --wait
+# 3. Subir a infraestrutura (PostgreSQL, Valkey e LocalStack), sem o container da API
+docker compose up postgres valkey localstack -d --wait
 
 # 4. Configurar banco (migrate + generate + seed)
 npm run db:setup
@@ -64,7 +63,6 @@ Após a inicialização:
 
 - **API:** `http://localhost:3000`
 - **Swagger:** `http://localhost:3000/api/docs`
-- **MailHog (interface web):** `http://localhost:8025`
 - **LocalStack (SNS/SQS):** `http://localhost:4566`
 
 Para executar chamadas à API, use o Swagger em `/api/docs` ou importe a collection e o environment do Postman (`collections/oficina-collection.json` e `collections/oficina-environment.json`) — o passo a passo está em [Testes › Postman / Newman](testing.md#postman--newman).
@@ -96,11 +94,6 @@ CUSTOMER_JWT_AUDIENCE=oficina-api
 
 # CORS — separar múltiplas origens por vírgula
 ALLOWED_ORIGINS=http://localhost:3000
-
-# E-mail (MailHog em desenvolvimento)
-MAIL_HOST=localhost
-MAIL_PORT=1025
-MAIL_FROM="Oficina Mecânica <noreply@oficina.local>"
 
 # Mensageria (SNS/SQS FIFO). Localmente, o LocalStack do compose cria o tópico e
 # as filas; AWS_ENDPOINT_URL é lido pelo próprio SDK e não existe no cluster.
@@ -167,12 +160,12 @@ Sem o Billing de pé, a API sobe normalmente, mas a abertura de OS com itens, a 
 
 ### Identity local
 
-`IDENTITY_SERVICE_URL` é o endereço das rotas `/internal` do Identity, o serviço da solução dono dos usuários e das credenciais ([`oficina-mecanica-identity-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service)). É nele que o funcionário faz login, e a API o chama para mostrar o mecânico atribuído e os autores do histórico das OS, conferir o mecânico antes de abrir ou editar uma OS, criar o usuário de acesso de um cliente, listar os usuários vinculados e achar os usuários vinculados que recebem os e-mails de orçamento enviado e de cobrança. O Identity, por sua vez, chama `GET /internal/users/:userId/customers` desta API para montar o perfil de `GET /api/me`. Localmente, suba a stack do Identity pelo `docker compose` do repositório dele, que publica a API na porta `3001` do host.
+`IDENTITY_SERVICE_URL` é o endereço das rotas `/internal` do Identity, o serviço da solução dono dos usuários e das credenciais ([`oficina-mecanica-identity-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service)). É nele que o funcionário faz login, e a API o chama para mostrar o mecânico atribuído e os autores do histórico das OS, conferir o mecânico antes de abrir ou editar uma OS, criar o usuário de acesso de um cliente, listar os usuários vinculados e achar os usuários vinculados que recebem os e-mails de orçamento enviado, de cobrança e de falta de estoque. O Identity, por sua vez, chama `GET /internal/users/:userId/customers` desta API para montar o perfil de `GET /api/me`. Localmente, suba a stack do Identity pelo `docker compose` do repositório dele, que publica a API na porta `3001` do host.
 
 - **API na máquina** (`npm run start:dev`): `http://localhost:3001`, o valor do `.env.example`.
 - **API no compose** (Quick Start): o `docker-compose.yml` sobrescreve o valor com `http://host.docker.internal:3001`, pelo mesmo `extra_hosts` do Inventory.
 
-Sem o Identity de pé, a API sobe normalmente, mas o login não existe, as rotas que mostram ou conferem usuários respondem 503 (ver [Usuários lidos no Identity](api.md#usuários-lidos-no-identity)) e as mensagens `billing.quote.sent` e `billing.payment.requested` voltam à fila até o Identity responder. No cluster, o ConfigMap usa o endereço interno do Identity, `http://identity-service.identity.svc.cluster.local:3000`.
+Sem o Identity de pé, a API sobe normalmente, mas o login não existe, as rotas que mostram ou conferem usuários respondem 503 (ver [Usuários lidos no Identity](api.md#usuários-lidos-no-identity)) e as mensagens `billing.quote.sent`, `billing.payment.requested` e `billing.quote.approval_reverted` (esta só quando a reversão é por falta de estoque) voltam à fila até o Identity responder. No cluster, o ConfigMap usa o endereço interno do Identity, `http://identity-service.identity.svc.cluster.local:3000`.
 
 ### Chave do token de funcionário
 

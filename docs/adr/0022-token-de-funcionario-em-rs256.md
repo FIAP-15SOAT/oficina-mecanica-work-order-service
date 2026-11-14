@@ -88,5 +88,5 @@ Deixaria a configuração igual à da chave de access. Descartada porque só o e
 
 - [ADR 0013 — Autenticação interna via JWT stateless (access + refresh)](0013-autenticacao-interna-jwt-stateless.md)
 - [ADR 0004 — Autenticação externa de clientes por CPF via função serverless](0004-autenticacao-de-clientes.md)
-- [`docs/security.md` › Chaves do token de funcionário](../security.md#chaves-do-token-de-funcionário)
+- [`docs/security.md` › Chaves dos tokens](../security.md#chaves-dos-tokens)
 - [`docs/infra/ci-cd.md` › Injeção de secrets da aplicação](../infra/ci-cd.md#injeção-de-secrets-da-aplicação)

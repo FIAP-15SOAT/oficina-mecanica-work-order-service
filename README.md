@@ -28,6 +28,7 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 - **Autorização por papéis (RBAC)**: `ADMIN`, `MECHANIC`, `ATTENDANT`
 - **Dois fluxos de autenticação JWT isolados**, os dois validados aqui só pela chave pública: interno (RS256, emitido pelo Identity, o serviço da solução dono dos usuários e das credenciais) e externo por CPF + senha (RS256, emitido por uma função serverless dedicada)
 - **Usuários no Identity**: a OS, o histórico e os vínculos de acesso guardam só o id do usuário; o mecânico é conferido no Identity antes de ser atribuído, e nome, e-mail e papel são lidos nele a cada resposta
+- **E-mails ao cliente por mensagem**: o orçamento enviado, o link de pagamento e o aviso de falta de estoque saem como a mensagem `notification.email.send`, gravada no outbox (a tabela das mensagens a publicar) na mesma transação da OS, uma por destinatário; quem envia o e-mail é a função serverless de notificação da solução. Os destinatários são os usuários ativos vinculados ao cliente, lidos no Identity, ou, sem nenhum, o e-mail do próprio cliente
 - **Concorrência otimista** (lock por `version`) em agregados sensíveis
 
 <details>
@@ -123,7 +124,7 @@ O enunciado da fase (o PDF do desafio) pede o padrão **Saga** para "criação d
 - **Cache**: Valkey 9.1 (Amazon ElastiCache no cluster) via `ioredis`, cache-aside no detalhe da OS
 - **Chamadas internas**: REST entre serviços pela rede do cluster, com `@nestjs/axios`
 - **Autenticação**: dois fluxos JWT isolados via `passport-jwt`, só com as chaves públicas — interno (RS256, emitido pelo Identity) e externo por CPF + senha (RS256, emitido por uma função serverless dedicada) — ver [Autenticação](#-autenticação)
-- **E-mail**: Nodemailer + `@nestjs-modules/mailer` (SMTP via MailHog em desenvolvimento)
+- **E-mail**: nenhum cliente SMTP neste serviço; os e-mails saem como mensagens `notification.email.send` pelo SNS e são enviados pela [função serverless de notificação](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-notification)
 - **Segurança HTTP**: Helmet, CORS configurável via `ALLOWED_ORIGINS`, `SanitizeStringsPipe` global, `ValidationPipe` global (`whitelist`, `forbidNonWhitelisted`, `transform`)
 - **Observabilidade**: logs estruturados em JSON no stdout com `pino` + `nestjs-pino` (nomenclatura OpenTelemetry, correlação por `request.id`, redação de dados sensíveis) — ver [ADR 0002](docs/adr/0002-logging-estruturado.md)
 - **Telemetria**: traces e métricas de negócio pelo SDK do OpenTelemetry, correlacionados ao log por `trace_id`, sem nenhuma dependência ou credencial de fornecedor na aplicação; desligada por padrão (endpoint vazio) — ver [ADR 0005](docs/adr/0005-opentelemetry.md)
@@ -143,7 +144,7 @@ O enunciado da fase (o PDF do desafio) pede o padrão **Saga** para "criação d
 
 ## 🚀 Quick Start
 
-Esse modo sobe todos os serviços — PostgreSQL, MailHog, Valkey, LocalStack (SNS e SQS) e API — em containers. As migrations são executadas automaticamente e o banco é populado com o seed.
+Esse modo sobe todos os serviços — PostgreSQL, Valkey, LocalStack (SNS e SQS) e API — em containers. As migrations são executadas automaticamente e o banco é populado com o seed.
 
 ```bash
 # Clonar o repositório e entrar na pasta da aplicação
@@ -163,7 +164,6 @@ Após a inicialização:
 
 - **API:** `http://localhost:3000`
 - **Swagger:** `http://localhost:3000/api/docs`
-- **MailHog (interface web):** `http://localhost:8025`
 - **LocalStack (SNS/SQS):** `http://localhost:4566`
 
 > As rotas que mostram ou gravam itens da OS leem o catálogo no Inventory, o serviço dono de serviços, peças e estoque, e a abertura de OS com itens e os orçamentos da área do cliente chamam o Billing, o serviço dono dos orçamentos. Suba também as stacks locais do [`oficina-mecanica-inventory-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service) (API em `http://localhost:3003`) e do [`oficina-mecanica-billing-service`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service) (API em `http://localhost:3002`); sem elas, essas rotas respondem 503. Ver [Como executar localmente › Inventory local](docs/local-setup.md#inventory-local) e [Billing local](docs/local-setup.md#billing-local).
@@ -349,7 +349,7 @@ A solução é composta por **quinze repositórios especializados**, com respons
 | 🗃️ [Banco de Dados](docs/database.md) | Diagrama ER, tabelas e relacionamentos, enums, convenções de modelagem |
 | 🔀 [Diagramas de Sequência](docs/sequence-diagrams.md) | Abertura de OS, autenticação externa por CPF, aprovação de orçamento com reserva de estoque e Saga de cobrança |
 | 🔌 [Referência da API](docs/api.md) | Endpoints por domínio, perfis (RBAC), rotas que ficam no Identity, rotas /internal, formato de resposta |
-| 💻 [Como executar localmente](docs/local-setup.md) | Setup local, MailHog, Valkey, LocalStack, Inventory, Billing e Identity locais, variáveis de ambiente, seed |
+| 💻 [Como executar localmente](docs/local-setup.md) | Setup local, Valkey, LocalStack, Inventory, Billing e Identity locais, variáveis de ambiente, seed |
 | 🆔 [Ids canônicos do seed](docs/seed-ids.md) | UUIDs fixos de usuários, clientes, veículos, serviços e peças, compartilhados entre os serviços |
 | 🧪 [Testes](docs/testing.md) | Unitários, E2E (PostgreSQL, Valkey, LocalStack e stub do Inventory, do Billing e do Identity), BDD (Cucumber em pt-BR), cenários de falha F1 a F14, contrato das rotas /internal, Postman/Newman |
 | 🔒 [Segurança](docs/security.md) | Mitigações no código, proteção de dados nos logs e relatórios (ZAP, SonarQube) |

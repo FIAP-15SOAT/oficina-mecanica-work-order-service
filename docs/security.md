@@ -34,7 +34,6 @@ Relatórios de segurança da aplicação ficam versionados em [`reports/`](../re
 - Concorrência otimista no agregado `WorkOrder` para evitar lost updates
 - Filtros de exceção que nunca expõem stack traces ou detalhes do banco para o cliente
 - Registro de exceção decidido pelo **status resolvido**, não pelo tipo: um `401` não gera linha de erro nem stack trace, e portanto um scanner não vira tempestade de alertas
-- Falha de envio de e-mail responde sem o endereço do destinatário
 
 ## Credencial do banco em produção
 
@@ -143,7 +142,7 @@ As máscaras são determinísticas e preservam a forma — `Maria Silva` → `Ma
 
 **O quanto é revelado depende do tamanho.** A partir de 7 caracteres aparecem as duas pontas (`Ma***va`); entre 4 e 6, só o caractere inicial (`Lucas` → `L***`); abaixo de 4, nada (`SP` → `***`). O degrau existe porque revelar duas pontas de um valor curto deixa de ser mascaramento: em 6 caracteres, `12**56` expõe 4 de 6 e o resto se reconstrói por tentativa. Valor vazio permanece vazio — devolver `***` sugeriria um conteúdo que não existe.
 
-**Campo de evento de negócio é mascarado por declaração, não por chamada.** Cada campo lógico tem uma `sensitivity` em `infrastructure/logging/field-registry.ts`, e é o adaptador que aplica a máscara. Por isso `mailRecipient`, o destinatário de um e-mail, sai mascarado sem uma linha de código no caso de uso, e por isso `dependencyName` — nome de dependência técnica, não de pessoa — sai em claro: alguém declarou `clear` explicitamente. Mascarar no ponto de chamada é o que se deve evitar, porque é o que se esquece.
+**Campo de evento de negócio é mascarado por declaração, não por chamada.** Cada campo lógico tem uma `sensitivity` em `infrastructure/logging/field-registry.ts`, e é o adaptador que aplica a máscara. Por isso um campo declarado `pii` (dado pessoal) sairia mascarado sem uma linha de código no caso de uso, e por isso `dependencyName` — nome de dependência técnica, não de pessoa — sai em claro: alguém declarou `clear` explicitamente. Mascarar no ponto de chamada é o que se deve evitar, porque é o que se esquece.
 
 Isso **não** torna o registro impessoal. Uma máscara determinística que preserva a forma revela parte do valor e permite ligar ocorrências; portanto **conteúdo mascarado continua sendo dado pessoal** para fins de retenção e de controle de acesso. Pseudonimização com chave (HMAC) foi considerada e rejeitada como desproporcional aqui — adiciona provisionamento de chave, rotação e um caminho de fallback, e torna os valores ilegíveis justamente para quem está investigando.
 

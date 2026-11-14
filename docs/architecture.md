@@ -58,7 +58,7 @@ app/src/
 │   ├── ports/
 │   │   ├── input/<domínio>/         # I<Nome>UseCase (input ports) + DTOs de entrada
 │   │   └── output/
-│   │       ├── services/            # IEmailSenderService, ILogger, IMetrics, ICache
+│   │       ├── services/            # ILogger, IMetrics, ICache
 │   │       │                        # (output ports)
 │   │       └── gateways/<dono>/     # I<Dono><Coisa>Gateway + *GatewayResponse
 │   │                                # (inventory/: IInventoryCatalogGateway, catálogo
@@ -83,9 +83,12 @@ app/src/
 │   │                                # reutilizável por qualquer caso de uso de /api/me/*
 │   ├── services/                    # MechanicAssignmentPolicy — confere no Identity que
 │   │                                # o usuário atribuído é um mecânico ativo;
-│   │                                # CustomerEmailRecipients — destinatários dos
-│   │                                # e-mails ao cliente (usuários vinculados ativos
-│   │                                # ou o e-mail do cadastro)
+│   │                                # CustomerEmailRecipientsResolver — destinatários
+│   │                                # dos e-mails ao cliente (usuários vinculados ativos
+│   │                                # no Identity ou o e-mail do cadastro)
+│   ├── notifications/               # WorkOrderEmailComposer — monta as mensagens
+│   │                                # notification.email.send (assunto, texto e HTML
+│   │                                # com os valores externos escapados)
 │   ├── use-cases/
 │   │   ├── identity/                # FindUsersByIds — nome, e-mail e papel dos usuários
 │   │   │                            # lidos no Identity pelos Clean Controllers
@@ -205,9 +208,8 @@ app/src/
 │   │                                # incoming-request-filter (exclusão das probes),
 │   │                                # telemetry-lifecycle.service (flush no encerramento),
 │   │                                # telemetry-resource, telemetry-diagnostics
-│   ├── services/                    # MailerEmailSenderService, staff-token.constants
-│   │                                # (algoritmo do token de funcionário) +
-│   │                                # InfrastructureServicesModule
+│   ├── services/                    # staff-token.constants (algoritmo do token
+│   │                                # de funcionário)
 │   └── exceptions/                  # InfrastructureException, AuthenticationFailedException,
 │                                    # DatabaseOperationException, ServiceIntegrationException,
 │                                    # ConcurrencyException
@@ -357,7 +359,7 @@ Casos de uso transacionais incluem:
 - **Atualização de status de OS** (`PATCH /work-orders/:id`) — atualiza OS + registra histórico. Na entrega, o saldo é lido no Billing **antes** da transação (ver [Entrega com saldo zero](#entrega-com-saldo-zero)).
 - **Atualização de status de serviço da OS** — atualiza item, eventualmente promove OS para `IN_PROGRESS` / `COMPLETED` e registra histórico. Na passagem a `IN_PROGRESS` de uma OS com peças, grava no outbox o comando `inventory.stock.consume`, que pede ao Inventory a baixa do estoque reservado.
 - **Passos das Sagas de aprovação e de cobrança** — cada mensagem de uma Saga (ver [Aprovação de orçamento com reserva de estoque](#aprovação-de-orçamento-com-reserva-de-estoque) e [Saga de cobrança](#saga-de-cobrança)) é tratada numa transação que grava a Saga e, conforme o passo, a OS, o histórico e o comando no outbox.
-- **Envio e rejeição de orçamento** — as mensagens `billing.quote.sent` e `billing.quote.rejected` movem a OS e registram o histórico numa transação, que no envio também lê no Identity os usuários vinculados que recebem o e-mail; o e-mail do envio sai depois do commit (ver [Fluxo do orçamento, do envio à aprovação](#fluxo-do-orçamento-do-envio-à-aprovação)).
+- **Envio e rejeição de orçamento** — as mensagens `billing.quote.sent` e `billing.quote.rejected` movem a OS e registram o histórico numa transação; no envio, a mesma transação grava no outbox o e-mail ao cliente, com os destinatários lidos no Identity antes dela (ver [Fluxo do orçamento, do envio à aprovação](#fluxo-do-orçamento-do-envio-à-aprovação) e [E-mails ao cliente](#e-mails-ao-cliente)).
 
 ## Ciclo de vida da Ordem de Serviço
 
@@ -434,12 +436,12 @@ Cada mensagem é tratada por um caso de uso de `application/use-cases/quote-appr
 | `billing.quote.approved` | Saga do orçamento `COMPENSATED` por `INSUFFICIENT_STOCK` (reaprovação) | Reabre a mesma linha, pelas mesmas regras das três linhas acima: `RESERVING_STOCK` e reserva de novo, ou `COMPENSATING` com `revertTo = REJECTED` se a OS saiu de `AWAITING_APPROVAL` | `StartQuoteApprovalUseCase` |
 | `inventory.stock.reserved` | Saga em `RESERVING_STOCK` | Lê o orçamento aprovado no Billing (`GET /internal/quotes/:id`, 5 s), leva a OS a `APPROVED` com os itens e o total dele, grava o histórico com o autor `decidedBy` e marca a Saga `COMPLETED` | `CompleteQuoteApprovalUseCase` |
 | `inventory.stock.reservation_failed` | Saga em `RESERVING_STOCK` | Saga vai a `COMPENSATING` com `failure_reason = INSUFFICIENT_STOCK` e manda `billing.quote.revert_approval` (`revertTo = 'SENT'`) | `CompensateQuoteApprovalUseCase` |
-| `billing.quote.approval_reverted` | Saga em `COMPENSATING` | Saga vai a `COMPENSATED`; o histórico da OS ganha uma entrada com o mesmo status de entrada e saída e a nota do motivo; com falta de estoque, e-mail ao cliente depois do commit | `ConfirmQuoteApprovalReversalUseCase` |
+| `billing.quote.approval_reverted` | Saga em `COMPENSATING` | Saga vai a `COMPENSATED`; o histórico da OS ganha uma entrada com o mesmo status de entrada e saída e a nota do motivo; com falta de estoque, grava no outbox o e-mail ao cliente | `ConfirmQuoteApprovalReversalUseCase` |
 | Qualquer mensagem acima | Outra combinação (mensagem repetida ou fora de hora) | Registra `saga.step_skipped` e confirma a mensagem, sem efeito | — |
 
 - **Idempotência:** a unicidade de `(QUOTE_APPROVAL, quoteId)` é o que torna `billing.quote.approved` idempotente. Uma reentrega depois de a OS ir a `APPROVED` encontra a Saga `COMPLETED` e é ignorada; sem a linha, ela veria a OS fora de `AWAITING_APPROVAL` e reverteria um orçamento válido. Por isso a aprovação sem peças também grava a Saga. A única linha reaberta é a compensada por falta de estoque: o orçamento voltou a `SENT`, então um novo `billing.quote.approved` é uma nova aprovação.
 - **Billing fora do ar na reserva confirmada:** a leitura do orçamento falha, o handler lança e a mensagem volta à fila, até ir para a DLQ (fila de mensagens mortas, de onde volta por redrive) na quinta entrega.
-- **Notas do histórico na confirmação da reversão:** `Aprovação do orçamento <quoteId> desfeita por falta de estoque` ou `Aprovação do orçamento <quoteId> desfeita: a Ordem de Serviço não aguardava aprovação`. O e-mail da falta de estoque tem o assunto `Orçamento da Ordem de Serviço <número> - Estoque insuficiente` e diz que o orçamento voltou a aguardar aprovação; uma falha no envio só vai para o log.
+- **Notas do histórico na confirmação da reversão:** `Aprovação do orçamento <quoteId> desfeita por falta de estoque` ou `Aprovação do orçamento <quoteId> desfeita: a Ordem de Serviço não aguardava aprovação`. O e-mail da falta de estoque tem o assunto `Orçamento da Ordem de Serviço <número> - Estoque insuficiente` e diz que o orçamento voltou a aguardar aprovação (ver [E-mails ao cliente](#e-mails-ao-cliente)).
 - **Cache:** os passos que mudam a OS (aprovação sem peças e reserva confirmada) apagam a chave dela no cache depois do commit. Os de compensação não mudam campo nem item da OS e não apagam nada.
 
 **Bloqueios durante a Saga.** Uma Saga está **ativa** em `RESERVING_STOCK` ou `COMPENSATING`. Nesse intervalo a OS segue em `AWAITING_APPROVAL`, e cancelar a OS ou decidir outro orçamento pela área do cliente responde **409** `Ordem de serviço com aprovação de orçamento em andamento: aguarde a conclusão e tente novamente`. Criar, enviar e aprovar outro orçamento da OS são recusados pelo Billing (**409**), porque a OS já tem um orçamento `APPROVED`: um orçamento novo, enviado e rejeitado nessa janela levaria a OS a `REJECTED`, de onde a reserva confirmada não conseguiria levá-la a `APPROVED`. Depois da compensação por falta de estoque, o orçamento volta a `SENT` e a criação volta a valer.
@@ -459,11 +461,11 @@ Três serviços guardam parte do estado de um orçamento: o **Billing** guarda o
 | Passo | Orçamento (Billing) | OS (Work Order) | Mensagem seguinte |
 |---|---|---|---|
 | 1. Funcionário envia o orçamento (`POST /api/quotes/:id/submissions`, no Billing) | `SENT` | `IN_DIAGNOSIS` (ou `REJECTED`, ou já `AWAITING_APPROVAL`) | `billing.quote.sent` |
-| 2. O handler aplica o envio (`ApplySentQuoteUseCase`) | `SENT` | `AWAITING_APPROVAL` (já estava, fica); e-mail ao cliente depois do commit | — |
+| 2. O handler aplica o envio (`ApplySentQuoteUseCase`) | `SENT` | `AWAITING_APPROVAL` (já estava, fica); e-mail ao cliente gravado no outbox | `notification.email.send` |
 | 3. Funcionário ou cliente rejeita o orçamento | `REJECTED` | `AWAITING_APPROVAL` | `billing.quote.rejected` (com `remainingSentCount`, os orçamentos da OS ainda `SENT`) |
 | 4. O handler aplica a rejeição (`ApplyRejectedQuoteUseCase`) | `REJECTED` | `REJECTED` se `remainingSentCount = 0`; senão `AWAITING_APPROVAL` | — |
 
-O e-mail do envio vai aos usuários ativos vinculados ao cliente, lidos no Identity, ou, sem nenhum, ao e-mail do cliente, com uma linha por item e o total da mensagem. Se a OS não está num status que aceita o passo (uma OS cancelada no intervalo, por exemplo), nada muda, nenhum e-mail sai, e o handler registra `quote_event.skipped` e confirma a mensagem.
+O e-mail do envio vai aos usuários ativos vinculados ao cliente, lidos no Identity, ou, sem nenhum, ao e-mail do cliente, com uma linha por item e o total da mensagem (ver [E-mails ao cliente](#e-mails-ao-cliente)). Se a OS não está num status que aceita o passo (uma OS cancelada no intervalo, por exemplo), nada muda, nenhum e-mail sai, e o handler registra `quote_event.skipped` e confirma a mensagem.
 
 **Aprovação com peças e estoque suficiente.**
 
@@ -520,7 +522,7 @@ Agora:
 
 - o orçamento e o ciclo de vida dele estão no Billing, e este serviço não grava orçamento;
 - a abertura com itens cria o orçamento inicial no Billing antes de gravar a OS, com exclusão de compensação;
-- o envio e a rejeição chegam por mensagem, e o e-mail do envio sai depois do commit: uma falha no e-mail não desfaz o envio;
+- o envio e a rejeição chegam por mensagem, e o e-mail do envio é uma mensagem gravada no outbox na mesma transação, enviada pela função serverless de notificação: uma falha no envio não desfaz o passo;
 - a aprovação começa no Billing, e a compensação é um comando ao Billing (`billing.quote.revert_approval`), confirmado por `billing.quote.approval_reverted`; a Saga ganhou o estado `COMPENSATING` para esperar essa confirmação;
 - os itens aprovados são lidos no Billing na conclusão da reserva, porque a resposta do Inventory só traz o id do orçamento;
 - a área do cliente lê os orçamentos no Billing e repassa a decisão a ele.
@@ -529,7 +531,7 @@ Agora:
 
 O pagamento é do Billing. O funcionário cria uma **cobrança** de uma OS em `APPROVED` (um sinal, antes da execução) ou em `COMPLETED` (o restante, antes da entrega) pela rota `POST /api/payments` do Billing. O Billing cria a ordem de pagamento no Mercado Pago, o provedor de pagamento da solução, grava a cobrança `PENDING` e publica `billing.payment.requested`, com o id da cobrança (`paymentId`), o valor, o link do Checkout Pro (a página de pagamento do Mercado Pago, que não pede login) e a validade do link. Este serviço reage bloqueando a OS em `AWAITING_PAYMENT` até o pagamento terminar.
 
-**Por que é uma Saga.** A cobrança grava em dois serviços: o Billing grava a cobrança e a ordem no Mercado Pago, e este serviço grava o bloqueio da OS. O passo daqui pode falhar depois de o Billing gravar: entre a criação da cobrança e a chegada da mensagem, outro funcionário pode ter iniciado a execução, e uma OS em `IN_PROGRESS` não pode mais ir a `AWAITING_PAYMENT`. Sem compensação, a cobrança ficaria pendente, o cliente não receberia o link (o e-mail sai deste serviço) e o sinal, que deveria segurar a execução, não seguraria nada. A compensação cancela a cobrança no Billing. Quando é o pagamento que não acontece (o link expirou, o Mercado Pago recusou ou o funcionário cancelou a cobrança), a compensação é devolver a OS ao status de antes do bloqueio.
+**Por que é uma Saga.** A cobrança grava em dois serviços: o Billing grava a cobrança e a ordem no Mercado Pago, e este serviço grava o bloqueio da OS. O passo daqui pode falhar depois de o Billing gravar: entre a criação da cobrança e a chegada da mensagem, outro funcionário pode ter iniciado a execução, e uma OS em `IN_PROGRESS` não pode mais ir a `AWAITING_PAYMENT`. Sem compensação, a cobrança ficaria pendente, o cliente não receberia o link (o e-mail é pedido por este serviço) e o sinal, que deveria segurar a execução, não seguraria nada. A compensação cancela a cobrança no Billing. Quando é o pagamento que não acontece (o link expirou, o Mercado Pago recusou ou o funcionário cancelou a cobrança), a compensação é devolver a OS ao status de antes do bloqueio.
 
 O estado fica em `saga_instances`, numa linha `PAYMENT` por cobrança, com `correlation_id` igual ao `paymentId`, única junto com o tipo, e `origin_status` com o status da OS antes do bloqueio (`APPROVED` ou `COMPLETED`), para onde ela volta (ver [Banco de Dados](database.md#sagas)). A origem é guardada porque nenhuma outra fonte a informa: o Billing não sabe de onde a OS veio, e o histórico da OS pode ganhar outras entradas.
 
@@ -537,7 +539,7 @@ Cada mensagem é tratada por um caso de uso de `application/use-cases/payment/` 
 
 | Mensagem que chega | Situação | O que o work-order faz | Caso de uso |
 |---|---|---|---|
-| `billing.payment.requested` | OS em `APPROVED` ou `COMPLETED` | Cria a Saga em `AWAITING_PAYMENT` com o status de origem, leva a OS a `AWAITING_PAYMENT` e grava o histórico; depois do commit, manda o e-mail com o link | `StartPaymentUseCase` |
+| `billing.payment.requested` | OS em `APPROVED` ou `COMPLETED` | Cria a Saga em `AWAITING_PAYMENT` com o status de origem, leva a OS a `AWAITING_PAYMENT`, grava o histórico e grava no outbox o e-mail com o link | `StartPaymentUseCase` |
 | `billing.payment.requested` | OS em outro status (execução iniciada no intervalo, por exemplo) | Cria a Saga em `COMPENSATING` com `failure_reason = WORK_ORDER_NOT_PAYABLE` e manda `billing.payment.cancel` (`{ paymentId, reason: 'WORK_ORDER_NOT_PAYABLE' }`); a OS não muda e nenhum e-mail sai | `StartPaymentUseCase` |
 | `billing.payment.approved` | Saga em `AWAITING_PAYMENT` | Devolve a OS à origem, grava o histórico e marca a Saga `COMPLETED` | `ApplyPaymentResultUseCase` |
 | `billing.payment.failed` | Saga em `AWAITING_PAYMENT` | Devolve a OS à origem, grava o histórico e marca a Saga `COMPENSATED` com o motivo pelo `reason` da mensagem: `EXPIRED` → `PAYMENT_EXPIRED`, `REJECTED` → `PAYMENT_REJECTED`, `CANCELLED` → `PAYMENT_CANCELLED` | `ApplyPaymentResultUseCase` |
@@ -548,7 +550,7 @@ Cada mensagem é tratada por um caso de uso de `application/use-cases/payment/` 
 - **Idempotência:** a unicidade de `(PAYMENT, paymentId)` torna `billing.payment.requested` idempotente. Uma reentrega encontra a Saga, em qualquer status, e é ignorada: não bloqueia de novo nem manda outro e-mail, mesmo que a OS já tenha voltado à origem. Um resultado repetido encontra a Saga encerrada e também é ignorado.
 - **Envelope:** `billing.payment.requested` sem o id da OS no envelope é recusado (`Mensagem sem a ordem de serviço no envelope`) e vai para a DLQ. `billing.payment.approved` e `billing.payment.failed` não precisam dele: a Saga é encontrada pelo `paymentId`.
 - **Histórico:** a mensagem não diz quem criou a cobrança, então as entradas do bloqueio e da volta ficam sem autor, com uma nota que identifica a cobrança e o desfecho: `Aguardando o pagamento da cobrança <paymentId>` no bloqueio, e `Cobrança <paymentId> paga`, `expirada`, `recusada` ou `cancelada` na volta.
-- **E-mail do link:** vai aos mesmos destinatários do e-mail do orçamento (`CustomerEmailRecipients`, em `application/services/`): os usuários ativos vinculados ao cliente, lidos no Identity, ou, sem nenhum, o e-mail do cliente. O assunto é `Pagamento da Ordem de Serviço <número>`, e o texto traz o valor, o link e a validade no fuso de São Paulo. Uma falha no envio só vai para o log do mailer e não desfaz o bloqueio.
+- **E-mail do link:** vai aos mesmos destinatários do e-mail do orçamento: os usuários ativos vinculados ao cliente, lidos no Identity, ou, sem nenhum, o e-mail do cliente. O assunto é `Pagamento da Ordem de Serviço <número>`, e o texto traz o valor, o link e a validade no fuso de São Paulo. Ele é gravado no outbox na mesma transação do bloqueio, e uma falha no envio não desfaz o bloqueio (ver [E-mails ao cliente](#e-mails-ao-cliente)).
 - **Ordem das mensagens:** a compensação grava a OS com a `version` mesmo sem mudá-la, antes de gravar `billing.payment.cancel` no outbox, pelo mesmo motivo da Saga de aprovação (ver [Por que a compensação grava a OS sem mudá-la](#por-que-a-compensação-grava-a-os-sem-mudá-la)).
 - **Cache:** o bloqueio e a volta apagam a chave da OS no cache depois do commit; o pedido e o fim da compensação não mudam a OS e não apagam nada.
 
@@ -624,6 +626,23 @@ Um recebimento com falha (SQS fora do ar, DNS, conexão recusada) pausa o próxi
 
 No encerramento, o consumidor para no `beforeApplicationShutdown` com `stop({ abort: true })`, que cancela o long polling, e espera o evento `stopped`. O handler em voo tem 5 s para terminar. O `abort` também cancela o `DeleteMessage` de um handler que acabou de terminar: essa mensagem volta, e a idempotência por `messageId` a absorve. Os pedidos cancelados pelo encerramento não viram log de erro, e uma pausa em curso termina na hora. Fora dele, o cliente SQS tem prazo de 25 s por pedido, acima dos 20 s do long polling, para que uma conexão que não responde não trave o consumidor.
 
+### E-mails ao cliente
+
+Este serviço não envia e-mail. Os três e-mails ao cliente são mensagens `notification.email.send`, uma por destinatário, gravadas no outbox na mesma transação que muda a OS ou a Saga. O relay as publica no tópico, a filter policy do tópico as entrega à fila SQS `notification.fifo`, e quem as lê e envia o e-mail por SMTP é a função serverless de notificação da solução ([`oficina-mecanica-lambda-notification`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-notification)).
+
+| E-mail | Quando é gravado | `purpose` | Assunto | Caso de uso |
+|---|---|---|---|---|
+| Orçamento enviado | `billing.quote.sent` aplicado à OS | `quote_sent` | `Orçamento para Ordem de Serviço <número> - Aguardando sua aprovação` | `ApplySentQuoteUseCase` |
+| Link de pagamento | `billing.payment.requested` bloqueia a OS em `AWAITING_PAYMENT` | `payment_link` | `Pagamento da Ordem de Serviço <número>` | `StartPaymentUseCase` |
+| Falta de estoque | `billing.quote.approval_reverted` confirma a reversão de uma Saga de aprovação compensada por `INSUFFICIENT_STOCK` | `quote_approval_reverted` | `Orçamento da Ordem de Serviço <número> - Estoque insuficiente` | `ConfirmQuoteApprovalReversalUseCase` |
+
+- **Destinatários:** antes da transação, o `CustomerEmailRecipientsResolver` (`application/services/`) lê a OS, o cliente e os ids dos usuários vinculados a ele, e busca esses usuários no Identity pelo `IIdentityUsersGateway` (`GET /internal/users/:id`). Recebem os usuários ativos. Sem nenhum, o e-mail vai ao e-mail do cadastro do cliente, e o do orçamento diz que ele ainda não tem acesso e deve pedir à oficina a criação do acesso. Na reversão, os destinatários só são lidos quando a Saga está compensando por falta de estoque.
+- **Identity fora do ar:** o handler falha antes de gravar qualquer coisa, e a mensagem que chegou volta à fila, até a DLQ na quinta entrega.
+- **Conteúdo:** o `WorkOrderEmailComposer` (`application/notifications/`) monta o assunto, o texto e o HTML. No HTML, os valores que vêm de fora (nomes do destinatário e dos itens e o número da OS) são escapados, e o link de pagamento entra serializado como URL, para que nenhum deles injete marcação. O `purpose` é o rótulo do e-mail que a função de notificação registra no log, no lugar do assunto.
+- **Por que pelo outbox:** o e-mail só é publicado se a mudança da OS foi confirmada, e toda mudança confirmada publica o e-mail. Uma falha no envio fica com a função de notificação, a fila e a DLQ dela, e não desfaz o passo deste serviço.
+- **Ordem:** o passo grava a OS com a `version` antes de gravar o e-mail, mesmo quando ela já está em `AWAITING_APPROVAL` (envio repetido do orçamento e confirmação da reversão), pela regra da [ordem por OS](#outbox-e-relay).
+- **Reentrega:** um `billing.quote.sent` reentregue com a OS já em `AWAITING_APPROVAL` grava o e-mail de novo; um `billing.payment.requested` reentregue encontra a Saga e não grava outro.
+
 ### Cache do detalhe da OS
 
 O detalhe da OS (`GET /api/work-orders/:id` e `GET /internal/work-orders/:id`) usa **cache-aside** no Valkey (ElastiCache no cluster), pela porta `ICache` (`application/ports/output/`) e o `ValkeyCacheAdapter` sobre `ioredis`.
@@ -682,7 +701,7 @@ O dos usuários é o `IIdentityUsersGateway` (`application/ports/output/gateways
 - `ensureCustomerUser` chama `POST /internal/customer-users`, que encontra o usuário de acesso de um cliente pelo CPF ou o cria, e devolve `{ userId, created }`; o `409` e o `422` do Identity chegam ao chamador com o status e a mensagem dele;
 - qualquer outro 4xx é quebra de contrato entre os dois serviços, e vira `503` com `Serviço de destino indisponível`, como timeout, falha de conexão e 5xx.
 
-Quem o usa: a `MechanicAssignmentPolicy` (mecânico da OS, antes da transação), a concessão de acesso a um cliente, as listagens de vínculos, o `FindUsersByIdsUseCase`, que os Clean Controllers chamam para mostrar o mecânico, os autores do histórico e os usuários com acesso a um cliente, e os passos `ApplySentQuote` e `StartPayment`, que leem dentro da própria transação os usuários vinculados que recebem o e-mail (`CustomerEmailRecipients`). As fixtures das duas rotas do Identity ficam copiadas em `app/test/contracts/identity/`.
+Quem o usa: a `MechanicAssignmentPolicy` (mecânico da OS, antes da transação), a concessão de acesso a um cliente, as listagens de vínculos, o `FindUsersByIdsUseCase`, que os Clean Controllers chamam para mostrar o mecânico, os autores do histórico e os usuários com acesso a um cliente, e o `CustomerEmailRecipientsResolver`, que lê, antes da transação dos passos `ApplySentQuote`, `StartPayment` e `ConfirmQuoteApprovalReversal`, os usuários vinculados que recebem o e-mail (ver [E-mails ao cliente](#e-mails-ao-cliente)). As fixtures das duas rotas do Identity ficam copiadas em `app/test/contracts/identity/`.
 
 ## Exceções por Camada
 

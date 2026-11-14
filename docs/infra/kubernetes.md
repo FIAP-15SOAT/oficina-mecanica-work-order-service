@@ -21,7 +21,7 @@ Divisão de responsabilidade: base e plataforma via Terraform no repositório [`
 Os recursos em Kubernetes foram divididos por responsabilidade:
 
 - Base e dados críticos via Terraform ([`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s))
-  - cluster EKS, ECR, namespaces `work-order` e `platform`, metrics-server e, no namespace `platform`, o Datadog Agent e o MailHog (o banco relacional é **Amazon RDS** e o cache é **ElastiCache Valkey**, provisionados em [stack própria](#banco-de-dados-relacional-amazon-rds), fora do cluster)
+  - cluster EKS, ECR, namespaces `work-order` e `platform`, metrics-server e, no namespace `platform`, o Datadog Agent e o MailHog, o servidor SMTP de teste que recebe os e-mails enviados pela função Lambda de notificação (o banco relacional é **Amazon RDS** e o cache é **ElastiCache Valkey**, provisionados em [stack própria](#banco-de-dados-relacional-amazon-rds), fora do cluster)
 - Aplicação via manifests YAML (`k8s/`), no namespace `work-order`
   - Secret, ConfigMap, Deployment, Service, HPA e o Job de migração
 
@@ -57,7 +57,7 @@ Os recursos em Kubernetes foram divididos por responsabilidade:
 
 **Wiring de configuração.** A configuração da API é injetada por `envFrom` a partir de cinco fontes, separadas por ownership e sensibilidade, sem chave repetida entre elas:
 
-- `work-order-config` (`ConfigMap`, **não sensível**): `NODE_ENV`, `PORT`, `STAFF_JWT_ISSUER`, `STAFF_JWT_AUDIENCE`, `MAIL_HOST` (`mailhog.platform.svc.cluster.local`), `MAIL_PORT`, `TZ`, `LOG_LEVEL`, `OTEL_SERVICE_NAME`, `OTEL_SERVICE_NAMESPACE`, `TRUSTED_PROXY_CIDRS`, `CUSTOMER_JWT_ISSUER`, `CUSTOMER_JWT_AUDIENCE`, `AWS_REGION`, `WORK_ORDER_QUEUE_NAME` (`work-order.fifo`), `MESSAGING_TOPIC_ARN`, `CACHE_TTL_SECONDS` (`43200`), `INVENTORY_SERVICE_URL` (`http://inventory-service.inventory.svc.cluster.local:3000`), `IDENTITY_SERVICE_URL` (`http://identity-service.identity.svc.cluster.local:3000`, o endereço interno do Identity, o serviço dono dos usuários), `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_LOGS_EXPORTER` e `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE`.
+- `work-order-config` (`ConfigMap`, **não sensível**): `NODE_ENV`, `PORT`, `STAFF_JWT_ISSUER`, `STAFF_JWT_AUDIENCE`, `TZ`, `LOG_LEVEL`, `OTEL_SERVICE_NAME`, `OTEL_SERVICE_NAMESPACE`, `TRUSTED_PROXY_CIDRS`, `CUSTOMER_JWT_ISSUER`, `CUSTOMER_JWT_AUDIENCE`, `AWS_REGION`, `WORK_ORDER_QUEUE_NAME` (`work-order.fifo`), `MESSAGING_TOPIC_ARN`, `CACHE_TTL_SECONDS` (`43200`), `INVENTORY_SERVICE_URL` (`http://inventory-service.inventory.svc.cluster.local:3000`), `BILLING_SERVICE_URL` (`http://billing-service.billing.svc.cluster.local:3000`), `IDENTITY_SERVICE_URL` (`http://identity-service.identity.svc.cluster.local:3000`, o endereço interno do Identity, o serviço dono dos usuários), `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_LOGS_EXPORTER` e `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE`.
 - `database-credentials` (`Secret`, **sensível**): somente `DATABASE_URL`, materializada pelo CD a partir de RDS/Secrets Manager.
 - `cache-credentials` (`Secret`, **sensível**): somente `CACHE_URL` (`rediss://` com o auth token), materializada pelo CD a partir do ElastiCache/Secrets Manager.
 - `jwt-public-keys` (`Secret`): `CUSTOMER_JWT_PUBLIC_KEY`, `STAFF_JWT_PUBLIC_KEY` e `STAFF_JWT_KEY_ID`. O serviço não tem chave privada: o token de funcionário é assinado pelo Identity, e o de cliente, pela customer-auth, a função Lambda de login do cliente.
@@ -242,7 +242,7 @@ Caso seja necessário validar se o Service possui endpoints disponíveis:
 kubectl get endpoints work-order-service -n work-order
 ```
 
-Para acessar a interface web do MailHog executando no cluster (namespace `platform`):
+Para ver os e-mails da solução, que a API publica como mensagens e a função Lambda de notificação entrega ao MailHog do namespace `platform`, acesse a interface web dele:
 
 ```bash
 kubectl port-forward -n platform svc/mailhog 8025:8025
@@ -319,7 +319,7 @@ O par `terminationGracePeriodSeconds` ↔ **janela de drain da aplicação** é 
 3. Só depois da janela o servidor HTTP fecha e **só então** o pool do banco é liberado. Liberá-lo antes converteria "descartar requisição em voo" em "responder erro", que é pior do que não ter janela.
 4. `/live` continua respondendo `200` durante toda a janela: a instância está encerrando de forma ordenada, não travada, e reiniciá-la interromperia o próprio encerramento.
 
-Os 40 s do grace period são a relação 4 acima, e são mantidos baixos de propósito — ele alonga node drain e evicção. Estourá-lo é `SIGKILL`. A janela é declarada como **orçamento fixo e de melhor esforço**: enquanto houver operação sem prazo próprio no caminho de requisição (hoje o envio de e-mail dentro da transação, sem timeouts SMTP), não há garantia de que toda requisição em voo termine dentro dela.
+Os 40 s do grace period são a relação 4 acima, e são mantidos baixos de propósito — ele alonga node drain e evicção. Estourá-lo é `SIGKILL`. A janela é declarada como **orçamento fixo e de melhor esforço**.
 
 *Nota de mecânica:* o `kubectl rollout status` **não** espera o `terminationGracePeriodSeconds` — pods com `DeletionTimestamp` saem da contagem de ativos do ReplicaSet —, então subir o grace period não consome o gate do CD.
 
