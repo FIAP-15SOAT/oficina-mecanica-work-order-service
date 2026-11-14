@@ -142,9 +142,7 @@ export class WorkOrderController {
   }
 
   private findUsers(ids: (string | null)[]): Promise<IdentityUserGatewayResponse[]> {
-    const distinctIds = new Set(ids.filter((id): id is string => id !== null));
-
-    return this.findUsersByIdsUseCase.execute([...distinctIds]);
+    return this.findUsersByIdsUseCase.execute(ids.filter((id): id is string => id !== null));
   }
 
   private findItemsCatalog(workOrder: WorkOrder): Promise<FindCatalogItemsOutputDto> {

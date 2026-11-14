@@ -462,7 +462,7 @@ describe('WorkOrderController', () => {
       expect(result).toEqual(WorkOrderPresenter.toStatusHistoryListResponse(history, []));
     });
 
-    it('should resolve the history authors with distinct ids', async () => {
+    it('should resolve the history authors, leaving out the entries without author', async () => {
       const author = createMockIdentityUserGatewayResponse();
       const workOrderId = randomUUID();
 
@@ -490,7 +490,8 @@ describe('WorkOrderController', () => {
 
       const result = await controller.getStatusHistory(workOrderId);
 
-      expect(findUsersByIdsUseCase.execute).toHaveBeenCalledWith([author.id]);
+      expect(findUsersByIdsUseCase.execute).toHaveBeenCalledWith([author.id, author.id]);
+
       expect(result).toEqual(WorkOrderPresenter.toStatusHistoryListResponse(history, [author]));
     });
 
