@@ -15,7 +15,7 @@ Mitigações aplicadas no código e índice de relatórios de segurança.
 
 ## Relatórios
 
-Relatórios de segurança da aplicação ficam versionados em [`reports/`](../reports). Na raiz de cada ferramenta fica o relatório mais recente, enquanto o histórico é organizado por data no formato `YYYY-MM-DD`.
+As evidências de SAST, cobertura e DAST dos quatro serviços e das duas Lambdas estão em [Evidências de qualidade](quality-evidence.md). Os relatórios da Fase 3, quando a solução era uma API só, ficam versionados em [`reports/`](../reports). Na raiz de cada ferramenta fica o relatório mais recente, enquanto o histórico é organizado por data no formato `YYYY-MM-DD`.
 
 - **DAST (OWASP ZAP)** — relatórios em [`reports/zap/`](../reports/zap) (HTML e PDF).
 - **Qualidade e cobertura (SonarQube)** — relatórios em [`reports/sonarqube/`](../reports/sonarqube) (PDF).

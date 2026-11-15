@@ -65,7 +65,7 @@ Após a inicialização:
 - **Swagger:** `http://localhost:3000/api/docs`
 - **LocalStack (SNS/SQS):** `http://localhost:4566`
 
-Para executar chamadas à API, use o Swagger em `/api/docs` ou importe a collection e o environment do Postman (`collections/oficina-collection.json` e `collections/oficina-environment.json`) — o passo a passo está em [Testes › Postman / Newman](testing.md#postman--newman).
+Para executar chamadas à API, use o Swagger em `/api/docs` ou importe a collection e o environment local do Postman (`collections/oficina-collection.json` e `collections/oficina-environment.json`) — o passo a passo está em [Testes › Postman / Newman](testing.md#postman--newman).
 
 ## Variáveis de Ambiente
 

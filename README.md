@@ -191,7 +191,7 @@ Cada entregável do enunciado, com o link que o comprova ou, quando depende de a
 | Dockerfile | Feito | [`app/Dockerfile`](app/Dockerfile) | [`app/Dockerfile`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/app/Dockerfile) | [`app/Dockerfile`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/blob/main/app/Dockerfile) | [`app/Dockerfile`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service/blob/main/app/Dockerfile) |
 | Manifests Kubernetes | Feito | [`k8s/`](k8s) | [`k8s/`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/tree/main/k8s) | [`k8s/`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/tree/main/k8s) | [`k8s/`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service/tree/main/k8s) |
 | Pipelines de CI/CD | Feito | [`.github/workflows/`](.github/workflows) | [`.github/workflows/`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/tree/main/.github/workflows) | [`.github/workflows/`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/tree/main/.github/workflows) | [`.github/workflows/`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service/tree/main/.github/workflows) |
-| Evidência de cobertura: o CI roda `npm run test:cov`, que falha abaixo de 100%; os READMEs dos quatro serviços e das duas Lambdas têm o badge de cobertura do SonarQube Cloud; faltam as capturas de cobertura | Parcial | [`ci.yml`](.github/workflows/ci.yml) | [`ci.yml`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/.github/workflows/ci.yml) | [`ci.yml`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/blob/main/.github/workflows/ci.yml) | [`ci.yml`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service/blob/main/.github/workflows/ci.yml) |
+| Evidência de cobertura: o CI roda `npm run test:cov`, que falha abaixo de 100%; os READMEs dos quatro serviços e das duas Lambdas têm o badge de cobertura do SonarQube Cloud; cobertura, quality gate e DAST de cada um reunidos em [Evidências de qualidade](docs/quality-evidence.md) | Feito | [`ci.yml`](.github/workflows/ci.yml) | [`ci.yml`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/.github/workflows/ci.yml) | [`ci.yml`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/blob/main/.github/workflows/ci.yml) | [`ci.yml`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service/blob/main/.github/workflows/ci.yml) |
 | Documentação da arquitetura do serviço | Feito | [`docs/architecture.md`](docs/architecture.md) | [`docs/architecture.md`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/docs/architecture.md) | [`docs/architecture.md`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/blob/main/docs/architecture.md) | [`docs/architecture.md`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service/blob/main/docs/architecture.md) |
 | Swagger (em `/api/docs` de cada serviço) e collection Postman | Feito | [`collections/`](collections) | [`collections/`](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/tree/main/collections) | [`collections/`](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/tree/main/collections) | [`collections/`](https://github.com/FIAP-15SOAT/oficina-mecanica-inventory-service/tree/main/collections) |
 
@@ -255,7 +255,7 @@ O enunciado da fase (o PDF do desafio) pede o padrão **Saga** para "criação d
 - **Documentação**: Swagger/OpenAPI (`@nestjs/swagger`) — disponível em `/api/docs`
 - **Testes**: Jest 30 + ts-jest (unitários com mocks tipados e E2E com **Testcontainers 12** + PostgreSQL 18, Valkey e LocalStack reais) e BDD com `@cucumber/cucumber` 13.3 (cenários em Gherkin pt-BR do fluxo completo da OS e das compensações das Sagas)
 - **Qualidade**: SonarQube Cloud (Sonar Scan via GitHub Actions)
-- **Análise de segurança**: OWASP ZAP (DAST) e SonarQube (SAST/qualidade) — relatórios em `reports/`
+- **Análise de segurança**: OWASP ZAP (DAST) e SonarQube (SAST/qualidade) — evidências em [Evidências de qualidade](docs/quality-evidence.md); os relatórios da Fase 3 ficam em `reports/`
 - **Containerização**: Docker (multi-stage `node:24-alpine`) + Docker Compose
 - **Linting**: ESLint 9 + Prettier 3
 
@@ -311,7 +311,7 @@ docker compose down
 
 > Em produção, a credencial do PostgreSQL não vem do GitHub. O job `prepare-deploy` do CD usa `vars.RDS_INSTANCE_IDENTIFIER` para descobrir o Secret gerenciado pelo RDS, lê `AWSCURRENT` e materializa `DATABASE_URL` com encoding/TLS em `database-credentials`, usando Node.js inline e stdin. Também descobre o ElastiCache por `vars.CACHE_REPLICATION_GROUP_ID` e materializa `CACHE_URL` (`rediss://`) em `cache-credentials`. Depois, `db-migrate` executa migration/seed e `app-deploy` aplica a imagem no namespace `work-order`, aguarda o rollout e faz o smoke `GET /health/work-order` pelo API Gateway, com `kubectl rollout undo` na falha. Job e Deployment consomem o mesmo Secret do banco; `jwt-public-keys` guarda as chaves públicas dos tokens e o `kid`, e o serviço não tem chave privada. O escopo é deploy greenfield, com rotação desabilitada e sem annotation/output de versão da credencial. Veja o [ADR 0017](docs/adr/0017-materializacao-da-credencial-do-banco-no-cd.md).
 
-> **Para testar:** faça login no Identity local, em `POST http://localhost:3001/api/auth/login`, com um admin do seed dele (veja os usuários em [Como executar localmente › Seed](docs/local-setup.md#seed)), e use o `accessToken` aqui. Para explorar os endpoints, use o **Swagger** em `/api/docs` ou importe a **collection do Postman** (`collections/oficina-collection.json` + `collections/oficina-environment.json`) — passo a passo em [Testes › Postman / Newman](docs/testing.md#postman--newman).
+> **Para testar:** faça login no Identity local, em `POST http://localhost:3001/api/auth/login`, com um admin do seed dele (veja os usuários em [Como executar localmente › Seed](docs/local-setup.md#seed)), e use o `accessToken` aqui. Para explorar os endpoints, use o **Swagger** em `/api/docs` ou importe a **collection do Postman** (`collections/oficina-collection.json`, com o environment local `collections/oficina-environment.json` ou o do gateway `collections/oficina-gateway-environment.json`) — passo a passo em [Testes › Postman / Newman](docs/testing.md#postman--newman).
 
 ## ⚙️ Comandos
 
@@ -475,9 +475,10 @@ As decisões de cada repositório ficam em `docs/adr/` dele (coluna ADRs da tabe
 │   ├── adr/                    # Decisões arquiteturais
 │   ├── c4/                     # Diagramas e documentação C4
 │   ├── diagrams/               # PNGs de infraestrutura e pipelines
+│   ├── evidence/               # Capturas dos relatórios do DAST da Fase 4
 │   └── infra/                  # Visão da solução, Kubernetes, Terraform e CI/CD
 ├── k8s/                        # Manifests aplicados pelo CD da API
-├── reports/                    # Relatórios versionados da solução
+├── reports/                    # Relatórios de ZAP e SonarQube da Fase 3
 ├── .gitignore
 └── README.md
 ```
@@ -495,6 +496,7 @@ As decisões de cada repositório ficam em `docs/adr/` dele (coluna ADRs da tabe
 | 🧪 [Testes](docs/testing.md) | Unitários, E2E (PostgreSQL, Valkey, LocalStack e stub do Inventory, do Billing e do Identity), BDD (Cucumber em pt-BR), cenários de falha F1 a F14, contrato das rotas /internal, Postman/Newman |
 | 🎬 [Manual de demonstração](docs/demo-manual.md) | Preparo do ambiente, fluxo completo da ordem de serviço, da abertura à entrega, pagamento no sandbox do Mercado Pago e falhas com compensação provocadas de fora |
 | 🔒 [Segurança](docs/security.md) | Mitigações no código, proteção de dados nos logs e relatórios (ZAP, SonarQube) |
+| 📊 [Evidências de qualidade](docs/quality-evidence.md) | Cobertura, quality gate do SonarQube Cloud e DAST dos quatro serviços e das duas Lambdas |
 | 🔭 [Observabilidade](docs/observability.md) | Logs estruturados, correlação, traces, métricas e degradação segura |
 | 🏗️ [Infra · Visão Geral](docs/infra/overview.md) | Arquitetura da infra como sistema: componentes, ownership e fluxos |
 | 🌍 [Infra · Terraform](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base) | Infraestrutura AWS e Kubernetes (IaC nos repositórios dedicados) |

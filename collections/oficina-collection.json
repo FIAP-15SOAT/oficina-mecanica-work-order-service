@@ -416,63 +416,6 @@
       ]
     },
     {
-      "name": "Gestão de Usuários",
-      "item": [
-        {
-          "name": "TC-USER-02 — Criar usuário mecânico (sucesso) — Identity",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
-                  "pm.test('Retorna dados do usuário criado', () => {",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.data).to.have.property('id');",
-                  "    pm.environment.set('mechanicUserId', res.data.id);",
-                  "    pm.expect(res.data.email).to.eql('mecanico.teste@oficina.com');",
-                  "});"
-                ],
-                "type": "text/javascript",
-                "packages": {},
-                "requests": {}
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\r\n    \"name\": \"Mecânico Teste\",\r\n    \"email\": \"mecanico.teste@oficina.com\",\r\n    \"role\": \"MECHANIC\"\r\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{identityBaseUrl}}/api/users",
-              "host": [
-                "{{identityBaseUrl}}"
-              ],
-              "path": [
-                "api",
-                "users"
-              ]
-            }
-          },
-          "response": []
-        }
-      ],
-      "description": "O cadastro de usuários é do Identity, que tem a collection própria. Aqui fica só a criação do mecânico que a OS recebe em TC-WO-05, pelo Identity."
-    },
-    {
       "name": "Gestão de Clientes",
       "item": [
         {
@@ -2700,6 +2643,24 @@
           "name": "TC-WO-05 — Atualizar Ordem de Serviço",
           "event": [
             {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Setup on the Identity: the mechanic the work order receives in this request.",
+                  "pm.sendRequest({",
+                  "    url: pm.environment.get('identityBaseUrl') + '/api/users',",
+                  "    method: 'POST',",
+                  "    header: { Authorization: 'Bearer ' + pm.environment.get('authToken'), 'Content-Type': 'application/json' },",
+                  "    body: { mode: 'raw', raw: JSON.stringify({ name: 'Mecânico Teste', email: 'mecanico.' + Date.now() + '@oficina.com', role: 'MECHANIC' }) }",
+                  "}, (err, res) => {",
+                  "    pm.test('Mecânico criado no Identity', () => pm.expect(res && res.code).to.equal(201));",
+                  "    pm.environment.set('mechanicUserId', res.json().data.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
               "listen": "test",
               "script": {
                 "exec": [
@@ -2789,280 +2750,64 @@
           "response": []
         },
         {
-          "name": "TC-WO-30 — Enviar o orçamento inicial ao cliente (Billing)",
+          "name": "TC-WO-08 — Atualizar Status de Serviço na OS (IN_PROGRESS)",
           "event": [
             {
               "listen": "prerequest",
               "script": {
                 "exec": [
-                  "// The opening created the initial quote in the Billing; its id comes from the work order quote list.",
-                  "pm.sendRequest({",
-                  "    url: pm.environment.get('baseUrl') + '/api/work-orders/' + pm.environment.get('workOrderId') + '/quotes',",
-                  "    method: 'GET',",
-                  "    header: { Authorization: 'Bearer ' + pm.environment.get('authToken') }",
-                  "}, (err, res) => {",
-                  "    if (!err && res.code === 200 && res.json().data.length > 0) {",
-                  "        pm.environment.set('quoteId', res.json().data[0].id);",
-                  "    }",
-                  "});"
-                ],
-                "type": "text/javascript",
-                "packages": {},
-                "requests": {}
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Orçamento enviado', () => pm.expect(pm.response.json().data.status).to.equal('SENT'));",
-                  "",
-                  "// The work order only becomes AWAITING_APPROVAL after it consumes billing.quote.sent.",
-                  "const maxAttempts = 15;",
-                  "",
-                  "function waitForWorkOrderAwaitingApproval(attempt) {",
+                  "// Polls a GET until the predicate holds, one try per second, then reports the last value.",
+                  "function waitFor(path, token, read, expected, attempts, label, done) {",
                   "    pm.sendRequest({",
-                  "        url: pm.environment.get('baseUrl') + '/api/work-orders/' + pm.environment.get('workOrderId'),",
+                  "        url: pm.environment.get('baseUrl') + path,",
                   "        method: 'GET',",
-                  "        header: { Authorization: 'Bearer ' + pm.environment.get('authToken') }",
+                  "        header: { Authorization: 'Bearer ' + token }",
                   "    }, (err, res) => {",
-                  "        const status = !err && res.code === 200 ? res.json().data.status : null;",
+                  "        const value = !err && res.code === 200 ? read(res.json()) : null;",
                   "",
-                  "        if (status === 'AWAITING_APPROVAL' || attempt >= maxAttempts) {",
-                  "            pm.test('OS aguardando aprovação depois do envio', () => pm.expect(status).to.equal('AWAITING_APPROVAL'));",
+                  "        if (value === expected || attempts <= 1) {",
+                  "            pm.test(label, () => pm.expect(value).to.equal(expected));",
+                  "            if (done) done();",
                   "            return;",
                   "        }",
                   "",
-                  "        setTimeout(() => waitForWorkOrderAwaitingApproval(attempt + 1), 1000);",
+                  "        setTimeout(() => waitFor(path, token, read, expected, attempts - 1, label, done), 1000);",
                   "    });",
                   "}",
                   "",
-                  "waitForWorkOrderAwaitingApproval(1);"
-                ],
-                "type": "text/javascript",
-                "packages": {},
-                "requests": {}
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/submissions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "submissions"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-WO-31 — Aprovar o orçamento (Billing)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Orçamento aprovado com sucesso', () => {",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.data.status).to.equal('APPROVED');",
-                  "    pm.expect(res.data.approvedAt).to.be.a('string').and.not.empty;",
-                  "});",
+                  "// Setup on the owners: send the initial quote (Billing) and approve it, so the work order reaches APPROVED.",
+                  "const workOrderPath = '/api/work-orders/' + pm.environment.get('workOrderId');",
+                  "const status = (body) => body.data.status;",
                   "",
-                  "// With parts, the work order only becomes APPROVED after the Inventory confirms the stock reservation.",
-                  "const maxAttempts = 15;",
-                  "",
-                  "function waitForWorkOrderApproval(attempt) {",
                   "    pm.sendRequest({",
-                  "        url: pm.environment.get('baseUrl') + '/api/work-orders/' + pm.environment.get('workOrderId'),",
+                  "        url: pm.environment.get('baseUrl') + workOrderPath + '/quotes',",
                   "        method: 'GET',",
-                  "        header: { Authorization: 'Bearer ' + pm.environment.get('authToken') }",
+                  "        header: { Authorization: 'Bearer ' + pm.environment.get('authToken'), 'Content-Type': 'application/json' }",
                   "    }, (err, res) => {",
-                  "        const status = !err && res.code === 200 ? res.json().data.status : null;",
+                  "        const quoteId = res.json().data[0].id;",
+                  "        pm.environment.set('quoteId', quoteId);",
                   "",
-                  "        if (status === 'APPROVED' || attempt >= maxAttempts) {",
-                  "            pm.test('OS aprovada depois da reserva de estoque', () => pm.expect(status).to.equal('APPROVED'));",
-                  "            return;",
-                  "        }",
-                  "",
-                  "        setTimeout(() => waitForWorkOrderApproval(attempt + 1), 1000);",
-                  "    });",
-                  "}",
-                  "",
-                  "waitForWorkOrderApproval(1);"
+                  "        pm.sendRequest({",
+                  "            url: pm.environment.get('baseUrl') + '/api/quotes/' + quoteId + '/submissions',",
+                  "            method: 'POST',",
+                  "            header: { Authorization: 'Bearer ' + pm.environment.get('authToken'), 'Content-Type': 'application/json' }",
+                  "        }, (err, res) => {",
+                  "            waitFor(workOrderPath, pm.environment.get('authToken'), status, 'AWAITING_APPROVAL', 15, 'OS aguardando aprovação depois do envio', () => {",
+                  "                pm.sendRequest({",
+                  "                    url: pm.environment.get('baseUrl') + '/api/quotes/' + quoteId,",
+                  "                    method: 'PATCH',",
+                  "                    header: { Authorization: 'Bearer ' + pm.environment.get('authToken'), 'Content-Type': 'application/json' },",
+                  "                    body: { mode: 'raw', raw: JSON.stringify({ status: 'APPROVED' }) }",
+                  "                }, (err, res) => {",
+                  "                    waitFor(workOrderPath, pm.environment.get('authToken'), status, 'APPROVED', 15, 'OS aprovada depois da reserva de estoque');",
+                  "                });",
+                  "            });",
+                  "        });",
+                  "    });"
                 ],
                 "type": "text/javascript"
               }
-            }
-          ],
-          "request": {
-            "method": "PATCH",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"status\": \"APPROVED\"}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
             },
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-WO-32 — Criar a cobrança do sinal (Billing)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
-                  "pm.test('Cobrança pendente com o link de pagamento', () => {",
-                  "    const res = pm.response.json();",
-                  "    pm.expect(res.data.status).to.equal('PENDING');",
-                  "    pm.expect(res.data.checkoutUrl).to.be.a('string').and.not.empty;",
-                  "    pm.environment.set('paymentId', res.data.id);",
-                  "});",
-                  "",
-                  "// The work order only becomes AWAITING_PAYMENT after it consumes billing.payment.requested.",
-                  "const maxAttempts = 15;",
-                  "",
-                  "function waitForWorkOrderAwaitingPayment(attempt) {",
-                  "    pm.sendRequest({",
-                  "        url: pm.environment.get('baseUrl') + '/api/work-orders/' + pm.environment.get('workOrderId'),",
-                  "        method: 'GET',",
-                  "        header: { Authorization: 'Bearer ' + pm.environment.get('authToken') }",
-                  "    }, (err, res) => {",
-                  "        const status = !err && res.code === 200 ? res.json().data.status : null;",
-                  "",
-                  "        if (status === 'AWAITING_PAYMENT' || attempt >= maxAttempts) {",
-                  "            pm.test('OS aguardando pagamento depois da cobrança', () => pm.expect(status).to.equal('AWAITING_PAYMENT'));",
-                  "            return;",
-                  "        }",
-                  "",
-                  "        setTimeout(() => waitForWorkOrderAwaitingPayment(attempt + 1), 1000);",
-                  "    });",
-                  "}",
-                  "",
-                  "waitForWorkOrderAwaitingPayment(1);"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\"workOrderId\": \"{{workOrderId}}\", \"amount\": 10}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/payments",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "payments"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-WO-33 — Cancelar a cobrança do sinal (Billing)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Cobrança cancelada', () => pm.expect(pm.response.json().data.status).to.equal('CANCELLED'));",
-                  "",
-                  "// The work order returns to its origin only after it consumes billing.payment.failed.",
-                  "const maxAttempts = 15;",
-                  "",
-                  "function waitForWorkOrderApproved(attempt) {",
-                  "    pm.sendRequest({",
-                  "        url: pm.environment.get('baseUrl') + '/api/work-orders/' + pm.environment.get('workOrderId'),",
-                  "        method: 'GET',",
-                  "        header: { Authorization: 'Bearer ' + pm.environment.get('authToken') }",
-                  "    }, (err, res) => {",
-                  "        const status = !err && res.code === 200 ? res.json().data.status : null;",
-                  "",
-                  "        if (status === 'APPROVED' || attempt >= maxAttempts) {",
-                  "            pm.test('OS de volta a APPROVED depois do cancelamento', () => pm.expect(status).to.equal('APPROVED'));",
-                  "            return;",
-                  "        }",
-                  "",
-                  "        setTimeout(() => waitForWorkOrderApproved(attempt + 1), 1000);",
-                  "    });",
-                  "}",
-                  "",
-                  "waitForWorkOrderApproved(1);"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/payments/{{paymentId}}/cancellations",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "payments",
-                "{{paymentId}}",
-                "cancellations"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-WO-08 — Atualizar Status de Serviço na OS (IN_PROGRESS)",
-          "event": [
             {
               "listen": "test",
               "script": {
@@ -4147,156 +3892,6 @@
           "response": []
         },
         {
-          "name": "TC-ME-05C — Enviar o orçamento inicial da OS vinculada (Billing)",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "// The opening created the initial quote in the Billing; its id comes from the work order quote list.",
-                  "pm.sendRequest({",
-                  "    url: pm.environment.get('baseUrl') + '/api/work-orders/' + pm.environment.get('workOrderId') + '/quotes',",
-                  "    method: 'GET',",
-                  "    header: { Authorization: 'Bearer ' + pm.environment.get('authToken') }",
-                  "}, (err, res) => {",
-                  "    if (!err && res.code === 200 && res.json().data.length > 0) {",
-                  "        pm.environment.set('quoteId', res.json().data[0].id);",
-                  "    }",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Orçamento enviado', () => pm.expect(pm.response.json().data.status).to.equal('SENT'));",
-                  "",
-                  "// The work order only becomes AWAITING_APPROVAL after it consumes the Billing event.",
-                  "const maxAttempts = 15;",
-                  "",
-                  "function waitForStatus(attempt) {",
-                  "    pm.sendRequest({",
-                  "        url: pm.environment.get('baseUrl') + '/api/work-orders/' + pm.environment.get('workOrderId'),",
-                  "        method: 'GET',",
-                  "        header: { Authorization: 'Bearer ' + pm.environment.get('authToken') }",
-                  "    }, (err, res) => {",
-                  "        const status = !err && res.code === 200 ? res.json().data.status : null;",
-                  "",
-                  "        if (status === 'AWAITING_APPROVAL' || attempt >= maxAttempts) {",
-                  "            pm.test('OS vinculada aguardando aprovação depois do envio', () => pm.expect(status).to.equal('AWAITING_APPROVAL'));",
-                  "            return;",
-                  "        }",
-                  "",
-                  "        setTimeout(() => waitForStatus(attempt + 1), 1000);",
-                  "    });",
-                  "}",
-                  "",
-                  "waitForStatus(1);"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/submissions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{quoteId}}",
-                "submissions"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-ME-05D — Criar um segundo orçamento da OS vinculada (Billing)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
-                  "pm.test('Retorna o segundo orçamento', () => {",
-                  "    pm.environment.set('rejectQuoteId', pm.response.json().data.id);",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"workOrderId\": \"{{workOrderId}}\",\n  \"services\": [\n    { \"serviceId\": \"{{serviceId}}\", \"quantity\": 1 }\n  ]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "TC-ME-05E — Enviar o segundo orçamento da OS vinculada (Billing)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
-                  "pm.test('Orçamento enviado', () => pm.expect(pm.response.json().data.status).to.equal('SENT'));"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/quotes/{{rejectQuoteId}}/submissions",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "quotes",
-                "{{rejectQuoteId}}",
-                "submissions"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
           "name": "TC-ME-06 — Detalhe de ordem de serviço vinculada (sucesso)",
           "request": {
             "method": "GET",
@@ -4331,6 +3926,69 @@
           },
           "response": [],
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Polls a GET until the predicate holds, one try per second, then reports the last value.",
+                  "function waitFor(path, token, read, expected, attempts, label, done) {",
+                  "    pm.sendRequest({",
+                  "        url: pm.environment.get('baseUrl') + path,",
+                  "        method: 'GET',",
+                  "        header: { Authorization: 'Bearer ' + token }",
+                  "    }, (err, res) => {",
+                  "        const value = !err && res.code === 200 ? read(res.json()) : null;",
+                  "",
+                  "        if (value === expected || attempts <= 1) {",
+                  "            pm.test(label, () => pm.expect(value).to.equal(expected));",
+                  "            if (done) done();",
+                  "            return;",
+                  "        }",
+                  "",
+                  "        setTimeout(() => waitFor(path, token, read, expected, attempts - 1, label, done), 1000);",
+                  "    });",
+                  "}",
+                  "",
+                  "// Setup on the Billing: send the initial quote and create and send a second one, for the approval and the rejection.",
+                  "const workOrderPath = '/api/work-orders/' + pm.environment.get('workOrderId');",
+                  "",
+                  "    pm.sendRequest({",
+                  "        url: pm.environment.get('baseUrl') + workOrderPath + '/quotes',",
+                  "        method: 'GET',",
+                  "        header: { Authorization: 'Bearer ' + pm.environment.get('authToken'), 'Content-Type': 'application/json' }",
+                  "    }, (err, res) => {",
+                  "        const quoteId = res.json().data[0].id;",
+                  "        pm.environment.set('quoteId', quoteId);",
+                  "",
+                  "        pm.sendRequest({",
+                  "            url: pm.environment.get('baseUrl') + '/api/quotes/' + quoteId + '/submissions',",
+                  "            method: 'POST',",
+                  "            header: { Authorization: 'Bearer ' + pm.environment.get('authToken'), 'Content-Type': 'application/json' }",
+                  "        }, (err, res) => {",
+                  "            waitFor(workOrderPath, pm.environment.get('authToken'), (body) => body.data.status, 'AWAITING_APPROVAL', 15, 'OS aguardando aprovação depois do envio', () => {",
+                  "                pm.sendRequest({",
+                  "                    url: pm.environment.get('baseUrl') + '/api/quotes',",
+                  "                    method: 'POST',",
+                  "                    header: { Authorization: 'Bearer ' + pm.environment.get('authToken'), 'Content-Type': 'application/json' },",
+                  "                    body: { mode: 'raw', raw: JSON.stringify({ workOrderId: pm.environment.get('workOrderId'), services: [{ serviceId: pm.environment.get('serviceId'), quantity: 1 }] }) }",
+                  "                }, (err, res) => {",
+                  "                    const rejectQuoteId = res.json().data.id;",
+                  "                    pm.environment.set('rejectQuoteId', rejectQuoteId);",
+                  "                    pm.sendRequest({",
+                  "                        url: pm.environment.get('baseUrl') + '/api/quotes/' + rejectQuoteId + '/submissions',",
+                  "                        method: 'POST',",
+                  "                        header: { Authorization: 'Bearer ' + pm.environment.get('authToken'), 'Content-Type': 'application/json' }",
+                  "                    }, (err, res) => {",
+                  "                        pm.test('Segundo orçamento enviado', () => pm.expect(res.json().data.status).to.equal('SENT'));",
+                  "                    });",
+                  "                });",
+                  "            });",
+                  "        });",
+                  "    });"
+                ],
+                "type": "text/javascript"
+              }
+            },
             {
               "listen": "test",
               "script": {
@@ -4870,6 +4528,834 @@
             }
           },
           "response": []
+        }
+      ]
+    },
+    {
+      "name": "Fluxo ponta a ponta",
+      "description": "A vida de uma OS da abertura à entrega, na ordem do manual de demonstração (docs/demo-manual.md), com as rotas do Identity, da customer-auth, do Billing e do Inventory pelo API Gateway. Cada passo assíncrono espera o status (até 15 s; o pagamento, até 60 s). Rode a parte 1, pague a cobrança no sandbox do Mercado Pago com o checkoutUrl do console e simule a notificação com o checkoutId, como no manual, e rode a parte 2, que começa com um login novo, porque o token de funcionário vale 10 minutos.",
+      "item": [
+        {
+          "name": "1 · Da abertura à cobrança",
+          "item": [
+            {
+              "name": "E2E-01 — Login do funcionário (Identity)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{identityBaseUrl}}/api/auth/login",
+                  "host": [
+                    "{{identityBaseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "login"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.environment.set('authToken', pm.response.json().data.accessToken);",
+                      "pm.environment.set('refreshToken', pm.response.json().data.refreshToken);"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "E2E-02 — Login do cliente (Lambda customer-auth)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/customer-auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "customer-auth",
+                    "login"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"cpf\": \"{{customerCpf}}\",\n  \"password\": \"{{customerPassword}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.environment.set('customerJwtToken', pm.response.json().data.accessToken);"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "E2E-03 — Abrir a OS com um serviço e uma peça",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/work-orders",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "work-orders"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"customerId\": \"{{myCustomerId}}\",\n  \"vehicleId\": \"{{myVehicleId}}\",\n  \"problemDescription\": \"Revisão com troca de óleo e filtro\",\n  \"mileageAtService\": 55000,\n  \"services\": [\n    {\n      \"serviceId\": \"{{serviceId}}\",\n      \"quantity\": 1\n    }\n  ],\n  \"partsSupplies\": [\n    {\n      \"partSupplyId\": \"{{partSupplyId}}\",\n      \"quantity\": 1\n    }\n  ]\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+                      "pm.test('OS recebida', () => pm.expect(pm.response.json().data.status).to.equal('RECEIVED'));",
+                      "pm.environment.set('workOrderId', pm.response.json().data.id);"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "E2E-04 — Iniciar o diagnóstico",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/work-orders/{{workOrderId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "work-orders",
+                    "{{workOrderId}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"IN_DIAGNOSIS\",\n  \"notes\": \"Iniciando diagnóstico técnico\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.test('OS em diagnóstico', () => pm.expect(pm.response.json().data.status).to.equal('IN_DIAGNOSIS'));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "E2E-05 — Ler o orçamento inicial da OS (Billing)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/work-orders/{{workOrderId}}/quotes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "work-orders",
+                    "{{workOrderId}}",
+                    "quotes"
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "const quote = pm.response.json().data[0];",
+                      "pm.test('Orçamento inicial pendente', () => pm.expect(quote.status).to.equal('PENDING'));",
+                      "pm.environment.set('quoteId', quote.id);",
+                      "pm.environment.set('quoteTotalAmount', quote.totalAmount);"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "E2E-06 — Enviar o orçamento ao cliente (Billing)",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/quotes/{{quoteId}}/submissions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "quotes",
+                    "{{quoteId}}",
+                    "submissions"
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.test('Orçamento enviado', () => pm.expect(pm.response.json().data.status).to.equal('SENT'));",
+                      "",
+                      "// Polls a GET until the predicate holds, one try per second, then reports the last value.",
+                      "function waitFor(path, token, read, expected, attempts, label, done) {",
+                      "    pm.sendRequest({",
+                      "        url: pm.environment.get('baseUrl') + path,",
+                      "        method: 'GET',",
+                      "        header: { Authorization: 'Bearer ' + token }",
+                      "    }, (err, res) => {",
+                      "        const value = !err && res.code === 200 ? read(res.json()) : null;",
+                      "",
+                      "        if (value === expected || attempts <= 1) {",
+                      "            pm.test(label, () => pm.expect(value).to.equal(expected));",
+                      "            if (done) done();",
+                      "            return;",
+                      "        }",
+                      "",
+                      "        setTimeout(() => waitFor(path, token, read, expected, attempts - 1, label, done), 1000);",
+                      "    });",
+                      "}",
+                      "",
+                      "waitFor('/api/work-orders/' + pm.environment.get('workOrderId'), pm.environment.get('authToken'), (body) => body.data.status, 'AWAITING_APPROVAL', 15, 'OS aguardando aprovação');"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "E2E-07 — O cliente consulta o orçamento",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/me/quotes/{{quoteId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "me",
+                    "quotes",
+                    "{{quoteId}}"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{customerJwtToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.test('Orçamento enviado ao cliente', () => pm.expect(pm.response.json().data.status).to.equal('SENT'));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "E2E-08 — O cliente aprova o orçamento",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/me/quotes/{{quoteId}}/decisions",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "me",
+                    "quotes",
+                    "{{quoteId}}",
+                    "decisions"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"action\": \"approve\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{customerJwtToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.test('Orçamento aprovado', () => pm.expect(pm.response.json().data.status).to.equal('APPROVED'));",
+                      "",
+                      "// Polls a GET until the predicate holds, one try per second, then reports the last value.",
+                      "function waitFor(path, token, read, expected, attempts, label, done) {",
+                      "    pm.sendRequest({",
+                      "        url: pm.environment.get('baseUrl') + path,",
+                      "        method: 'GET',",
+                      "        header: { Authorization: 'Bearer ' + token }",
+                      "    }, (err, res) => {",
+                      "        const value = !err && res.code === 200 ? read(res.json()) : null;",
+                      "",
+                      "        if (value === expected || attempts <= 1) {",
+                      "            pm.test(label, () => pm.expect(value).to.equal(expected));",
+                      "            if (done) done();",
+                      "            return;",
+                      "        }",
+                      "",
+                      "        setTimeout(() => waitFor(path, token, read, expected, attempts - 1, label, done), 1000);",
+                      "    });",
+                      "}",
+                      "",
+                      "waitFor('/api/work-orders/' + pm.environment.get('workOrderId'), pm.environment.get('authToken'), (body) => body.data.status, 'APPROVED', 15, 'OS aprovada depois da reserva de estoque');"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "E2E-09 — Conferir a reserva da peça (Inventory)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/stock-reservations?workOrderId={{workOrderId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "stock-reservations"
+                  ],
+                  "query": [
+                    {
+                      "key": "workOrderId",
+                      "value": "{{workOrderId}}"
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.test('Reserva da peça da OS', () => pm.expect(pm.response.json().data.map((r) => r.partSupplyId)).to.include(pm.environment.get('partSupplyId')));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "E2E-10 — Cobrar o valor total (Billing)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/payments",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "payments"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"workOrderId\": \"{{workOrderId}}\",\n  \"amount\": {{quoteTotalAmount}}\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 201 Created', () => pm.response.to.have.status(201));",
+                      "const payment = pm.response.json().data;",
+                      "pm.test('Cobrança pendente com o link de pagamento', () => pm.expect(payment.status).to.equal('PENDING'));",
+                      "pm.environment.set('paymentId', payment.id);",
+                      "pm.environment.set('checkoutId', payment.checkoutId);",
+                      "pm.environment.set('checkoutUrl', payment.checkoutUrl);",
+                      "console.log('Pague no sandbox antes da parte 2: ' + payment.checkoutUrl + ' (checkoutId ' + payment.checkoutId + ')');",
+                      "",
+                      "// Polls a GET until the predicate holds, one try per second, then reports the last value.",
+                      "function waitFor(path, token, read, expected, attempts, label, done) {",
+                      "    pm.sendRequest({",
+                      "        url: pm.environment.get('baseUrl') + path,",
+                      "        method: 'GET',",
+                      "        header: { Authorization: 'Bearer ' + token }",
+                      "    }, (err, res) => {",
+                      "        const value = !err && res.code === 200 ? read(res.json()) : null;",
+                      "",
+                      "        if (value === expected || attempts <= 1) {",
+                      "            pm.test(label, () => pm.expect(value).to.equal(expected));",
+                      "            if (done) done();",
+                      "            return;",
+                      "        }",
+                      "",
+                      "        setTimeout(() => waitFor(path, token, read, expected, attempts - 1, label, done), 1000);",
+                      "    });",
+                      "}",
+                      "",
+                      "waitFor('/api/work-orders/' + pm.environment.get('workOrderId'), pm.environment.get('authToken'), (body) => body.data.status, 'AWAITING_PAYMENT', 15, 'OS aguardando pagamento');"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "2 · Depois do pagamento",
+          "item": [
+            {
+              "name": "E2E-10A — Login do funcionário de novo (Identity)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{identityBaseUrl}}/api/auth/login",
+                  "host": [
+                    "{{identityBaseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "auth",
+                    "login"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.environment.set('authToken', pm.response.json().data.accessToken);",
+                      "pm.environment.set('refreshToken', pm.response.json().data.refreshToken);"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "E2E-11 — Conferir a cobrança paga (Billing)",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/payments/{{paymentId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "payments",
+                    "{{paymentId}}"
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "",
+                      "// Polls a GET until the predicate holds, one try per second, then reports the last value.",
+                      "function waitFor(path, token, read, expected, attempts, label, done) {",
+                      "    pm.sendRequest({",
+                      "        url: pm.environment.get('baseUrl') + path,",
+                      "        method: 'GET',",
+                      "        header: { Authorization: 'Bearer ' + token }",
+                      "    }, (err, res) => {",
+                      "        const value = !err && res.code === 200 ? read(res.json()) : null;",
+                      "",
+                      "        if (value === expected || attempts <= 1) {",
+                      "            pm.test(label, () => pm.expect(value).to.equal(expected));",
+                      "            if (done) done();",
+                      "            return;",
+                      "        }",
+                      "",
+                      "        setTimeout(() => waitFor(path, token, read, expected, attempts - 1, label, done), 1000);",
+                      "    });",
+                      "}",
+                      "",
+                      "waitFor('/api/payments/' + pm.environment.get('paymentId'), pm.environment.get('authToken'), (body) => body.data.status, 'APPROVED', 60, 'Cobrança paga no Mercado Pago', () =>",
+                      "    waitFor('/api/work-orders/' + pm.environment.get('workOrderId'), pm.environment.get('authToken'), (body) => body.data.status, 'APPROVED', 15, 'OS liberada depois do pagamento'));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "E2E-12 — Iniciar o serviço",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/work-orders/{{workOrderId}}/services/{{serviceId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "work-orders",
+                    "{{workOrderId}}",
+                    "services",
+                    "{{serviceId}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"IN_PROGRESS\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "",
+                      "// Polls a GET until the predicate holds, one try per second, then reports the last value.",
+                      "function waitFor(path, token, read, expected, attempts, label, done) {",
+                      "    pm.sendRequest({",
+                      "        url: pm.environment.get('baseUrl') + path,",
+                      "        method: 'GET',",
+                      "        header: { Authorization: 'Bearer ' + token }",
+                      "    }, (err, res) => {",
+                      "        const value = !err && res.code === 200 ? read(res.json()) : null;",
+                      "",
+                      "        if (value === expected || attempts <= 1) {",
+                      "            pm.test(label, () => pm.expect(value).to.equal(expected));",
+                      "            if (done) done();",
+                      "            return;",
+                      "        }",
+                      "",
+                      "        setTimeout(() => waitFor(path, token, read, expected, attempts - 1, label, done), 1000);",
+                      "    });",
+                      "}",
+                      "",
+                      "waitFor('/api/stock-movements?workOrderId=' + pm.environment.get('workOrderId') + '&type=EXIT', pm.environment.get('authToken'), (body) => body.data.length > 0, true, 15, 'Baixa da peça no Inventory');"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "E2E-13 — Concluir o serviço",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/work-orders/{{workOrderId}}/services/{{serviceId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "work-orders",
+                    "{{workOrderId}}",
+                    "services",
+                    "{{serviceId}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"COMPLETED\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "",
+                      "// Polls a GET until the predicate holds, one try per second, then reports the last value.",
+                      "function waitFor(path, token, read, expected, attempts, label, done) {",
+                      "    pm.sendRequest({",
+                      "        url: pm.environment.get('baseUrl') + path,",
+                      "        method: 'GET',",
+                      "        header: { Authorization: 'Bearer ' + token }",
+                      "    }, (err, res) => {",
+                      "        const value = !err && res.code === 200 ? read(res.json()) : null;",
+                      "",
+                      "        if (value === expected || attempts <= 1) {",
+                      "            pm.test(label, () => pm.expect(value).to.equal(expected));",
+                      "            if (done) done();",
+                      "            return;",
+                      "        }",
+                      "",
+                      "        setTimeout(() => waitFor(path, token, read, expected, attempts - 1, label, done), 1000);",
+                      "    });",
+                      "}",
+                      "",
+                      "waitFor('/api/work-orders/' + pm.environment.get('workOrderId'), pm.environment.get('authToken'), (body) => body.data.status, 'COMPLETED', 15, 'OS concluída com o último serviço');"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "E2E-14 — Entregar a OS",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/api/work-orders/{{workOrderId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "work-orders",
+                    "{{workOrderId}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"status\": \"DELIVERED\",\n  \"notes\": \"Veículo entregue para o cliente\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.test('OS entregue', () => pm.expect(pm.response.json().data.status).to.equal('DELIVERED'));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "E2E-15 — Histórico de status da OS",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/api/work-orders/{{workOrderId}}/status-history",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "api",
+                    "work-orders",
+                    "{{workOrderId}}",
+                    "status-history"
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "pm.test('Status 200 OK', () => pm.response.to.have.status(200));",
+                      "pm.test('Histórico da abertura à entrega', () => pm.expect(pm.response.json().data.map((h) => h.newStatus)).to.include.members(['IN_DIAGNOSIS', 'AWAITING_APPROVAL', 'APPROVED', 'AWAITING_PAYMENT', 'IN_PROGRESS', 'COMPLETED', 'DELIVERED']));"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ]
+            }
+          ]
         }
       ]
     }

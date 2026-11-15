@@ -1,11 +1,13 @@
 # 🌍 Terraform (IaC)
 
-A infraestrutura é provisionada em seis repositórios Terraform independentes:
+A infraestrutura é provisionada em onze repositórios Terraform independentes:
 - [`oficina-mecanica-infra-base`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base): Fundação de rede AWS (VPC, subnets públicas/privadas, IGW, NAT Gateway e Security Group de identidade dos nós do EKS).
-- [`oficina-mecanica-infra-database-work-order`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order): Banco de dados relacional Amazon RDS (PostgreSQL 18) e cache distribuído Amazon ElastiCache (Valkey 9.1) dedicados ao `work-order`.
+- [`oficina-mecanica-infra-database-work-order`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order), [`oficina-mecanica-infra-database-identity`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-identity), [`oficina-mecanica-infra-database-billing`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-billing) e [`oficina-mecanica-infra-database-inventory`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-inventory): um banco de dados relacional Amazon RDS (PostgreSQL 18) e um cache distribuído Amazon ElastiCache (Valkey 9.1) por serviço; cada serviço é o único cliente dos seus.
+- [`oficina-mecanica-infra-messaging`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-messaging): o tópico SNS FIFO `oficina-events.fifo` (o canal onde os serviços publicam as mensagens, em ordem por OS), uma fila SQS FIFO por consumidor com a DLQ dela (a fila que recebe as mensagens que falharam cinco vezes) e as assinaturas com o filtro por tipo de mensagem.
 - [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s): Cluster Amazon EKS, Launch Template e Node Group gerenciado (2 nós `t3.medium`), ECRs por microsserviço, NLB interno multi-listener + SMTP, namespaces por serviço e `platform` (Datadog Agent e MailHog, o servidor SMTP de teste que recebe os e-mails da solução).
 - [`oficina-mecanica-api-gateway`](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway): HTTP API, VPC Link, integrações, rotas e logs de acesso.
 - [`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth): Função de autenticação externa, rede, segredo de assinatura e permissão do Gateway.
+- [`oficina-mecanica-lambda-notification`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-notification): Função que envia os e-mails da solução ao MailHog, o event source mapping (a ligação gerenciada pela AWS que lê a fila `notification.fifo` e invoca a função) e a rede dela.
 - [`oficina-mecanica-custom-monitoring`](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring): Dashboards, monitores, um teste sintético por serviço e configuração de tags no Datadog.
 
 > 🧭 Para a **visão de sistema** (inventário completo, topologia de rede, fluxo em tempo de execução, postura de segurança e limitações), consulte a [Visão Geral da Infraestrutura](overview.md). Este documento resume os stacks; os arquivos HCL de cada repositório são a fonte executável.
@@ -16,8 +18,10 @@ A infraestrutura é provisionada em seis repositórios Terraform independentes:
 - [Providers e versionamento](#providers-e-versionamento)
 - [Convenções: tags e nomenclatura](#convenções-tags-e-nomenclatura)
 - [Recursos provisionados — `oficina-mecanica-infra-base`](#recursos-provisionados--oficina-mecanica-infra-base)
-- [Recursos provisionados — `oficina-mecanica-infra-database-work-order`](#recursos-provisionados--oficina-mecanica-infra-database-work-order)
+- [Recursos provisionados — repositórios de dados](#recursos-provisionados--repositórios-de-dados)
+- [Recursos provisionados — `oficina-mecanica-infra-messaging`](#recursos-provisionados--oficina-mecanica-infra-messaging)
 - [Recursos provisionados — `oficina-mecanica-infra-k8s`](#recursos-provisionados--oficina-mecanica-infra-k8s)
+- [Recursos provisionados — `oficina-mecanica-lambda-notification`](#recursos-provisionados--oficina-mecanica-lambda-notification)
 - [Variáveis e saídas](#variáveis-e-saídas)
 - [Como aplicar localmente](#como-aplicar-localmente)
 
@@ -29,14 +33,19 @@ Cada stack tem **state próprio** num backend S3 (bucket dado pela variável de 
 |---|---|---|
 | [`oficina-mecanica-infra-base`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base) | Rede Cloud | `infra/prod-simulated/infra-base/terraform.tfstate` |
 | [`oficina-mecanica-infra-database-work-order`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order) | Dados do `work-order` (RDS + Valkey) | `infra/prod-simulated/infra-database-work-order/terraform.tfstate` |
+| [`oficina-mecanica-infra-database-identity`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-identity) | Dados do `identity` (RDS + Valkey) | `infra/prod-simulated/infra-database-identity/terraform.tfstate` |
+| [`oficina-mecanica-infra-database-billing`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-billing) | Dados do `billing` (RDS + Valkey) | `infra/prod-simulated/infra-database-billing/terraform.tfstate` |
+| [`oficina-mecanica-infra-database-inventory`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-inventory) | Dados do `inventory` (RDS + Valkey) | `infra/prod-simulated/infra-database-inventory/terraform.tfstate` |
+| [`oficina-mecanica-infra-messaging`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-messaging) | Mensageria (SNS + SQS FIFO) | `infra/prod-simulated/infra-messaging/terraform.tfstate` |
 | [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s) | EKS & Workloads | `infra/prod-simulated/infra-k8s/terraform.tfstate` |
 | [`oficina-mecanica-api-gateway`](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway) | Entrada pública | `infra/prod-simulated/api-gateway/terraform.tfstate` |
 | [`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth) | Autenticação externa | `infra/prod-simulated/lambda-customer-auth/terraform.tfstate` |
+| [`oficina-mecanica-lambda-notification`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-notification) | Envio de e-mails | `infra/prod-simulated/lambda-notification/terraform.tfstate` |
 | [`oficina-mecanica-custom-monitoring`](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring) | Monitoramento Datadog | `infra/prod-simulated/custom-monitoring/terraform.tfstate` |
 
 Todos os backends usam `encrypt = true` (criptografia do state em repouso via SSE) e **`use_lockfile = true`** — o **lock nativo do S3** introduzido no Terraform ≥ 1.11.
 
-Database e Kubernetes consomem o state da infra-base (`vpc_id`, `vpc_cidr`, `public_subnet_ids`, `private_subnet_ids` e `eks_nodes_security_group_id`). O Gateway consome infra-base e os listeners do NLB exportados por Kubernetes (`service_listener_arns` e `service_listener_ports`). A customer-auth, a função Lambda de login do cliente, consome a infra-base, o endereço e as portas do NLB exportados por Kubernetes e o Gateway; ela chama o Identity e o Work Order pelo NLB e não acessa banco. O monitoramento consome o endpoint público exportado pelo Gateway.
+Os quatro repositórios de banco e o Kubernetes consomem o state da infra-base (`vpc_id`, `vpc_cidr`, `public_subnet_ids`, `private_subnet_ids` e `eks_nodes_security_group_id`); a mensageria não consome state nenhum. O Gateway consome infra-base e os listeners do NLB exportados por Kubernetes (`service_listener_arns` e `service_listener_ports`). A customer-auth, a função Lambda de login do cliente, consome a infra-base, o endereço e as portas do NLB exportados por Kubernetes e o Gateway; ela chama o Identity e o Work Order pelo NLB e não acessa banco. A notification consome a infra-base, o endereço do NLB e a porta SMTP exportados por Kubernetes e o ARN da fila `notification.fifo` exportado pela mensageria. O monitoramento consome o endpoint público exportado pelo Gateway.
 
 ## Providers e versionamento
 
@@ -45,7 +54,7 @@ Versões fixadas por faixa (`required_providers` + `required_version`), garantin
 | Provider / ferramenta | Restrição | Onde | Usado por |
 |---|---|---|---|
 | Terraform (core) | `>= 1.11.0` | `*/backend.tf` | todos (o `use_lockfile` exige ≥ 1.11) |
-| `hashicorp/aws` | `>= 6.46.0, < 7.0.0` | `*/providers.tf` | os seis stacks |
+| `hashicorp/aws` | `>= 6.46.0, < 7.0.0` | `*/providers.tf` | todos os stacks |
 | `hashicorp/kubernetes` | `>= 2.32.0, < 3.0.0` | `k8s/providers.tf` | `oficina-mecanica-infra-k8s` |
 | `hashicorp/helm` | `>= 3.0.0, < 4.0.0` | `k8s/providers.tf` | `oficina-mecanica-infra-k8s` |
 | `DataDog/datadog` | `>= 4.20.0, < 5.0.0` | `custom-monitoring/providers.tf` | `oficina-mecanica-custom-monitoring` |
@@ -93,19 +102,39 @@ Em `oficina-mecanica-infra-k8s/terraform/providers.tf`, os providers `kubernetes
 ### Security Group de identidade dos nós (`security_group.tf`)
 
 - **Security Group** `secgrp-eks-nodes-oficina-mecanica`: criado sem regras locais de ingress ou egress e exportado pelo output `eks_nodes_security_group_id`.
-- Anexado às ENIs dos worker nodes pelo Launch Template do `infra-k8s`, servindo como identidade lógica de origem (`source_security_group_id`) para liberar acesso mínimo dos pods às instâncias RDS PostgreSQL e ao Redis nos repositórios de dados da Fase 4, sem acoplamento circular com o ciclo de vida do cluster EKS.
+- Anexado às ENIs dos worker nodes pelo Launch Template do `infra-k8s`, servindo como identidade lógica de origem (`source_security_group_id`) para liberar acesso mínimo dos pods às instâncias RDS PostgreSQL e aos caches Valkey nos quatro repositórios de dados, sem acoplamento circular com o ciclo de vida do cluster EKS.
 
-## Recursos provisionados — `oficina-mecanica-infra-database-work-order`
+## Recursos provisionados — repositórios de dados
 
 ### Amazon RDS PostgreSQL e ElastiCache Valkey (`rds.tf`, `elasticache.tf` e `security_group.tf`)
 
-- **Instância RDS**: `db.t4g.micro` (PostgreSQL 18, `rds-oficina-mecanica-work-order`), com storage GP3 de 20 GiB.
-- **ElastiCache Valkey**: `cache.t4g.micro` (Valkey 9.1, `cache-oficina-mecanica-work-order`), single-node (`num_cache_clusters = 1`), TLS em trânsito obrigatório, criptografia em repouso e token AUTH gerado via `ephemeral "aws_secretsmanager_random_password"` e gravado com `auth_token_wo` / `secret_string_wo` no Secret `cache-oficina-mecanica-work-order-auth-token`.
-- **Subnet Groups**: `dbsng-oficina-mecanica-work-order` e `cachesng-oficina-mecanica-work-order` alocados nas subnets privadas da VPC (`private_subnet_ids`).
-- **Security Groups**: `secgrp-rds-oficina-mecanica-work-order` (porta `5432` liberada exclusivamente para `eks_nodes_security_group_id`) e `secgrp-cache-oficina-mecanica-work-order` (porta `6379` liberada exclusivamente para `eks_nodes_security_group_id`), ambos sem regras de egress.
+Os quatro repositórios `oficina-mecanica-infra-database-<contexto>` têm o mesmo Terraform e mudam só os valores padrão de `service_context` e `db_name`; os nomes abaixo usam o `work-order` como exemplo, e os outros trocam o contexto no nome:
+
+| Repositório | `service_context` | Banco (`db_name`) | Instância RDS e cache |
+|---|---|---|---|
+| `oficina-mecanica-infra-database-work-order` | `work-order` | `work_order` | `rds-oficina-mecanica-work-order` e `cache-oficina-mecanica-work-order` |
+| `oficina-mecanica-infra-database-identity` | `identity` | `identity_service` | `rds-oficina-mecanica-identity` e `cache-oficina-mecanica-identity` |
+| `oficina-mecanica-infra-database-billing` | `billing` | `billing` | `rds-oficina-mecanica-billing` e `cache-oficina-mecanica-billing` |
+| `oficina-mecanica-infra-database-inventory` | `inventory` | `inventory` | `rds-oficina-mecanica-inventory` e `cache-oficina-mecanica-inventory` |
+
+- **Instância RDS**: `db.t4g.micro` (PostgreSQL 18), com storage GP3 de 20 GiB.
+- **ElastiCache Valkey**: `cache.t4g.micro` (Valkey 9.1), single-node (`num_cache_clusters = 1`), TLS em trânsito obrigatório, criptografia em repouso e token AUTH gerado via `ephemeral "aws_secretsmanager_random_password"` e gravado com `auth_token_wo` / `secret_string_wo` no Secret `cache-oficina-mecanica-<contexto>-auth-token`.
+- **Subnet Groups**: `dbsng-oficina-mecanica-<contexto>` e `cachesng-oficina-mecanica-<contexto>` alocados nas subnets privadas da VPC (`private_subnet_ids`).
+- **Security Groups**: `secgrp-rds-oficina-mecanica-<contexto>` (porta `5432` liberada exclusivamente para `eks_nodes_security_group_id`) e `secgrp-cache-oficina-mecanica-<contexto>` (porta `6379` liberada exclusivamente para `eks_nodes_security_group_id`), ambos sem regras de egress.
 - **Credencial do RDS**: `manage_master_user_password = true`; RDS gera e mantém o Secret com a chave padrão do Secrets Manager, Terraform exporta apenas seu ARN e a rotação automática fica desabilitada.
 - **State do database**: contém ARNs, nomes de segredos e metadados de conexão, mas não o valor da senha do RDS nem o token do Valkey. O CD `prepare-deploy` consulta RDS/Secrets Manager diretamente, sem ler esse remote state.
 - **Resiliência**: `skip_final_snapshot = true`, `deletion_protection = false` e `recovery_window_in_days = 0` ajustados para o escopo do laboratório AWS Academy.
+
+## Recursos provisionados — `oficina-mecanica-infra-messaging`
+
+### Tópico, filas e assinaturas (`topic.tf`, `queues.tf` e `subscriptions.tf`)
+
+- **Tópico SNS FIFO** `oficina-events.fifo`, sem deduplicação por conteúdo: quem publica informa o `MessageDeduplicationId` (o `messageId` da mensagem).
+- **Uma fila SQS FIFO por consumidor**, gerada a partir das chaves de `subscribed-types.json`: `work-order.fifo`, `billing.fifo`, `inventory.fifo` e `notification.fifo`, com criptografia gerenciada pelo SQS, visibility timeout de 30 s e long polling de 20 s. As filas da notification guardam as mensagens por 1 dia, porque levam dados de e-mail; as outras, por 4 dias.
+- **Uma DLQ por fila** (`<consumidor>-dlq.fifo`), para onde a mensagem vai depois de cinco recebimentos sem sucesso (`maxReceiveCount = 5`); as DLQs guardam por 14 dias, o máximo do SQS, para o reenvio manual (a da notification, por 1 dia).
+- **Assinaturas**: cada fila assina o tópico com entrega crua (`raw_message_delivery`) e um filtro pelo atributo `type` da mensagem, com os tipos que o consumidor trata listados em `subscribed-types.json`; a policy da fila aceita só o tópico.
+
+Os serviços publicam no tópico pelo ARN, montado no CD de cada um, e consomem a própria fila pela URL; a notification recebe a fila pelo event source mapping. Saídas: `topic_arn`, `topic_name`, `queue_urls`, `queue_arns`, `dlq_urls` e `dlq_arns`.
 
 ## Recursos provisionados — `oficina-mecanica-infra-k8s`
 
@@ -142,6 +171,13 @@ O control plane do cluster utiliza a role IAM gerenciada pelo laboratório (`Lab
   - `inventory`: listener `8083/TCP` → `tg-oficina-mecanica-inventory` → NodePort `30083`
 - **Listener e Target Group TCP para SMTP**: listener `1025/TCP` encaminhando ao target group `tg-oficina-mecanica-smtp` (`instance` mode, health check TCP) no NodePort `31025` (exposto pelo Service `mailhog-smtp` no namespace `platform`), com attachment ao ASG e regra de ingress da CIDR da VPC. É por ele que a função Lambda de notificação ([`oficina-mecanica-lambda-notification`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-notification)), fora do cluster, entrega os e-mails ao MailHog.
 
+## Recursos provisionados — `oficina-mecanica-lambda-notification`
+
+- **Função Lambda** `lbd-oficina-mecanica-notification` (Node.js 24, 256 MB, 5 s), nas subnets privadas, com a role `LabRole` e as variáveis `SMTP_HOST` e `SMTP_PORT` apontando para o listener SMTP do NLB interno.
+- **Event source mapping** da fila `notification.fifo`: uma mensagem por invocação, até 10 invocações simultâneas e resposta parcial (`ReportBatchItemFailures`), para que só a mensagem que falhou volte à fila.
+- **Security Group** sem entrada e com saída liberada, e o **log group** `/aws/lambda/lbd-oficina-mecanica-notification` com retenção de 14 dias.
+- A extensão do Datadog entra como layer só com `enable_telemetry_collection` ligado; os detalhes estão no [Terraform da notification](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-notification/blob/main/docs/terraform.md).
+
 ## Variáveis e saídas
 
 ### `oficina-mecanica-infra-base` — variáveis e saídas
@@ -157,7 +193,9 @@ O control plane do cluster utiliza a role IAM gerenciada pelo laboratório (`Lab
 
 Outputs exportados pelo `infra-base`: `vpc_id`, `vpc_cidr`, `public_subnet_ids`, `private_subnet_ids` e `eks_nodes_security_group_id`.
 
-### `oficina-mecanica-infra-database-work-order` — variáveis
+### Repositórios de dados — variáveis
+
+Os quatro repositórios têm as mesmas variáveis; `service_context` e `db_name` mudam conforme a tabela de [recursos provisionados](#recursos-provisionados--repositórios-de-dados). Os valores padrão do `work-order`:
 
 | Variável | Tipo | Default | Finalidade |
 |---|---|---|---|
@@ -210,6 +248,7 @@ export TF_VAR_aws_base_state_bucket="$TF_STATE_BUCKET"
 export TF_VAR_k8s_state_bucket="$TF_STATE_BUCKET"
 export TF_VAR_database_state_bucket="$TF_STATE_BUCKET"
 export TF_VAR_gateway_state_bucket="$TF_STATE_BUCKET"
+export TF_VAR_messaging_state_bucket="$TF_STATE_BUCKET"
 
 # 1) Provisiona a fundação de rede AWS
 cd oficina-mecanica-infra-base/terraform
@@ -218,12 +257,14 @@ terraform init -backend-config="bucket=$TF_STATE_BUCKET"
 # Revisa o plano interativo e aplica os recursos desta stack
 terraform apply
 
-# 2) Provisiona o banco de dados Amazon RDS e o cache ElastiCache Valkey do work-order
-cd ../../oficina-mecanica-infra-database-work-order/terraform
-# Inicializa os providers e o backend remoto desta stack
-terraform init -backend-config="bucket=$TF_STATE_BUCKET"
-# Revisa o plano interativo e aplica os recursos desta stack
-terraform apply
+# 2) Provisiona o banco RDS e o cache Valkey de cada serviço e a mensageria
+for repo in infra-database-work-order infra-database-identity infra-database-billing infra-database-inventory infra-messaging; do
+  cd ../../oficina-mecanica-$repo/terraform
+  # Inicializa os providers e o backend remoto desta stack
+  terraform init -backend-config="bucket=$TF_STATE_BUCKET"
+  # Revisa o plano interativo e aplica os recursos desta stack
+  terraform apply
+done
 
 # 3) Provisiona o cluster EKS, ECRs, namespaces, NLB e recursos de plataforma
 cd ../../oficina-mecanica-infra-k8s/terraform
@@ -246,19 +287,17 @@ terraform init -backend-config="bucket=$TF_STATE_BUCKET"
 # Revisa o plano interativo e aplica os recursos desta stack
 terraform apply
 
-# 5) Instala dependências e compila a Lambda antes de empacotá-la no Terraform
-cd ../../oficina-mecanica-lambda-customer-auth/app
-# Instala as dependências fixadas no lockfile
-npm ci
-# Gera app/dist, usado pelo archive_file do Terraform
-npm run build
-
-# Provisiona a função usando o diretório app/dist gerado pelo build
-cd ../infra
-# Inicializa os providers e o backend remoto desta stack
-terraform init -backend-config="bucket=$TF_STATE_BUCKET"
-# Revisa o plano interativo e aplica os recursos desta stack
-terraform apply
+# 5) Compila e provisiona as duas Lambdas
+for repo in lambda-customer-auth lambda-notification; do
+  cd ../../oficina-mecanica-$repo/app
+  # Instala as dependências fixadas no lockfile e gera app/dist, usado pelo archive_file do Terraform
+  npm ci
+  npm run build
+  # Provisiona a função usando o diretório app/dist gerado pelo build
+  cd ../infra
+  terraform init -backend-config="bucket=$TF_STATE_BUCKET"
+  terraform apply
+done
 
 # 6) Provisiona dashboards, monitores e os testes sintéticos
 cd ../../oficina-mecanica-custom-monitoring/terraform
@@ -274,4 +313,4 @@ Antes do passo 6, forneça os inputs obrigatórios de monitoring:
 - `TF_VAR_datadog_app_key`: application key com permissões para os recursos gerenciados.
 - `TF_VAR_alert_emails`: string com os destinatários separados por vírgula.
 
-Consulte os roteiros completos da [Lambda](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/blob/main/docs/terraform.md) e de [monitoring](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring/blob/main/README.md) para preparar as demais variáveis e credenciais. Os comandos acima usam os nomes publicados dos repositórios; adapte os caminhos se seus clones locais tiverem nomes diferentes.
+Consulte os roteiros completos das Lambdas ([customer-auth](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth/blob/main/docs/terraform.md) e [notification](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-notification/blob/main/docs/terraform.md)) e de [monitoring](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring/blob/main/README.md) para preparar as demais variáveis e credenciais. Os comandos acima usam os nomes publicados dos repositórios; adapte os caminhos se seus clones locais tiverem nomes diferentes.

@@ -231,47 +231,70 @@ No banco de um ambiente implantado, o mesmo `INSERT` vale em qualquer cliente SQ
 
 ## Postman / Newman
 
-A coleção e o environment estão em `collections/`. Importe `collections/oficina-collection.json` e `collections/oficina-environment.json` no Postman e selecione o environment **"Work Order API"**.
+A coleção e os dois environments estão em `collections/`. A mesma collection roda contra o stack local ou contra o ambiente implantado, pelo API Gateway, a porta pública da solução, que encaminha as rotas de cada serviço ao dono; para trocar de um para o outro, troque só o environment:
 
-`baseUrl` representa somente a origem deste serviço, sem `/api`. O valor padrão é `http://localhost:3000`; as requests da aplicação acrescentam `/api` explicitamente, enquanto o login serverless usa `/customer-auth/login`. `identityBaseUrl` é a origem do Identity, o serviço da solução dono dos usuários e das credenciais, onde ficam o login, o refresh e a criação do mecânico; o valor padrão é `http://localhost:3001`, a porta da stack local dele. Quando o API Gateway estiver implantado, ele encaminha as rotas de cada serviço ao dono, então `baseUrl` e `identityBaseUrl` recebem a mesma URL base do gateway.
+| Environment | Arquivo | `baseUrl` | `identityBaseUrl` |
+| --- | --- | --- | --- |
+| **Work Order API · Local** | `collections/oficina-environment.json` | `http://localhost:3000` | `http://localhost:3001`, a porta da stack local do Identity |
+| **Work Order API · Gateway** | `collections/oficina-gateway-environment.json` | A URL do API Gateway, que muda a cada subida do ambiente; o [manual de demonstração](demo-manual.md#url-pública-e-variáveis) mostra como lê-la | `{{baseUrl}}` |
+
+`baseUrl` representa somente a origem, sem `/api`; as requests da aplicação acrescentam `/api` explicitamente, enquanto o login serverless usa `/customer-auth/login`. `identityBaseUrl` é a origem do Identity, o serviço da solução dono dos usuários e das credenciais, onde ficam o login e o refresh.
 
 O environment já vem com `adminEmail`/`adminPassword` (o ADMIN do seed do Identity) e `customerCpf`/`customerPassword` correspondentes aos seeds. As senhas e os três tokens (`authToken`, `refreshToken` e `customerJwtToken`) permanecem com tipo `secret`; os identificadores produzidos pelos scripts também estão declarados para que a importação resolva todas as variáveis da collection.
 
-A collection mantém as pastas de domínio sem numeração ou agrupadores adicionais. Execute-as de cima para baixo: **Health → Autenticação → Gestão de Usuários → Gestão de Clientes → Acesso Externo de Clientes → Gestão de Veículos → Gestão de Ordens de Serviço → Minha Conta → Relatórios e Métricas**. Essa ordem mantém as requests produtoras antes das consumidoras: `Gestão de Ordens de Serviço` usa o cliente e o veículo criados nas pastas anteriores, e `Minha Conta` usa o `authToken` do login interno para preparar a própria OS.
+Execute as pastas de cima para baixo: **Health → Autenticação → Gestão de Clientes → Acesso Externo de Clientes → Gestão de Veículos → Gestão de Ordens de Serviço → Minha Conta → Relatórios e Métricas → Fluxo ponta a ponta**. Essa ordem mantém as requests produtoras antes das consumidoras: `Gestão de Ordens de Serviço` usa o cliente e o veículo criados nas pastas anteriores, e `Minha Conta` usa o `authToken` do login interno para preparar a própria OS. As pastas de clientes e veículos criam registros com documento e placa fixos, então a collection inteira roda uma vez por banco; numa segunda execução, rode só as pastas que precisar com `--folder`.
 
-O cadastro de serviços, peças e estoque não está nesta collection: é do Inventory, que tem a collection própria. Os orçamentos também não: são do Billing, cuja collection cobre as rotas de orçamento. As OS usam um serviço e uma peça do seed do Inventory, com os ids canônicos de [Ids canônicos do seed](seed-ids.md) já gravados no environment (`serviceId` = `Troca de óleo`, `partSupplyId` = `FILT-OL-001`).
+As pastas de domínio só têm rotas deste serviço. O cadastro de serviços, peças e estoque é do Inventory; orçamentos e cobranças, do Billing; usuários, perfil (`GET /api/me`) e troca de senha, do Identity, e cada um tem a collection própria. As OS usam um serviço e uma peça do seed do Inventory, com os ids canônicos de [Ids canônicos do seed](seed-ids.md) já gravados no environment (`serviceId` = `Troca de óleo`, `partSupplyId` = `FILT-OL-001`). Quando um teste deste serviço precisa de um passo em outro dono, o passo fica no script de pré-requisição (`pre-request`) do teste, e não como request da pasta:
 
-O cadastro de usuários, o perfil (`GET /api/me`) e a troca de senha também não estão nesta collection: são do Identity, que tem a collection própria. O grupo **Autenticação** mantém os dois fluxos separados: o login e o refresh de funcionário vão ao Identity (`{{identityBaseUrl}}`) e gravam `authToken` e `refreshToken`, que este serviço só valida, e `POST /customer-auth/login` é `noauth` e grava somente `customerJwtToken`. O grupo **Gestão de Usuários** só cria, no Identity, o mecânico que a OS recebe em `TC-WO-05`, o que exercita a conferência do mecânico no Identity. O grupo **Minha Conta** exercita `/api/me/*` com `Bearer {{customerJwtToken}}`, sobrescrevendo o bearer interno herdado da collection.
+- `TC-WO-05` cria no Identity o mecânico que a OS recebe, o que exercita a conferência do mecânico no Identity;
+- `TC-WO-08` envia ao cliente o orçamento inicial da OS (que nasce no Billing na abertura) e o aprova, esperando a OS chegar a `AWAITING_APPROVAL` e depois a `APPROVED`, porque a OS só é aprovada depois que o Inventory confirma a reserva do estoque. Como nenhuma cobrança é paga nesta pasta, a entrega no fim, `TC-WO-07`, espera o **409** do saldo a pagar;
+- `TC-ME-06` envia o orçamento inicial da OS de `Minha Conta` e cria e envia um segundo orçamento (`rejectQuoteId`), que `TC-ME-11` rejeita antes de `TC-ME-10` aprovar o inicial, porque a aprovação rejeita os outros orçamentos da OS.
 
-O fluxo da OS passa pelo Billing, então a pasta **Gestão de Ordens de Serviço** só roda inteira pelo API Gateway, que encaminha as rotas de orçamento e de cobrança ao Billing. `TC-WO-02` abre a OS com itens (o orçamento inicial nasce no Billing); `TC-WO-30` descobre o id desse orçamento pela lista de orçamentos da OS, envia-o ao cliente e consulta a OS a cada segundo, até 15 vezes, até vê-la `AWAITING_APPROVAL`; `TC-WO-31` aprova o orçamento e consulta a OS até vê-la `APPROVED`, porque a OS só muda depois que o Inventory confirma a reserva do estoque; `TC-WO-32` cria no Billing uma cobrança de sinal de R$ 10,00 (`POST /api/payments`, que grava `paymentId`) e consulta a OS até vê-la `AWAITING_PAYMENT`; e `TC-WO-33` cancela essa cobrança (`POST /api/payments/:id/cancellations`) e consulta a OS até vê-la de volta em `APPROVED`. Como nenhuma cobrança é paga (o pagamento passa pela página do Mercado Pago), a entrega no fim do fluxo, `TC-WO-07`, espera o **409** do saldo a pagar. Com só este serviço no ar, rode as pastas que não dependem do Billing, por exemplo:
+Cada espera consulta a OS a cada segundo, até 15 vezes. O grupo **Autenticação** mantém os dois fluxos separados: o login e o refresh de funcionário vão ao Identity (`{{identityBaseUrl}}`) e gravam `authToken` e `refreshToken`, que este serviço só valida, e `POST /customer-auth/login` é `noauth` e grava somente `customerJwtToken`. O grupo **Minha Conta** exercita `/api/me/*` com `Bearer {{customerJwtToken}}`, sobrescrevendo o bearer interno herdado da collection. O login de cliente é o do usuário semeado `joao.silva@email.com` (CPF `customerCpf`), vinculado ao cliente semeado `myCustomerId`, dono do veículo `myVehicleId`; a OS criada em **Gestão de Ordens de Serviço** é de outro cliente, que esse usuário não vê. Por isso a pasta prepara a própria OS com o token interno e regrava `workOrderId` e `quoteId` com ela:
+
+- `TC-ME-03` troca a senha do cliente para `NovaSenha@456`. A troca invalida os tokens emitidos antes dela, então `TC-ME-03B` faz login com a senha nova, `TC-ME-04B` devolve a senha original e `TC-ME-04C` faz login de novo;
+- `TC-ME-05A` e `TC-ME-05B` abrem uma OS de `myCustomerId` com um serviço e colocam-na em diagnóstico;
+- `TC-ME-13` lista as cobranças da OS vinculada (`GET /api/me/work-orders/:id/payments`), lidas no Billing; a OS da pasta não tem cobrança, então a lista volta vazia.
+
+### Fluxo ponta a ponta
+
+A pasta **Fluxo ponta a ponta** é a única com rotas de outros donos: refaz, pelo API Gateway, a vida de uma OS da abertura à entrega na ordem do [manual de demonstração](demo-manual.md), com uma cobrança só, do valor total do orçamento. Ela tem duas partes, porque o pagamento passa pela página do Mercado Pago:
+
+1. **Da abertura à cobrança** (`E2E-01` a `E2E-10`): login do funcionário no Identity e do cliente na Lambda customer-auth, abertura da OS com a `Troca de óleo` e o `FILT-OL-001`, diagnóstico, leitura e envio do orçamento no Billing, consulta e aprovação pelo cliente, a reserva da peça no Inventory e a cobrança do total. Cada passo assíncrono espera o status da OS; o último grava `paymentId`, `checkoutId` e `checkoutUrl` e escreve no console o link de pagamento.
+2. **Depois do pagamento** (`E2E-10A` a `E2E-15`): pague no sandbox com o `checkoutUrl` e simule a notificação com o `checkoutId`, como em [Pagamento no sandbox do Mercado Pago](demo-manual.md#pagamento-no-sandbox-do-mercado-pago). A parte 2 começa com um login novo, porque o token de funcionário vale 10 minutos e o pagamento costuma levar mais que isso; depois espera a cobrança `APPROVED` (até 60 s) e a OS liberada, inicia o serviço e espera a baixa da peça no Inventory, conclui o serviço, entrega a OS e confere o histórico de status.
+
+```bash
+# Parte 1, gravando as variáveis para a parte 2
+npx newman run collections/oficina-collection.json -e collections/oficina-gateway-environment.json \
+  --env-var baseUrl=<URL do API Gateway> \
+  --folder "1 · Da abertura à cobrança" --export-environment fluxo.json
+
+# Depois de pagar no sandbox e simular a notificação
+npx newman run collections/oficina-collection.json -e fluxo.json --folder "2 · Depois do pagamento"
+```
+
+### Collection inteira e execução local
+
+Pelo API Gateway, a collection inteira roda com o ambiente no ar:
+
+```bash
+npx newman run collections/oficina-collection.json -e collections/oficina-gateway-environment.json \
+  --env-var baseUrl=<URL do API Gateway>
+```
+
+Com só este serviço e o Identity no ar, rode as pastas que não dependem do Billing nem do Inventory:
 
 ```bash
 npx newman run collections/oficina-collection.json -e collections/oficina-environment.json \
-  --folder "Health" --folder "Autenticação" --folder "Gestão de Usuários" \
-  --folder "Gestão de Clientes" --folder "Gestão de Veículos"
+  --folder "Health" --folder "Autenticação" --folder "Gestão de Clientes" --folder "Gestão de Veículos"
 ```
-
-O grupo **Autenticação** mantém os dois fluxos separados: o login interno grava `authToken` e `refreshToken`, e `POST /customer-auth/login` é `noauth` e grava somente `customerJwtToken`. O grupo **Minha Conta** exercita `/api/me/*` com `Bearer {{customerJwtToken}}`, sobrescrevendo o bearer interno herdado da collection. O login de cliente é o do usuário semeado `joao.silva@email.com` (CPF `customerCpf`), vinculado ao cliente semeado `myCustomerId`, dono do veículo `myVehicleId`; a OS e os orçamentos criados em **Gestão de Ordens de Serviço** são de outro cliente, que esse usuário não vê, e chegam a esta pasta já entregues. Por isso a pasta prepara a própria OS com o token interno e regrava `workOrderId` e `quoteId` com ela:
-
-- `TC-ME-03` troca a senha do cliente para `NovaSenha@456`. A troca invalida os tokens emitidos antes dela, então `TC-ME-03B` faz login com a senha nova, `TC-ME-04B` devolve a senha original e `TC-ME-04C` faz login de novo, o que deixa a collection pronta para rodar outra vez;
-- `TC-ME-05A` a `TC-ME-05E` abrem uma OS de `myCustomerId` com um serviço (o orçamento inicial nasce no Billing), colocam-na em diagnóstico, enviam esse orçamento, esperam a OS chegar a `AWAITING_APPROVAL` e criam e enviam um segundo orçamento (`rejectQuoteId`);
-- `TC-ME-11` rejeita o segundo orçamento antes de `TC-ME-10` aprovar o inicial, porque a aprovação rejeita os outros orçamentos da OS;
-- `TC-ME-13` lista as cobranças da OS vinculada (`GET /api/me/work-orders/:id/payments`), lidas no Billing; a OS da pasta não tem cobrança, então a lista volta vazia.
 
 Com apenas a API local em execução, ignore os logins serverless (`TC-AUTH-06`, `TC-ME-03B` e `TC-ME-04C`) e a troca de senha (`TC-ME-03` e `TC-ME-04B`), que invalidaria o token preenchido à mão, e preencha `customerJwtToken` por um destes caminhos:
 
 - **Token de teste manual** — use o mesmo mecanismo de `test/helpers/customer-jwt.helper.ts`, descrito acima; a Lambda não precisa estar em execução.
 - **Token real da Lambda local** — configure [`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth) com os endereços do Identity e desta API e execute `npm run invoke`, copiando o `accessToken` retornado para `customerJwtToken`. Ela confere o CPF e a senha no Identity e lê os vínculos do cliente nesta API, então precisa das duas stacks de pé.
 
-Com o gateway implantado, basta trocar `baseUrl` e `identityBaseUrl` e executar também o login serverless; o script preenche `customerJwtToken` automaticamente.
-
-Ou via linha de comando, com este serviço e o Identity rodando:
-
-```bash
-npx newman run collections/oficina-collection.json -e collections/oficina-environment.json
-```
-
-**Localmente, a collection precisa do Inventory de pé e na mesma mensageria.** Cada stack local sobe o próprio LocalStack, e a reserva de estoque só se completa se o Inventory ler o comando da fila `inventory.fifo` do LocalStack do work-order e responder no tópico dele. Suba o Inventory apontando para esse LocalStack, com um arquivo de override do Docker Compose (um arquivo que sobrescreve valores do `docker-compose.yml`), e carregue o seed dele:
+**Localmente, as pastas de OS precisam do Billing e do Inventory de pé e na mesma mensageria.** Cada stack local sobe o próprio LocalStack, e a reserva de estoque só se completa se o Inventory ler o comando da fila `inventory.fifo` do LocalStack do work-order e responder no tópico dele. Suba o Inventory apontando para esse LocalStack, com um arquivo de override do Docker Compose (um arquivo que sobrescreve valores do `docker-compose.yml`), e carregue o seed dele:
 
 ```yaml
 # inventory-shared-localstack.yml, fora do repositório
