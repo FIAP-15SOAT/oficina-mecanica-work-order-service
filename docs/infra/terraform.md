@@ -6,7 +6,7 @@ A infraestrutura é provisionada em seis repositórios Terraform independentes:
 - [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s): Cluster Amazon EKS, Launch Template e Node Group gerenciado (2 nós `t3.medium`), ECRs por microsserviço, NLB interno multi-listener + SMTP, namespaces por serviço e `platform` (Datadog Agent e MailHog, o servidor SMTP de teste que recebe os e-mails da solução).
 - [`oficina-mecanica-api-gateway`](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway): HTTP API, VPC Link, integrações, rotas e logs de acesso.
 - [`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth): Função de autenticação externa, rede, segredo de assinatura e permissão do Gateway.
-- [`oficina-mecanica-custom-monitoring`](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring): Dashboards, monitores, teste sintético e configuração de tags no Datadog.
+- [`oficina-mecanica-custom-monitoring`](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring): Dashboards, monitores, um teste sintético por serviço e configuração de tags no Datadog.
 
 > 🧭 Para a **visão de sistema** (inventário completo, topologia de rede, fluxo em tempo de execução, postura de segurança e limitações), consulte a [Visão Geral da Infraestrutura](overview.md). Este documento resume os stacks; os arquivos HCL de cada repositório são a fonte executável.
 
@@ -260,7 +260,7 @@ terraform init -backend-config="bucket=$TF_STATE_BUCKET"
 # Revisa o plano interativo e aplica os recursos desta stack
 terraform apply
 
-# 6) Provisiona dashboards, monitores e teste sintético
+# 6) Provisiona dashboards, monitores e os testes sintéticos
 cd ../../oficina-mecanica-custom-monitoring/terraform
 # Inicializa os providers e o backend remoto desta stack
 terraform init -backend-config="bucket=$TF_STATE_BUCKET"

@@ -2,7 +2,7 @@
 
 > **Versão inicial.** Este manual foi escrito a partir das rotas dos serviços, das collections Postman e dos cenários BDD (os fluxos de negócio escritos como cenários em português, que rodam como teste automatizado). A execução completa dele no ambiente no ar ainda não foi feita: se um passo divergir, vale a resposta da API, e o manual deve ser corrigido.
 
-Este manual leva quem não conhece a solução a executar, no ambiente no ar, a vida de uma ordem de serviço (OS) da abertura à entrega e as falhas com compensação que dá para provocar de fora. Cada passo traz a requisição pronta para o Postman ou o Insomnia, de onde vem cada id e o que conferir: a resposta HTTP, o status da OS, o status do orçamento ou da cobrança e o e-mail no MailHog.
+Este manual leva quem não conhece a solução a executar, no ambiente no ar, a vida de uma ordem de serviço (OS) da abertura à entrega e as falhas com compensação que dá para provocar de fora. Cada passo traz a requisição pronta para o Postman ou o Insomnia, de onde vem cada id e o que conferir: a resposta HTTP, o status da OS, o status do orçamento ou da cobrança, o e-mail no MailHog e o que mostrar no Datadog. No fim, o manual mostra o deploy automatizado de um serviço, com os testes que o liberam.
 
 A solução tem quatro serviços e duas funções Lambda, todos atrás de um único API Gateway, a porta pública da solução:
 
@@ -20,6 +20,7 @@ A solução tem quatro serviços e duas funções Lambda, todos atrás de um ún
 - [Pagamento no sandbox do Mercado Pago](#pagamento-no-sandbox-do-mercado-pago)
 - [Falhas com compensação provocadas de fora](#falhas-com-compensação-provocadas-de-fora)
 - [Outras falhas da matriz F1 a F14](#outras-falhas-da-matriz-f1-a-f14)
+- [Deploy automatizado de um serviço](#deploy-automatizado-de-um-serviço)
 - [Documentos relacionados](#documentos-relacionados)
 
 ## Preparação do ambiente
@@ -85,6 +86,16 @@ kubectl port-forward -n platform svc/mailhog 8025:8025
 
 Com o túnel aberto, a página fica em `http://localhost:8025`. Os e-mails do cliente do seed chegam para `joao.silva@email.com`.
 
+### Datadog
+
+O Datadog é a plataforma de monitoramento que recebe os logs, as métricas e os traces da solução (o trace é o caminho de uma requisição pelos serviços, com o tempo de cada trecho). Os quatro serviços enviam a telemetria ao Datadog Agent, o coletor que roda no namespace `platform` do cluster, e as duas Lambdas, pela extensão do Datadog que roda junto de cada função. Este manual usa três áreas do Datadog:
+
+- **Dashboards** (menu **Dashboards**, busca por `Oficina Mecânica`): os painéis declarados no repositório [`oficina-mecanica-custom-monitoring`](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring). A **Visão Geral** mostra a saúde de cada serviço e de cada Lambda e tem os links para os outros: um por serviço, **Ordens de Serviço**, **Sagas**, **Pagamentos**, **Mensageria** e **Kubernetes**. O que cada gráfico mostra está em [Dashboards](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring/blob/main/docs/dashboards.md).
+- **APM → Traces**: os traces, filtrados pelo serviço. Cada serviço aparece como `oficina-mecanica-<serviço>-service` (por exemplo, `oficina-mecanica-work-order-service`), e a Lambda de e-mail como `oficina-mecanica-lambda-notification`. Uma chamada interna e uma mensagem pela fila continuam o trace no serviço seguinte, porque levam junto o contexto do trace (o cabeçalho `traceparent`).
+- **Logs**: os logs JSON de todos os serviços. O nome de cada evento de negócio fica no campo `@oficina.event.name`, e os eventos de uma OS levam o id dela em `@oficina.work_order.id`: a busca `@oficina.work_order.id:<workOrderId>` mostra, em ordem, o que cada serviço registrou sobre a OS. No painel de uma linha de log, a aba **Trace** abre o trace dela.
+
+Uma métrica leva um ou dois minutos para chegar aos dashboards, e os de Ordens de Serviço, Sagas e Pagamentos mostram os últimos 7 dias. Na gravação, mostre os logs e os traces logo depois de cada passo, e os dashboards no fim do fluxo.
+
 ### Login do funcionário
 
 O funcionário entra pelo Identity:
@@ -148,6 +159,8 @@ Content-Type: application/json
 
 **Conferir:** **201** com `data.status` `RECEIVED`. Grave `data.id` em `workOrderId` e anote `data.number`, o número da OS que aparece nos e-mails.
 
+**Datadog:** em **APM → Traces**, o trace de `POST /api/work-orders` no `oficina-mecanica-work-order-service` mostra a Saga de abertura numa requisição só: a chamada `POST /internal/quotes` ao Billing e, dentro dela, as leituras do catálogo no Inventory, antes da gravação da OS.
+
 ### 2. Iniciar o diagnóstico
 
 ```http
@@ -185,7 +198,8 @@ Authorization: Bearer {{authToken}}
 
 - **200** com `data.status` `SENT`;
 - **espera:** `GET {{baseUrl}}/api/work-orders/{{workOrderId}}` até `data.status` `AWAITING_APPROVAL`;
-- **MailHog:** e-mail para `joao.silva@email.com` com o assunto `Orçamento para Ordem de Serviço <número> - Aguardando sua aprovação`, os itens e o valor total.
+- **MailHog:** e-mail para `joao.silva@email.com` com o assunto `Orçamento para Ordem de Serviço <número> - Aguardando sua aprovação`, os itens e o valor total;
+- **Datadog:** nos Logs, o evento `quote.submitted` do Billing. O trace de `POST /api/quotes/{id}/submissions` no `oficina-mecanica-billing-service` continua no work-order, no span `process work-order.fifo` (o consumo da mensagem `billing.quote.sent`), e na Lambda notification, que envia o e-mail.
 
 ### 4. O cliente consulta e aprova o orçamento
 
@@ -216,6 +230,7 @@ Content-Type: application/json
 
 - **Espera:** `GET {{baseUrl}}/api/work-orders/{{workOrderId}}` até `data.status` `APPROVED`.
 - **Reserva no Inventory:** `GET {{baseUrl}}/api/stock-reservations?workOrderId={{workOrderId}}`, com o token do funcionário, responde **200** com uma reserva do `FILT-OL-001`, `quantity` 1. Em `GET {{baseUrl}}/api/parts-supplies/{{partSupplyId}}`, o `reservedStock` da peça subiu 1; o disponível é `stock - reservedStock`.
+- **Datadog:** nos Logs, `@oficina.work_order.id:<workOrderId>` mostra a Saga de aprovação passo a passo: `quote.approved` no Billing, `saga.started` no work-order (com `@oficina.saga.type:QUOTE_APPROVAL`), `stock.reserved` no Inventory e `saga.completed` no work-order. O trace de `POST /api/me/quotes/{quoteId}/decisions` atravessa os três serviços.
 
 ### 6. Cobrar o sinal
 
@@ -246,7 +261,8 @@ Pague a cobrança e simule a notificação como em [Pagamento no sandbox do Merc
 
 - `GET {{baseUrl}}/api/payments/{{paymentId}}` responde **200** com `data.status` `APPROVED`;
 - **espera:** `GET {{baseUrl}}/api/work-orders/{{workOrderId}}` até `data.status` `APPROVED`, o status de antes da cobrança;
-- `GET {{baseUrl}}/api/work-orders/{{workOrderId}}/status-history` mostra as entradas `Aguardando o pagamento da cobrança <paymentId>` e `Cobrança <paymentId> paga`.
+- `GET {{baseUrl}}/api/work-orders/{{workOrderId}}/status-history` mostra as entradas `Aguardando o pagamento da cobrança <paymentId>` e `Cobrança <paymentId> paga`;
+- **Datadog:** nos Logs, `payment.requested` no Billing e `saga.started` (com `@oficina.saga.type:PAYMENT`) no work-order; depois do pagamento, `payment.approved` e `saga.completed`. No trace do webhook (`POST /webhooks/mercadopago` no `oficina-mecanica-billing-service`) aparece a chamada ao Mercado Pago (`api.mercadopago.com`) que consulta a order.
 
 ### 8. Executar o serviço, com a baixa do estoque
 
@@ -265,7 +281,8 @@ Content-Type: application/json
 **Conferir:**
 
 - **200** com o serviço `IN_PROGRESS`; `GET {{baseUrl}}/api/work-orders/{{workOrderId}}` mostra a OS em `IN_PROGRESS`;
-- **baixa no Inventory (espera):** `GET {{baseUrl}}/api/stock-movements?workOrderId={{workOrderId}}&type=EXIT` até aparecer uma movimentação `EXIT` do `FILT-OL-001`, `quantity` 1, com o motivo `Saída por Ordem de Serviço <workOrderId>`. A reserva some de `GET {{baseUrl}}/api/stock-reservations?workOrderId={{workOrderId}}`.
+- **baixa no Inventory (espera):** `GET {{baseUrl}}/api/stock-movements?workOrderId={{workOrderId}}&type=EXIT` até aparecer uma movimentação `EXIT` do `FILT-OL-001`, `quantity` 1, com o motivo `Saída por Ordem de Serviço <workOrderId>`. A reserva some de `GET {{baseUrl}}/api/stock-reservations?workOrderId={{workOrderId}}`;
+- **Datadog:** nos Logs, o evento `stock.consumed` do Inventory.
 
 ### 9. Concluir o serviço
 
@@ -309,6 +326,14 @@ Repita a entrega do passo 10.
 - **200** com `data.status` `DELIVERED`;
 - `GET {{baseUrl}}/api/work-orders/{{workOrderId}}/status-history` mostra a vida inteira da OS, de `RECEIVED` a `DELIVERED`, com as duas passagens por `AWAITING_PAYMENT`.
 
+**Datadog, no fim do fluxo:**
+
+- **Ordens de Serviço:** a OS em **Ordens de serviço criadas na janela**, o tempo em cada status e o lead time (o tempo da abertura à entrega);
+- **Sagas:** em **Sagas finalizadas por tipo e resultado**, uma Saga `QUOTE_APPROVAL` e duas `PAYMENT` como `completed`;
+- **Pagamentos:** as duas cobranças em **Cobranças resolvidas por status** como `APPROVED`, e as notificações do Mercado Pago no grupo **Webhooks**, com a assinatura `valid`;
+- **Mensageria:** as mensagens consumidas por fila, todas com o resultado `success`;
+- **Visão Geral:** os quatro serviços e as duas Lambdas, com as requisições do fluxo e sem monitor em alerta.
+
 ## Pagamento no sandbox do Mercado Pago
 
 O sandbox usa duas contas de teste: a vendedora, dona da aplicação que o Billing usa, e a compradora, que paga. As credenciais das duas ficam em **Suas integrações → Contas de teste**, na conta real do grupo no Mercado Pago ([Runbook do Mercado Pago › Contas de teste](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/blob/main/docs/runbook.md#contas-de-teste)).
@@ -350,7 +375,8 @@ O orçamento pede mais baterias do que o estoque tem. A reserva falha, e a Saga 
    - **espera:** `GET {{baseUrl}}/api/quotes/{{quoteId}}`, com o token do funcionário, até `data.status` voltar a `SENT`;
    - `GET {{baseUrl}}/api/work-orders/{{workOrderId}}` continua em `AWAITING_APPROVAL`, e o histórico de status (`GET {{baseUrl}}/api/work-orders/{{workOrderId}}/status-history`) registra `Aprovação do orçamento <quoteId> desfeita por falta de estoque`;
    - `GET {{baseUrl}}/api/stock-reservations?workOrderId={{workOrderId}}` não tem reserva: a reserva é tudo ou nada;
-   - **MailHog:** e-mail `Orçamento da Ordem de Serviço <número> - Estoque insuficiente`, dizendo que o orçamento voltou a aguardar aprovação.
+   - **MailHog:** e-mail `Orçamento da Ordem de Serviço <número> - Estoque insuficiente`, dizendo que o orçamento voltou a aguardar aprovação;
+   - **Datadog:** nos Logs, `stock.reservation_failed` no Inventory, `saga.compensation.started` no work-order (com `@oficina.saga.failure_reason:INSUFFICIENT_STOCK` e, em `@oficina.stock.reservation.missing_item_count`, quantos itens faltaram), `quote.approval_reverted` no Billing e `saga.compensated` no work-order. No dashboard **Sagas**, a Saga aparece como `compensated` em **Sagas finalizadas por tipo e resultado** e com o motivo em **Compensações por motivo**. O monitor **Sagas · Compensações da aprovação de orçamento** alerta só acima de uma compensação por hora, então esta não o dispara.
 
    Enquanto a compensação não termina, uma nova decisão do cliente responde **409** `Ordem de serviço com aprovação de orçamento em andamento: aguarde a conclusão e tente novamente`.
 5. **Repor o estoque e aprovar de novo.** A entrada manual soma 100 ao estoque da bateria:
@@ -367,7 +393,7 @@ O orçamento pede mais baterias do que o estoque tem. A reserva falha, e a Saga 
    }
    ```
 
-   **Conferir:** **200** com `data.stock` 100 unidades maior. Depois, repita a aprovação do item 3: a mesma Saga é reaberta, a reserva passa e a OS vai a `APPROVED` (espera em `GET {{baseUrl}}/api/work-orders/{{workOrderId}}`). A reserva das 100 baterias aparece em `GET {{baseUrl}}/api/stock-reservations?workOrderId={{workOrderId}}`.
+   **Conferir:** **200** com `data.stock` 100 unidades maior. Depois, repita a aprovação do item 3: a mesma Saga é reaberta, a reserva passa e a OS vai a `APPROVED` (espera em `GET {{baseUrl}}/api/work-orders/{{workOrderId}}`). A reserva das 100 baterias aparece em `GET {{baseUrl}}/api/stock-reservations?workOrderId={{workOrderId}}`. Nos Logs do Datadog, a Saga reaberta registra `saga.started` de novo e termina em `saga.completed`.
 
 ### F7: cobrança cancelada pelo funcionário
 
@@ -385,7 +411,8 @@ O funcionário cancela uma cobrança pendente antes de o cliente abrir o link. O
 3. **Conferir a compensação:**
    - **espera:** `GET {{baseUrl}}/api/work-orders/{{workOrderId}}` até `data.status` voltar a `APPROVED`;
    - o histórico de status registra `Cobrança <paymentId> cancelada`;
-   - a OS aceita uma cobrança nova, porque não tem mais cobrança `PENDING`.
+   - a OS aceita uma cobrança nova, porque não tem mais cobrança `PENDING`;
+   - **Datadog:** nos Logs, `payment.cancelled` no Billing e `saga.compensated` no work-order, com `@oficina.saga.failure_reason:PAYMENT_CANCELLED`. No dashboard **Pagamentos**, a cobrança aparece em **Cobranças resolvidas por status** como `CANCELLED`.
 
 ## Outras falhas da matriz F1 a F14
 
@@ -418,6 +445,19 @@ A solução numera de F1 a F14 os cenários de falha das Sagas e da mensageria. 
 
 Como o BDD roda e o que ele simula está em [Testes › BDD](testing.md#bdd-testes-de-aceitação).
 
+## Deploy automatizado de um serviço
+
+O vídeo mostra o deploy de um serviço com os testes validados. Os quatro serviços seguem o mesmo caminho, e este roteiro usa o work-order, o único que roda os cenários BDD no CI. Os workflows estão descritos em [Infra · CI/CD](infra/ci-cd.md).
+
+1. **Branch e mudança.** Crie a partir da `main` uma branch `feature/<nome>`: só as branches `feature/**` e `fix/**` disparam o CI. Uma mudança pequena basta, como um texto do README, porque o CD publica e implanta qualquer commit que entra na `main`.
+2. **CI.** O push dispara o workflow **CI**, com os jobs em paralelo: **Lint**, **Unit Tests** (que falha com cobertura abaixo de 100%), **E2E Tests** (com PostgreSQL, Valkey e a mensageria reais em containers), **BDD**, **Build** e **DB Validation** (as migrations e o seed num banco descartável). Com todos verdes, o job **Open Pull Request** abre o Pull Request para a `main`.
+3. **Pull Request.** No Pull Request rodam o **SAST**, a análise do SonarQube Cloud, que reprova quando o quality gate (os critérios de qualidade do projeto) falha, e o **DAST**, o OWASP ZAP contra a API em containers. A `main` é protegida: o merge só acontece pelo Pull Request, com as verificações obrigatórias verdes.
+4. **CD.** O merge dispara o workflow **CD**, em quatro jobs encadeados: **Build and Push App Image** (a imagem vai ao Amazon ECR com o SHA do commit como tag), **Prepare Deployment Configuration** (as credenciais do banco e do cache, as chaves públicas dos tokens e o ConfigMap no Kubernetes), **DB Migrate & Seed** (o Job de migração do banco) e **App Deploy** (aplica os manifests, espera o rollout e chama `GET /health/work-order` pelo API Gateway; se o rollout ou essa chamada falhar, desfaz o deploy com `kubectl rollout undo`). O CD só roda com a variável `ENABLE_DEPLOY` do repositório em `true`.
+5. **Conferir.**
+   - a imagem nova no cluster: `kubectl get deployment work-order-service -n work-order -o jsonpath='{.spec.template.spec.containers[0].image}'` termina com o SHA do commit do merge;
+   - `GET {{baseUrl}}/health/work-order`, sem token, responde **200**;
+   - **Datadog:** os logs do `oficina-mecanica-work-order-service` passam a levar a tag `version` com o SHA da imagem nova.
+
 ## Documentos relacionados
 
 - [Referência da API](api.md): as rotas do work-order e como o orçamento e a cobrança mudam a OS.
@@ -425,3 +465,5 @@ Como o BDD roda e o que ele simula está em [Testes › BDD](testing.md#bdd-test
 - [Collection Postman do work-order](../collections/oficina-collection.json): as mesmas requisições, com os testes de cada resposta.
 - [Runbook do Mercado Pago](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/blob/main/docs/runbook.md): contas de teste, URL do webhook, cartões de teste e cobrança presa.
 - [Runbook da Sessão](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base/blob/main/docs/runbook.md): subida e derrubada do ambiente.
+- [Observabilidade](observability.md): os eventos de log, as métricas e os traces do work-order.
+- [Dashboards](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring/blob/main/docs/dashboards.md) e [Monitores](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring/blob/main/docs/monitors.md) do Datadog.

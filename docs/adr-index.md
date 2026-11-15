@@ -66,11 +66,11 @@ Identity, o serviço de usuários e credenciais. [Pasta das decisões](https://g
 | Número | Título | Situação | Substituída por |
 |---|---|---|---|
 | [0001](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/docs/adr/0001-clean-architecture-em-camadas.md) | Clean Architecture em camadas, com fronteira livre de framework | Aceita | — |
-| [0002](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/docs/adr/0002-pipelines-ci-cd-sast-dast-com-rollback.md) | Pipelines de CI, CD, SAST e DAST separados, com rollback e DAST pelo login | Aceita | — |
+| [0002](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/docs/adr/0002-pipelines-ci-cd-sast-dast-com-rollback.md) | Pipelines de CI, CD, SAST e DAST separados, com rollback e DAST pelo login | Aceita, revisada | — |
 | [0003](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/docs/adr/0003-testcontainers-e2e-com-valkey-e-localstack.md) | Testes E2E com Testcontainers, incluindo Valkey e LocalStack | Aceita | — |
 | [0004](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/docs/adr/0004-materializacao-da-credencial-do-banco-no-cd.md) | Materialização da credencial do banco no CD | Aceita | — |
 | [0005](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/docs/adr/0005-mensageria-sns-fifo-com-outbox.md) | Publicação no SNS FIFO com outbox transacional | Aceita | — |
-| [0006](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/docs/adr/0006-cache-do-dono-no-elasticache.md) | Cache do dono no ElastiCache | Aceita | — |
+| [0006](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/docs/adr/0006-cache-do-dono-no-elasticache.md) | Cache do dono no ElastiCache | Aceita, revisada | — |
 | [0007](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/docs/adr/0007-identity-unico-emissor-do-token-de-funcionario.md) | Identity como único emissor do token de funcionário | Aceita | — |
 | [0008](https://github.com/FIAP-15SOAT/oficina-mecanica-identity-service/blob/main/docs/adr/0008-codigo-de-reset-no-valkey.md) | Código de redefinição de senha no Valkey | Aceita | — |
 
@@ -150,7 +150,7 @@ infra-k8s, o cluster Amazon EKS e o registro de imagens (Terraform). [Pasta das 
 | [0001](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s/blob/main/docs/adr/0001-suporte-a-hpa-e-dimensionamento-do-node-group.md) | Suporte ao HPA da API e dimensionamento do Node Group em função dele | Substituída | [0008](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s/blob/main/docs/adr/0008-escalonamento-do-node-group-para-2-nos-t3-medium.md) |
 | [0002](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s/blob/main/docs/adr/0002-eks-como-distribuicao-gerenciada.md) | Amazon EKS como distribuição gerenciada de Kubernetes | Aceita | — |
 | [0003](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s/blob/main/docs/adr/0003-endpoint-publico-e-privado-simultaneos.md) | Endpoint do control plane EKS público e privado simultaneamente | Aceita | — |
-| [0004](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s/blob/main/docs/adr/0004-ecr-scan-on-push-tags-mutaveis.md) | Amazon ECR por serviço com scan-on-push, tags mutáveis, force_delete e retenção de 20 imagens | Aceita | — |
+| [0004](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s/blob/main/docs/adr/0004-ecr-scan-on-push-tags-mutaveis.md) | Amazon ECR por serviço com scan-on-push, tags mutáveis, force_delete e retenção de 20 imagens | Aceita, revisada | — |
 | [0005](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s/blob/main/docs/adr/0005-auth-providers-k8s-helm-via-token-iam-efemero.md) | Providers Kubernetes/Helm autenticados por token IAM efêmero, sem kubeconfig estático | Aceita | — |
 | [0006](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s/blob/main/docs/adr/0006-namespace-unico-compartilhado.md) | Namespace único compartilhado para todos os recursos da aplicação | Substituída | [0007](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s/blob/main/docs/adr/0007-isolamento-por-namespace-e-ecr-por-bounded-context.md) |
 | [0007](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s/blob/main/docs/adr/0007-isolamento-por-namespace-e-ecr-por-bounded-context.md) | Namespace por serviço e namespace de plataforma | Aceita | — |
@@ -173,7 +173,7 @@ infra-database-work-order, o banco e o cache do Work Order (Terraform). [Pasta d
 
 | Número | Título | Situação | Substituída por |
 |---|---|---|---|
-| [0001](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0001-banco-gerenciado-amazon-rds.md) | Banco de dados relacional como serviço gerenciado (Amazon RDS) | Aceita | — |
+| [0001](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0001-banco-gerenciado-amazon-rds.md) | Banco de dados relacional como serviço gerenciado (Amazon RDS) | Aceita, revisada | [0004](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0004-um-repositorio-de-dados-por-servico.md) |
 | [0002](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0002-credencial-via-variavel-terraform-sensivel.md) | Senha do banco por variável Terraform sensível e publicação no Secrets Manager | Substituída | [0003](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md) |
 | [0003](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md) | Master password gerenciada pelo Amazon RDS | Aceita | — |
 | [0004](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order/blob/main/docs/adr/0004-um-repositorio-de-dados-por-servico.md) | Um repositório de dados por serviço | Aceita | — |
@@ -185,7 +185,7 @@ infra-database-identity, o banco e o cache do Identity (Terraform). [Pasta das d
 
 | Número | Título | Situação | Substituída por |
 |---|---|---|---|
-| [0001](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-identity/blob/main/docs/adr/0001-banco-gerenciado-amazon-rds.md) | Banco de dados relacional como serviço gerenciado (Amazon RDS) | Aceita | — |
+| [0001](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-identity/blob/main/docs/adr/0001-banco-gerenciado-amazon-rds.md) | Banco de dados relacional como serviço gerenciado (Amazon RDS) | Aceita, revisada | [0004](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-identity/blob/main/docs/adr/0004-um-repositorio-de-dados-por-servico.md) |
 | [0002](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-identity/blob/main/docs/adr/0002-credencial-via-variavel-terraform-sensivel.md) | Senha do banco por variável Terraform sensível e publicação no Secrets Manager | Substituída | [0003](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-identity/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md) |
 | [0003](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-identity/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md) | Master password gerenciada pelo Amazon RDS | Aceita | — |
 | [0004](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-identity/blob/main/docs/adr/0004-um-repositorio-de-dados-por-servico.md) | Um repositório de dados por serviço | Aceita | — |
@@ -197,7 +197,7 @@ infra-database-billing, o banco e o cache do Billing (Terraform). [Pasta das dec
 
 | Número | Título | Situação | Substituída por |
 |---|---|---|---|
-| [0001](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-billing/blob/main/docs/adr/0001-banco-gerenciado-amazon-rds.md) | Banco de dados relacional como serviço gerenciado (Amazon RDS) | Aceita | — |
+| [0001](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-billing/blob/main/docs/adr/0001-banco-gerenciado-amazon-rds.md) | Banco de dados relacional como serviço gerenciado (Amazon RDS) | Aceita, revisada | [0004](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-billing/blob/main/docs/adr/0004-um-repositorio-de-dados-por-servico.md) |
 | [0002](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-billing/blob/main/docs/adr/0002-credencial-via-variavel-terraform-sensivel.md) | Senha do banco por variável Terraform sensível e publicação no Secrets Manager | Substituída | [0003](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-billing/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md) |
 | [0003](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-billing/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md) | Master password gerenciada pelo Amazon RDS | Aceita | — |
 | [0004](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-billing/blob/main/docs/adr/0004-um-repositorio-de-dados-por-servico.md) | Um repositório de dados por serviço | Aceita | — |
@@ -209,7 +209,7 @@ infra-database-inventory, o banco e o cache do Inventory (Terraform). [Pasta das
 
 | Número | Título | Situação | Substituída por |
 |---|---|---|---|
-| [0001](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-inventory/blob/main/docs/adr/0001-banco-gerenciado-amazon-rds.md) | Banco de dados relacional como serviço gerenciado (Amazon RDS) | Aceita | — |
+| [0001](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-inventory/blob/main/docs/adr/0001-banco-gerenciado-amazon-rds.md) | Banco de dados relacional como serviço gerenciado (Amazon RDS) | Aceita, revisada | [0004](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-inventory/blob/main/docs/adr/0004-um-repositorio-de-dados-por-servico.md) |
 | [0002](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-inventory/blob/main/docs/adr/0002-credencial-via-variavel-terraform-sensivel.md) | Senha do banco por variável Terraform sensível e publicação no Secrets Manager | Substituída | [0003](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-inventory/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md) |
 | [0003](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-inventory/blob/main/docs/adr/0003-master-password-gerenciada-pelo-rds.md) | Master password gerenciada pelo Amazon RDS | Aceita | — |
 | [0004](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-inventory/blob/main/docs/adr/0004-um-repositorio-de-dados-por-servico.md) | Um repositório de dados por serviço | Aceita | — |
@@ -235,6 +235,7 @@ custom-monitoring, os dashboards e alertas do Datadog (Terraform). [Pasta das de
 |---|---|---|---|
 | [0001](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring/blob/main/docs/adr/0001-terraform-com-provider-datadog.md) | Terraform com o provider Datadog, em HCL tipado | Aceita | — |
 | [0002](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring/blob/main/docs/adr/0002-latencia-por-metrica-otlp.md) | Latência vem da métrica OTLP, não das *trace metrics* do APM | Aceita | — |
-| [0003](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring/blob/main/docs/adr/0003-uptime-por-verificacao-externa.md) | Uptime por verificação externa | Aceita | — |
+| [0003](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring/blob/main/docs/adr/0003-uptime-por-verificacao-externa.md) | Uptime por verificação externa | Aceita, revisada | [0006](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring/blob/main/docs/adr/0006-monitoramento-por-servico.md) |
 | [0004](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring/blob/main/docs/adr/0004-state-no-s3-compartilhado.md) | State no S3 compartilhado, com o acoplamento declarado | Aceita | — |
-| [0005](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring/blob/main/docs/adr/0005-conjunto-minimo-de-alertas.md) | Conjunto mínimo de alertas para um ambiente efêmero | Aceita | — |
+| [0005](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring/blob/main/docs/adr/0005-conjunto-minimo-de-alertas.md) | Conjunto mínimo de alertas para um ambiente efêmero | Aceita, revisada | — |
+| [0006](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring/blob/main/docs/adr/0006-monitoramento-por-servico.md) | Monitoramento por serviço e da solução distribuída | Aceita | — |
