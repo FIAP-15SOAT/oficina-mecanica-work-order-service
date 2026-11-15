@@ -1,6 +1,6 @@
 {
   "id": "oficina-env-001",
-  "name": "Work Order API",
+  "name": "Work Order API · Local",
   "values": [
     { "key": "baseUrl", "value": "http://localhost:3000", "type": "default", "enabled": true },
     { "key": "identityBaseUrl", "value": "http://localhost:3001", "type": "default", "enabled": true },
@@ -25,7 +25,10 @@
     { "key": "tempWorkOrderId", "value": "", "type": "default", "enabled": true },
     { "key": "rejectQuoteId", "value": "", "type": "default", "enabled": true },
     { "key": "quoteId", "value": "", "type": "default", "enabled": true },
-    { "key": "paymentId", "value": "", "type": "default", "enabled": true }
+    { "key": "paymentId", "value": "", "type": "default", "enabled": true },
+    { "key": "quoteTotalAmount", "value": "", "type": "default", "enabled": true },
+    { "key": "checkoutId", "value": "", "type": "default", "enabled": true },
+    { "key": "checkoutUrl", "value": "", "type": "default", "enabled": true }
   ],
   "_postman_variable_scope": "environment"
 }

@@ -1,7 +1,5 @@
 # 🎬 Manual de demonstração e teste ponta a ponta
 
-> **Versão inicial.** Este manual foi escrito a partir das rotas dos serviços, das collections Postman e dos cenários BDD (os fluxos de negócio escritos como cenários em português, que rodam como teste automatizado). A execução completa dele no ambiente no ar ainda não foi feita: se um passo divergir, vale a resposta da API, e o manual deve ser corrigido.
-
 Este manual leva quem não conhece a solução a executar, no ambiente no ar, a vida de uma ordem de serviço (OS) da abertura à entrega e as falhas com compensação que dá para provocar de fora. Cada passo traz a requisição pronta para o Postman ou o Insomnia, de onde vem cada id e o que conferir: a resposta HTTP, o status da OS, o status do orçamento ou da cobrança, o e-mail no MailHog e o que mostrar no Datadog. No fim, o manual mostra o deploy automatizado de um serviço, com os testes que o liberam.
 
 A solução tem quatro serviços e duas funções Lambda, todos atrás de um único API Gateway, a porta pública da solução:
@@ -51,7 +49,7 @@ Todas as requisições passam pelo API Gateway. A URL dele muda a cada subida do
 aws apigatewayv2 get-apis --query "Items[?Name=='apigw-oficina-mecanica'].ApiEndpoint | [0]" --output text
 ```
 
-As requisições deste manual usam as variáveis do environment Postman do work-order, [`collections/oficina-environment.json`](../collections/oficina-environment.json). Importe-o no Postman ou no Insomnia e preencha `baseUrl` e `identityBaseUrl` com a URL do API Gateway (o gateway encaminha `/api/auth` ao Identity). As outras variáveis são preenchidas ao longo do manual:
+A pasta **Fluxo ponta a ponta** da [collection Postman do work-order](../collections/oficina-collection.json) refaz este fluxo com uma cobrança só e espera os passos assíncronos sozinha ([Testes › Fluxo ponta a ponta](testing.md#fluxo-ponta-a-ponta)). As requisições deste manual usam as variáveis do environment Postman do work-order para o ambiente implantado, [`collections/oficina-gateway-environment.json`](../collections/oficina-gateway-environment.json). Importe-o no Postman ou no Insomnia e preencha `baseUrl` com a URL do API Gateway; `identityBaseUrl` já vale `{{baseUrl}}`, porque o gateway encaminha `/api/auth` ao Identity. As outras variáveis são preenchidas ao longo do manual:
 
 | Variável | Valor |
 | --- | --- |
@@ -329,8 +327,8 @@ Repita a entrega do passo 10.
 **Datadog, no fim do fluxo:**
 
 - **Ordens de Serviço:** a OS em **Ordens de serviço criadas na janela**, o tempo em cada status e o lead time (o tempo da abertura à entrega);
-- **Sagas:** em **Sagas finalizadas por tipo e resultado**, uma Saga `QUOTE_APPROVAL` e duas `PAYMENT` como `completed`;
-- **Pagamentos:** as duas cobranças em **Cobranças resolvidas por status** como `APPROVED`, e as notificações do Mercado Pago no grupo **Webhooks**, com a assinatura `valid`;
+- **Sagas:** em **Sagas finalizadas por tipo e resultado**, uma Saga `quote_approval` e duas `payment` como `completed` (as métricas levam o tipo em minúsculas; nos logs, ele aparece em maiúsculas);
+- **Pagamentos:** as duas cobranças em **Cobranças resolvidas por status** como `approved`, e as notificações do Mercado Pago no grupo **Webhooks**, com a assinatura `valid`;
 - **Mensageria:** as mensagens consumidas por fila, todas com o resultado `success`;
 - **Visão Geral:** os quatro serviços e as duas Lambdas, com as requisições do fluxo e sem monitor em alerta.
 
@@ -339,7 +337,7 @@ Repita a entrega do passo 10.
 O sandbox usa duas contas de teste: a vendedora, dona da aplicação que o Billing usa, e a compradora, que paga. As credenciais das duas ficam em **Suas integrações → Contas de teste**, na conta real do grupo no Mercado Pago ([Runbook do Mercado Pago › Contas de teste](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/blob/main/docs/runbook.md#contas-de-teste)).
 
 1. **Pagar.** Numa janela anônima, abra o `checkoutUrl` da cobrança (da resposta da criação ou do e-mail no MailHog), entre com a conta compradora de teste e pague com o cartão Mastercard de teste `5480 8328 0103 3311`, código de segurança `123`, vencimento `11/30`, nome do titular `APRO` (que faz o Mercado Pago aprovar) e CPF `12345678909`.
-2. **Simular a notificação.** Um pagamento de teste não dispara o webhook sozinho. Numa janela logada como a conta vendedora de teste, abra **Suas integrações → aplicação → Configuração de webhooks**, clique em **Simular notificação**, escolha o evento **Order (Mercado Pago)**, preencha o **Data ID** com o `checkoutId` da cobrança e envie. O Mercado Pago manda a notificação assinada à URL cadastrada, e o Billing consulta a order e encerra a cobrança pelo status real dela.
+2. **Simular a notificação.** O Mercado Pago também envia notificações sozinho, quando a cobrança é criada, paga ou cancelada, mas o Billing hoje as recusa com **401** porque a assinatura delas não confere, e a cobrança só é baixada pela notificação simulada. Numa janela logada como a conta vendedora de teste, abra **Suas integrações → aplicação → Configuração de webhooks**, clique em **Simular notificação**, escolha o evento **Order (Mercado Pago)**, preencha o **Data ID** com o `checkoutId` da cobrança e envie. O Mercado Pago manda a notificação assinada à URL cadastrada, e o Billing consulta a order e encerra a cobrança pelo status real dela.
 3. **Conferir.** `GET {{baseUrl}}/api/payments/{{paymentId}}` responde `data.status` `APPROVED`, e a OS volta ao status de antes da cobrança.
 
 Se a cobrança continuar `PENDING` depois da simulação, a URL do webhook no painel está desatualizada ou a chave secreta está errada: veja [Runbook do Mercado Pago › URL do webhook no painel](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/blob/main/docs/runbook.md#url-do-webhook-no-painel) e [Cobrança presa](https://github.com/FIAP-15SOAT/oficina-mecanica-billing-service/blob/main/docs/runbook.md#cobrança-presa).
@@ -412,7 +410,7 @@ O funcionário cancela uma cobrança pendente antes de o cliente abrir o link. O
    - **espera:** `GET {{baseUrl}}/api/work-orders/{{workOrderId}}` até `data.status` voltar a `APPROVED`;
    - o histórico de status registra `Cobrança <paymentId> cancelada`;
    - a OS aceita uma cobrança nova, porque não tem mais cobrança `PENDING`;
-   - **Datadog:** nos Logs, `payment.cancelled` no Billing e `saga.compensated` no work-order, com `@oficina.saga.failure_reason:PAYMENT_CANCELLED`. No dashboard **Pagamentos**, a cobrança aparece em **Cobranças resolvidas por status** como `CANCELLED`.
+   - **Datadog:** nos Logs, `payment.cancelled` no Billing e `saga.compensated` no work-order, com `@oficina.saga.failure_reason:PAYMENT_CANCELLED`. No dashboard **Pagamentos**, a cobrança aparece em **Cobranças resolvidas por status** como `cancelled`.
 
 ## Outras falhas da matriz F1 a F14
 
