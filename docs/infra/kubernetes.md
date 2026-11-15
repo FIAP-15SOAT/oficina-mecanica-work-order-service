@@ -139,7 +139,7 @@ Cada workload declara `requests` (o que o scheduler reserva) e `limits` (o teto 
 A persistência relacional da aplicação é fornecida pelo **Amazon RDS (PostgreSQL)**, gerenciado no repositório dedicado [`oficina-mecanica-infra-database-work-order`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-database-work-order):
 
 - Instância gerenciada PostgreSQL 18 (`rds-oficina-mecanica-work-order`, Single-AZ, `db.t4g.micro`, 20 GiB GP3), acompanhada de uma instância ElastiCache Valkey 9.1 (`cache-oficina-mecanica-work-order`, `cache.t4g.micro`).
-- Alocados nas subnets privadas da VPC, com Security Groups restritos por origem (`secgrp-eks-nodes-oficina-mecanica`, mais as CIDRs privadas da VPC no RDS de forma transitória, enquanto a customer-auth, a função Lambda de login do cliente, lê este banco).
+- Alocados nas subnets privadas da VPC, com Security Groups que só aceitam conexões dos nós do EKS (`secgrp-eks-nodes-oficina-mecanica`).
 - A master password é gerada e mantida pelo RDS em um Secret do AWS Secrets Manager, com rotação automática desabilitada. O Terraform conhece ARN/status/KMS e metadados de conexão, não o valor da senha; `sensitive` sozinho não impediria sua presença no State.
 - O job `prepare-deploy` do CD descobre o Secret e o endpoint pelo identificador da instância, lê `AWSCURRENT` e materializa `DATABASE_URL` em `database-credentials` usando Node.js inline, que preenche o documento `database-credentials` de `k8s/01-secrets.yaml` e o aplica por stdin, com os parâmetros descritos em [Conexão obrigatoriamente cifrada (TLS)](#conexão-obrigatoriamente-cifrada-tls). Migration/seed ficam somente no job `db-migrate` seguinte.
 

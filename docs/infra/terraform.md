@@ -6,7 +6,7 @@ A infraestrutura é provisionada em seis repositórios Terraform independentes:
 - [`oficina-mecanica-infra-k8s`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-k8s): Cluster Amazon EKS, Launch Template e Node Group gerenciado (2 nós `t3.medium`), ECRs por microsserviço, NLB interno multi-listener + SMTP, namespaces por serviço e `platform` (Datadog Agent e MailHog, o servidor SMTP de teste que recebe os e-mails da solução).
 - [`oficina-mecanica-api-gateway`](https://github.com/FIAP-15SOAT/oficina-mecanica-api-gateway): HTTP API, VPC Link, integrações, rotas e logs de acesso.
 - [`oficina-mecanica-lambda-customer-auth`](https://github.com/FIAP-15SOAT/oficina-mecanica-lambda-customer-auth): Função de autenticação externa, rede, segredo de assinatura e permissão do Gateway.
-- [`oficina-mecanica-custom-monitoring`](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring): Dashboards, monitores, teste sintético e configuração de tags no Datadog.
+- [`oficina-mecanica-custom-monitoring`](https://github.com/FIAP-15SOAT/oficina-mecanica-custom-monitoring): Dashboards, monitores, um teste sintético por serviço e configuração de tags no Datadog.
 
 > 🧭 Para a **visão de sistema** (inventário completo, topologia de rede, fluxo em tempo de execução, postura de segurança e limitações), consulte a [Visão Geral da Infraestrutura](overview.md). Este documento resume os stacks; os arquivos HCL de cada repositório são a fonte executável.
 
@@ -36,7 +36,7 @@ Cada stack tem **state próprio** num backend S3 (bucket dado pela variável de 
 
 Todos os backends usam `encrypt = true` (criptografia do state em repouso via SSE) e **`use_lockfile = true`** — o **lock nativo do S3** introduzido no Terraform ≥ 1.11.
 
-Database e Kubernetes consomem o state da infra-base (`vpc_id`, `vpc_cidr`, `public_subnet_ids`, `private_subnet_ids` e `eks_nodes_security_group_id`). O Gateway consome infra-base e os listeners do NLB exportados por Kubernetes (`service_listener_arns`, `service_listener_ports` e o alias de transição `api_nlb_listener_arn`). A Lambda consome infra-base, database e Gateway. O monitoramento consome o endpoint público exportado pelo Gateway.
+Database e Kubernetes consomem o state da infra-base (`vpc_id`, `vpc_cidr`, `public_subnet_ids`, `private_subnet_ids` e `eks_nodes_security_group_id`). O Gateway consome infra-base e os listeners do NLB exportados por Kubernetes (`service_listener_arns` e `service_listener_ports`). A customer-auth, a função Lambda de login do cliente, consome a infra-base, o endereço e as portas do NLB exportados por Kubernetes e o Gateway; ela chama o Identity e o Work Order pelo NLB e não acessa banco. O monitoramento consome o endpoint público exportado pelo Gateway.
 
 ## Providers e versionamento
 
@@ -102,7 +102,7 @@ Em `oficina-mecanica-infra-k8s/terraform/providers.tf`, os providers `kubernetes
 - **Instância RDS**: `db.t4g.micro` (PostgreSQL 18, `rds-oficina-mecanica-work-order`), com storage GP3 de 20 GiB.
 - **ElastiCache Valkey**: `cache.t4g.micro` (Valkey 9.1, `cache-oficina-mecanica-work-order`), single-node (`num_cache_clusters = 1`), TLS em trânsito obrigatório, criptografia em repouso e token AUTH gerado via `ephemeral "aws_secretsmanager_random_password"` e gravado com `auth_token_wo` / `secret_string_wo` no Secret `cache-oficina-mecanica-work-order-auth-token`.
 - **Subnet Groups**: `dbsng-oficina-mecanica-work-order` e `cachesng-oficina-mecanica-work-order` alocados nas subnets privadas da VPC (`private_subnet_ids`).
-- **Security Groups**: `secgrp-rds-oficina-mecanica-work-order` (porta `5432` liberada para `eks_nodes_security_group_id` e, de forma transitória, para as CIDRs das subnets privadas da VPC, enquanto a customer-auth, a função Lambda de login do cliente, lê este banco) e `secgrp-cache-oficina-mecanica-work-order` (porta `6379` liberada exclusivamente para `eks_nodes_security_group_id`), ambos sem regras de egress.
+- **Security Groups**: `secgrp-rds-oficina-mecanica-work-order` (porta `5432` liberada exclusivamente para `eks_nodes_security_group_id`) e `secgrp-cache-oficina-mecanica-work-order` (porta `6379` liberada exclusivamente para `eks_nodes_security_group_id`), ambos sem regras de egress.
 - **Credencial do RDS**: `manage_master_user_password = true`; RDS gera e mantém o Secret com a chave padrão do Secrets Manager, Terraform exporta apenas seu ARN e a rotação automática fica desabilitada.
 - **State do database**: contém ARNs, nomes de segredos e metadados de conexão, mas não o valor da senha do RDS nem o token do Valkey. O CD `prepare-deploy` consulta RDS/Secrets Manager diretamente, sem ler esse remote state.
 - **Resiliência**: `skip_final_snapshot = true`, `deletion_protection = false` e `recovery_window_in_days = 0` ajustados para o escopo do laboratório AWS Academy.
@@ -197,7 +197,6 @@ Outputs exportados pelo `infra-base`: `vpc_id`, `vpc_cidr`, `public_subnet_ids`,
 | `service_listener_ports` | Mapa `contexto → porta TCP` dos listeners do NLB interno (`80`, `8081`, `8082`, `8083`) |
 | `nlb_dns_name` | Nome DNS interno do NLB (`nlb-oficina-mecanica`) |
 | `smtp_listener_port` | Porta TCP do listener SMTP no NLB interno (`1025`), lida com `nlb_dns_name` pela função Lambda de notificação |
-| `api_nlb_listener_arn` | Alias de transição para `service_listener_arns["work-order"]` até a C-08 |
 | `zz_next_steps` | Guia rápido pós-deploy para configurar `kubeconfig` e validar acesso |
 
 ## Como aplicar localmente
@@ -261,7 +260,7 @@ terraform init -backend-config="bucket=$TF_STATE_BUCKET"
 # Revisa o plano interativo e aplica os recursos desta stack
 terraform apply
 
-# 6) Provisiona dashboards, monitores e teste sintético
+# 6) Provisiona dashboards, monitores e os testes sintéticos
 cd ../../oficina-mecanica-custom-monitoring/terraform
 # Inicializa os providers e o backend remoto desta stack
 terraform init -backend-config="bucket=$TF_STATE_BUCKET"
