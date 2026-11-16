@@ -599,6 +599,29 @@ Sem vínculo, a resposta é **404**, e nada do orçamento ou da cobrança é dev
 
 O serviço conversa com os outros serviços da oficina por dois caminhos: **mensagens** assíncronas num tópico SNS FIFO (`oficina-events.fifo`), entregues a cada serviço pela própria fila SQS FIFO, e **chamadas REST internas** (`/internal/...`) pela rede do cluster. Cada serviço é o único cliente do próprio PostgreSQL e do próprio cache: nenhum lê o banco de outro.
 
+### Mensagens da solução
+
+A solução troca 14 tipos de mensagem. Todas são gravadas no outbox do serviço que as publica (a tabela onde a mensagem é gravada na mesma transação do dado, ver [Outbox e relay](#outbox-e-relay)) e publicadas no tópico `oficina-events.fifo`. A filter policy de cada assinatura do tópico (o filtro do SNS que compara o atributo `type` da mensagem) entrega cada tipo a uma fila só. Um **evento** conta um fato do serviço que o publica; um **comando** pede uma ação ao serviço que o consome. A tabela segue a ordem em que as mensagens aparecem na vida de uma OS:
+
+| Mensagem | Tipo | Publica | Fila e consumidor | Quando |
+| --- | --- | --- | --- | --- |
+| `billing.quote.sent` | Evento | Billing | `work-order.fifo`, Work Order | O orçamento foi enviado ao cliente: a OS vai a `AWAITING_APPROVAL` e o cliente recebe o e-mail do orçamento |
+| `billing.quote.rejected` | Evento | Billing | `work-order.fifo`, Work Order | O orçamento foi rejeitado: a OS vai a `REJECTED` |
+| `billing.quote.approved` | Evento | Billing | `work-order.fifo`, Work Order | O orçamento foi aprovado: começa a Saga de aprovação |
+| `inventory.stock.reserve` | Comando | Work Order | `inventory.fifo`, Inventory | A Saga de aprovação pede a reserva das peças do orçamento |
+| `inventory.stock.reserved` | Evento | Inventory | `work-order.fifo`, Work Order | A reserva foi feita: a OS vai a `APPROVED` e a Saga termina |
+| `inventory.stock.reservation_failed` | Evento | Inventory | `work-order.fifo`, Work Order | Falta estoque: começa a compensação da Saga de aprovação |
+| `billing.quote.revert_approval` | Comando | Work Order | `billing.fifo`, Billing | A compensação pede que a aprovação seja desfeita: o orçamento volta a `SENT` por falta de estoque, ou vai a `REJECTED` quando a OS já tinha saído de `AWAITING_APPROVAL` |
+| `billing.quote.approval_reverted` | Evento | Billing | `work-order.fifo`, Work Order | A aprovação foi desfeita: a Saga termina compensada e, na falta de estoque, o cliente recebe o e-mail de estoque insuficiente |
+| `inventory.stock.consume` | Comando | Work Order | `inventory.fifo`, Inventory | O primeiro serviço da OS começou e a OS foi a `IN_PROGRESS`: pede a baixa das peças reservadas |
+| `billing.payment.requested` | Evento | Billing | `work-order.fifo`, Work Order | Uma cobrança foi criada: começa a Saga de cobrança, a OS vai a `AWAITING_PAYMENT` e o cliente recebe o e-mail com o link de pagamento |
+| `billing.payment.cancel` | Comando | Work Order | `billing.fifo`, Billing | A OS não aceitava mais cobrança quando o pedido chegou: a compensação pede o cancelamento da cobrança no Mercado Pago |
+| `billing.payment.approved` | Evento | Billing | `work-order.fifo`, Work Order | A cobrança foi paga: a OS volta ao status de antes da cobrança e a Saga termina |
+| `billing.payment.failed` | Evento | Billing | `work-order.fifo`, Work Order | A cobrança expirou, foi recusada ou cancelada: a OS presa por ela volta ao status de antes e a Saga termina compensada |
+| `notification.email.send` | Comando | Work Order e Identity | `notification.fifo`, Lambda notification | Um e-mail: do Work Order, o do orçamento enviado, o do link de pagamento e o de estoque insuficiente; do Identity, o da senha inicial de funcionário ou de cliente e o do código de redefinição de senha |
+
+Cada fila tem uma DLQ (a fila que recebe a mensagem depois de 5 recebimentos sem sucesso): `work-order-dlq.fifo`, `billing-dlq.fifo`, `inventory-dlq.fifo` e `notification-dlq.fifo`. A topologia e as filter policies são do repositório [`oficina-mecanica-infra-messaging`](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-messaging), e a sequência das mensagens em cada Saga está nos [diagramas dinâmicos do Modelo C4](c4/README.md#diagramas-dinâmicos-das-sagas).
+
 ### Outbox e relay
 
 Uma mensagem nunca é publicada de dentro do caso de uso. Ela é gravada na tabela `outbox` pelo `IOutboxRepository` (`repos.outbox.add(message)`), dentro da **mesma transação** do Unit of Work que muda o estado: ou as duas escritas são confirmadas, ou nenhuma. Não há dupla escrita entre banco e broker.
