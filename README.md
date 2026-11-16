@@ -517,3 +517,4 @@ As decisões de cada repositório ficam em `docs/adr/` dele (coluna ADRs da tabe
 
 Projeto acadêmico (FIAP — 15SOAT), para fins educacionais. Sem licença aberta declarada (`UNLICENSED`).
 
+
