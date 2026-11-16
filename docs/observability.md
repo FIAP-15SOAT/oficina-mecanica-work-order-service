@@ -6,6 +6,7 @@ Arquitetura de logs, correlação, traces e métricas da aplicação. A topologi
 
 - [Logs estruturados](#logs-estruturados)
 - [Telemetria: traces e métricas](#telemetria-traces-e-métricas)
+- [Consultas no Datadog](#consultas-no-datadog)
 - [Documentação relacionada](#documentação-relacionada)
 
 ## Logs estruturados
@@ -332,6 +333,37 @@ A aplicação **não cria** métrica própria de latência, contagem por rota, C
 - **Com o endpoint vazio, nenhum módulo do SDK é carregado.** Os imports acontecem depois do interruptor: com `import` de topo, o modo desligado ainda pagava ~348 módulos e ~13,5 MiB de RSS por pod.
 - **O flush vive num hook do Nest** (`TelemetryLifecycleService.onApplicationShutdown`), depois do drain e do fechamento do servidor — nunca em `main.ts` (que não é a composition root sob teste) nem num tratador de sinal (que correria em paralelo com o encerramento). Os prazos de exportação são declarados em 5 s porque os padrões do SDK (até 30 s) são maiores que o que sobra de `terminationGracePeriodSeconds` depois da janela de drenagem.
 - **O canal `diag` do SDK vai para stderr**, nunca para stdout: uma falha de exportação imprimiria texto livre e quebraria o contrato "um objeto JSON por linha, todas as chaves declaradas".
+
+## Consultas no Datadog
+
+O Datadog é a plataforma de monitoramento que recebe os traces da solução. As consultas abaixo são do **Trace Explorer** (menu **APM → Traces**) e valem para todos os serviços da solução, não só para este. No modo **Live**, o Trace Explorer mostra todos os spans dos últimos 15 minutos; fora dele, só os spans guardados por um retention filter (a regra do Datadog que escolhe quais spans guardar por 15 dias, em **APM → Retention Filters**), como um com a consulta `env:production` e 100% de spans e traces. Sem um filtro assim, o trace de uma OS pode sumir depois de 15 minutos.
+
+Os nomes com `@` são atributos dos spans, os mesmos que a instrumentação grava ([Consumo de mensagens](#consumo-de-mensagens)). Os serviços aparecem como `oficina-mecanica-<serviço>-service` (`oficina-mecanica-work-order-service`, por exemplo), e a Lambda que envia os e-mails, como `oficina-mecanica-lambda-notification`.
+
+### Spans das filas
+
+| O que mostra | Consulta |
+| --- | --- |
+| O consumo de mensagens em todas as filas, pelos três serviços que consomem e pela Lambda notification | `env:production @span.kind:consumer` |
+| O consumo de uma fila | `env:production @messaging.destination.name:work-order.fifo`, trocando a fila por `billing.fifo`, `inventory.fifo` ou `notification.fifo` |
+| Os e-mails enviados pela Lambda notification | `service:oficina-mecanica-lambda-notification @messaging.destination.name:notification.fifo` |
+| As publicações no tópico `oficina-events.fifo`, feitas pelo relay do outbox | `env:production @rpc.service:SNS @rpc.method:Publish` |
+| As tentativas de consumo que falharam, que voltam à fila e, na quinta, vão para a DLQ (a fila das mensagens que falharam) | `env:production @span.kind:consumer status:error`; o atributo `@error.type` diz o tipo do erro |
+| Uma mensagem específica | `@messaging.message.id:<messageId>` |
+
+Abrir um span `process <fila>` mostra o trace inteiro, desde a requisição HTTP que gravou a mensagem no outbox.
+
+### Traces das Sagas
+
+| Trace | Consulta | O que aparece nele |
+| --- | --- | --- |
+| Saga de abertura | `service:oficina-mecanica-work-order-service @http.route:"/api/work-orders"`, na linha do `POST` | A chamada `POST /internal/quotes` ao Billing e, dentro dela, as leituras `GET /internal/services/:id` e `GET /internal/parts-supplies/:id` no Inventory |
+| Envio do orçamento | `service:oficina-mecanica-billing-service @http.route:"/api/quotes/:id/submissions"` | A publicação de `billing.quote.sent`, o `process work-order.fifo` neste serviço e o `process notification.fifo` da Lambda que envia o e-mail |
+| Saga de aprovação | `service:oficina-mecanica-work-order-service @http.route:"/api/me/quotes/:quoteId/decisions"` | A decisão repassada ao Billing (`POST /internal/quotes/:id/decisions`), o `process work-order.fifo` que pede a reserva, o `process inventory.fifo` no Inventory e o `process work-order.fifo` que lê o orçamento aprovado (`GET /internal/quotes/:id`) e aprova a OS. Na falta de estoque, o mesmo trace segue pela compensação: o `process billing.fifo` no Billing, o `process work-order.fifo` e o e-mail na Lambda |
+| Saga de cobrança | `service:oficina-mecanica-billing-service @http.route:"/api/payments"`, na linha do `POST` | A leitura da OS (`GET /internal/work-orders/:id`), a criação da order em `api.mercadopago.com`, o `process work-order.fifo` que bloqueia a OS e o e-mail do link na Lambda |
+| Notificação do Mercado Pago | `service:oficina-mecanica-billing-service @http.route:"/webhooks/mercadopago"` | Nas respostas 200, a consulta da order em `api.mercadopago.com` e o `process work-order.fifo` que devolve a OS; as respostas 401 são notificações recusadas pela assinatura |
+
+No trace aberto, a visão **Flame Graph** mostra cada serviço numa cor. Os logs de uma OS, em ordem e de todos os serviços, saem da busca `@oficina.work_order.id:<id da OS>` em **Logs**, e a aba **Trace** de cada linha abre o trace dela.
 
 ## Documentação relacionada
 

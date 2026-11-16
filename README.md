@@ -489,17 +489,17 @@ As decisões de cada repositório ficam em `docs/adr/` dele (coluna ADRs da tabe
 
 | Documento | Conteúdo |
 |---|---|
-| 🏛️ [Arquitetura](docs/architecture.md) | Clean Architecture, DDD, ciclos de vida, UoW, orçamentos no Billing, Sagas de abertura, de aprovação e de cobrança, entrega com saldo zero, fluxo do orçamento, mensageria com outbox, cache, chamadas internas, exceções |
+| 🏛️ [Arquitetura](docs/architecture.md) | Clean Architecture, DDD, ciclos de vida, UoW, orçamentos no Billing, Sagas de abertura, de aprovação e de cobrança, entrega com saldo zero, fluxo do orçamento, mensagens da solução (quem publica e quem consome), mensageria com outbox, cache, chamadas internas, exceções |
 | 🗃️ [Banco de Dados](docs/database.md) | Diagrama ER, tabelas e relacionamentos, enums, convenções de modelagem |
 | 🔀 [Diagramas de Sequência](docs/sequence-diagrams.md) | Abertura de OS, autenticação externa por CPF, aprovação de orçamento com reserva de estoque e Saga de cobrança |
 | 🔌 [Referência da API](docs/api.md) | Endpoints por domínio, perfis (RBAC), rotas que ficam no Identity, rotas /internal, formato de resposta |
 | 💻 [Como executar localmente](docs/local-setup.md) | Setup local, Valkey, LocalStack, Inventory, Billing e Identity locais, variáveis de ambiente, seed |
 | 🆔 [Ids canônicos do seed](docs/seed-ids.md) | UUIDs fixos de usuários, clientes, veículos, serviços e peças, compartilhados entre os serviços |
 | 🧪 [Testes](docs/testing.md) | Unitários, E2E (PostgreSQL, Valkey, LocalStack e stub do Inventory, do Billing e do Identity), BDD (Cucumber em pt-BR), cenários de falha F1 a F14, contrato das rotas /internal, Postman/Newman |
-| 🎬 [Manual de demonstração](docs/demo-manual.md) | Preparo do ambiente, fluxo completo da ordem de serviço, da abertura à entrega, pagamento no sandbox do Mercado Pago e falhas com compensação provocadas de fora |
+| 🎬 [Manual de demonstração](docs/demo-manual.md) | Preparo do ambiente e das collections Postman, configuração do Mercado Pago, fluxo completo da ordem de serviço, da abertura à entrega, pagamento no sandbox do Mercado Pago, falhas com compensação provocadas de fora e deploy de um serviço |
 | 🔒 [Segurança](docs/security.md) | Mitigações no código, proteção de dados nos logs e relatórios (ZAP, SonarQube) |
 | 📊 [Evidências de qualidade](docs/quality-evidence.md) | Cobertura, quality gate do SonarQube Cloud e DAST dos quatro serviços e das duas Lambdas |
-| 🔭 [Observabilidade](docs/observability.md) | Logs estruturados, correlação, traces, métricas e degradação segura |
+| 🔭 [Observabilidade](docs/observability.md) | Logs estruturados, correlação, traces, métricas, degradação segura e consultas no Trace Explorer do Datadog |
 | 🏗️ [Infra · Visão Geral](docs/infra/overview.md) | Arquitetura da infra como sistema: componentes, ownership e fluxos |
 | 🌍 [Infra · Terraform](https://github.com/FIAP-15SOAT/oficina-mecanica-infra-base) | Infraestrutura AWS e Kubernetes (IaC nos repositórios dedicados) |
 | ☸️ [Infra · Kubernetes](docs/infra/kubernetes.md) | Manifests de aplicação (`k8s/`), probes, HPA e deploy |
