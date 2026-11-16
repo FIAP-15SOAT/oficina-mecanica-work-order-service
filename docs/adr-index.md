@@ -45,7 +45,7 @@ Work Order, o serviço de ordens de serviço (este repositório). [Pasta das dec
 | [0011](adr/0011-unit-of-work-transacoes-multi-repositorio.md) | Unit of Work para transações multi-repositório | Aceita, emendada | [0025](adr/0025-sagas-orquestradas-no-work-order.md) |
 | [0012](adr/0012-hierarquia-de-excecoes-por-camada.md) | Hierarquia de exceções por camada, com Exception Filters dedicados | Aceita | — |
 | [0013](adr/0013-autenticacao-interna-jwt-stateless.md) | Autenticação interna via JWT stateless (access + refresh) | Substituída | [0022](adr/0022-token-de-funcionario-em-rs256.md) |
-| [0014](adr/0014-pipelines-ci-cd-sast-dast-separados.md) | Pipelines de CI, CD, SAST e DAST separados | Aceita | — |
+| [0014](adr/0014-pipelines-ci-cd-sast-dast-separados.md) | Pipelines de CI, CD, SAST e DAST separados | Aceita, revisada | — |
 | [0015](adr/0015-testcontainers-e2e-postgresql-real.md) | Testes E2E contra PostgreSQL real via Testcontainers, não mocks | Aceita | — |
 | [0016](adr/0016-sanitizacao-e-validacao-em-duas-camadas.md) | Sanitização e validação de entrada em duas camadas, sempre nesta ordem | Aceita | — |
 | [0017](adr/0017-materializacao-da-credencial-do-banco-no-cd.md) | Materialização da credencial do banco no CD | Aceita | — |
