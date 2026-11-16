@@ -219,7 +219,7 @@ Análise do SonarCloud num workflow dedicado. O plano do Sonar do projeto analis
 - **`pull_request` → `main`**: análise em modo PR (detecção de _New Code_ + decoração do PR).
 - **`push` → `main`**: análise da branch principal (relatório consolidado + o baseline que a análise de PR usa como referência).
 
-Roda `test:cov` + Sonar Scan (`projectBaseDir: app`). Com `sonar.qualitygate.wait=true` (em `sonar-project.properties`), o run **fica vermelho se o quality gate reprovar**. Por ser um workflow **separado do CD**, uma análise vermelha na `main` **não bloqueia o deploy** (rodam em paralelo). A configuração do Sonar (chave do projeto, organização, exclusões, caminho do `lcov.info`) está em `sonar-project.properties`.
+Roda `test:cov` + Sonar Scan (`projectBaseDir: app`). Com `sonar.qualitygate.wait=true` (em `sonar-project.properties`), o run **fica vermelho se o quality gate reprovar**. Por ser um workflow **separado do CD**, uma análise vermelha na `main` **não bloqueia o deploy** (rodam em paralelo). No PR, o check `SAST` é obrigatório no ruleset da `main` (as regras de proteção da branch no GitHub): uma análise reprovada **bloqueia o merge**. A configuração do Sonar (chave do projeto, organização, exclusões, caminho do `lcov.info`) está em `sonar-project.properties`.
 
 Como o `open-pr` abre o PR autenticado via **GitHub App** (`BOT_APP_ID` e `BOT_PRIVATE_KEY`) em vez do `GITHUB_TOKEN` nativo, a criação do PR dispara o `sast.yml` normalmente — então a análise/decoração aparece **desde o primeiro push** (tokens de GitHub Apps não sofrem a restrição de cascata do `GITHUB_TOKEN`).
 
@@ -249,7 +249,7 @@ em arquivo, log ou variable sem proteção.
 | 11 | Tear down the stack | `if: always()` — `docker compose down -v` |
 | → | *resultado* | job fica **vermelho** se **qualquer uma das duas passagens** encontrar alerta ≠ `IGNORE` |
 
-Teste dinâmico de segurança (**DAST**) com **OWASP ZAP**, num workflow dedicado — como o SAST, roda em paralelo ao CI/CD e não bloqueia nenhum deles. Diferente do SAST (separado por limitação do plano do Sonar), o DAST é separado por ter um **ciclo de gatilho próprio**:
+Teste dinâmico de segurança (**DAST**) com **OWASP ZAP**, num workflow dedicado — como o SAST, roda em paralelo ao CI/CD sem bloquear nenhum dos dois, mas o check `OWASP ZAP API Scan` é obrigatório no ruleset da `main`: um scan reprovado **bloqueia o merge**. Diferente do SAST (separado por limitação do plano do Sonar), o DAST é separado por ter um **ciclo de gatilho próprio**:
 
 - **`pull_request` → `main`**: escaneia o candidato a merge — o gate natural do DAST.
 - **`workflow_dispatch`**: execução sob demanda.

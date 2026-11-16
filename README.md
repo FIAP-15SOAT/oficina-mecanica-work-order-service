@@ -94,6 +94,8 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 
 **Estado atual da solução:** O escopo está implementado com AWS API Gateway, Lambda de autenticação por CPF emitindo JWT RS256, Amazon EKS, Amazon RDS PostgreSQL, Terraform e pipelines especializados. Os sete repositórios da Fase 3 (`oficina-mecanica-work-order-service`, `oficina-mecanica-infra-base`, `oficina-mecanica-infra-k8s`, `oficina-mecanica-infra-database-work-order`, `oficina-mecanica-api-gateway`, `oficina-mecanica-lambda-customer-auth` e `oficina-mecanica-custom-monitoring`) estão hoje entre os quinze listados em [Ecossistema de Repositórios](#-ecossistema-de-repositórios). A observabilidade usa logs estruturados, OpenTelemetry e Datadog; dashboards e alertas são declarados em Terraform nesta solução.
 
+🎥 **Demonstração:** [vídeo da Fase 3 (YouTube)](https://youtu.be/FxBuYSZjVm8)
+
 </details>
 
 ### Fase 4 — Microsserviços, Sagas e Pagamento
