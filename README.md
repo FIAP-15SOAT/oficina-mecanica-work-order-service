@@ -116,6 +116,8 @@ Substitui o controle manual (anotações e planilhas) de uma oficina de médio p
 
 **Estado atual da solução:** A solução tem quatro microsserviços NestJS no Amazon EKS (o Kubernetes gerenciado da AWS): o Identity, o Work Order (este repositório), o Billing e o Inventory. Cada um é o único cliente do próprio PostgreSQL no Amazon RDS e do próprio Valkey (um banco chave-valor em memória, compatível com o Redis) no Amazon ElastiCache. Completam a solução duas funções AWS Lambda: a customer-auth, que faz o login do cliente por CPF e emite o token dele, e a notification, que envia os e-mails. Uma consulta a outro serviço é uma chamada REST interna (rotas `/internal/...`) direto ao dono do dado, pela rede do cluster. Um efeito em outro serviço é uma mensagem gravada no outbox (a tabela das mensagens a publicar), na mesma transação do dado, e publicada no tópico Amazon SNS FIFO `oficina-events.fifo`, que a entrega em ordem por OS às filas Amazon SQS FIFO dos consumidores (`work-order.fifo`, `billing.fifo`, `inventory.fifo` e `notification.fifo`), cada uma com a sua DLQ (fila que recebe as mensagens que falharam depois das novas tentativas). A observabilidade continua a da Fase 3: logs JSON, traces e métricas pelo OpenTelemetry, coletados pelo Datadog. Os quinze repositórios estão em [Ecossistema de Repositórios](#-ecossistema-de-repositórios).
 
+🎥 **Demonstração:** [vídeo da Fase 4 (YouTube)](https://youtu.be/Ekhjfmt28NQ)
+
 #### Por que quatro serviços
 
 O enunciado sugere três serviços como exemplo (ordem de serviço, orçamento e pagamento, execução e produção) e deixa claro que são só exemplos. A divisão seguiu os contextos de negócio que o código já tinha:
@@ -201,7 +203,7 @@ Cada entregável do enunciado, com o link que o comprova ou, quando depende de a
 
 | Entregável | Situação | Onde conferir |
 |---|---|---|
-| Vídeo de até 15 minutos no YouTube ou no Vimeo, público ou não listado | Verificação manual | Link no PDF entregue no portal |
+| Vídeo de até 15 minutos no YouTube ou no Vimeo, público ou não listado | Feito | [vídeo da Fase 4 (YouTube)](https://youtu.be/Ekhjfmt28NQ); o link também vai no PDF entregue no portal |
 | No vídeo: o fluxo completo de uma OS pelos serviços, as Sagas com falhas e compensações, o deploy automatizado de um serviço com os testes e o monitoramento dos fluxos distribuídos | Verificação manual | O roteiro do que é mostrado está no [Manual de demonstração](docs/demo-manual.md) |
 
 **PDF entregue no portal:**
